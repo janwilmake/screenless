@@ -176,12 +176,28 @@ export function deleteAssistant(apiKey: string, assistantId: string) {
 
 /**
  * Creating an assistant always auto-provisions a TeXML application, and
- * deleting the assistant does NOT remove it. We place calls through our own
- * persistent connection instead, so these auto-created apps are dead weight —
- * delete them or they accumulate one per call.
+ * deleting the assistant does NOT remove it — delete it or they accumulate
+ * one per call.
  */
 export function deleteTexmlApplication(apiKey: string, appId: string) {
   return call(apiKey, "DELETE", `/texml_applications/${appId}`);
+}
+
+/**
+ * Pins an application to a region.
+ *
+ * We must place calls through the assistant's own auto-created app, because
+ * its voice_url points at `/ai/assistants/{id}/texml` — the document that
+ * actually drives the conversation. A hand-made app with a different voice_url
+ * connects the call and then sits in silence.
+ *
+ * The auto-created app defaults to anchorsite "Latency", so we patch it to the
+ * region we want before dialling.
+ */
+export function setAnchorsite(apiKey: string, appId: string, anchorsite: string) {
+  return call(apiKey, "PATCH", `/texml_applications/${appId}`, {
+    anchorsite_override: anchorsite,
+  });
 }
 
 /* ------------------------------------------------------------------- calls */
@@ -208,7 +224,10 @@ export function initiateAiCall(
       To: o.to,
       AIAssistantId: o.assistantId,
       StatusCallback: o.statusCallback,
-      StatusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+      // Space-separated string, not an array — Telnyx rejects a JSON array here
+      // with 10026 "must be of type 'string'", unlike the TwiML convention of
+      // repeating the parameter.
+      StatusCallbackEvent: "initiated ringing answered completed",
       StatusCallbackMethod: "POST",
       ConversationCallback: o.conversationCallback,
       ConversationCallbackMethod: "POST",

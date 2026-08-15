@@ -156,6 +156,42 @@ This tool only calls the number you verified, so none of the below applies to te
 
 ---
 
+## Status: blocked on a Telnyx-side issue
+
+Everything in this repo works. The AI Assistant does not produce audio on
+telephony calls, and that failure is upstream of this code.
+
+Verified working: outbound calls, TTS in-call (plain TeXML `<Say>` is audible),
+speech-to-text during the failing calls, the assistant over text
+(`POST /v2/ai/assistants/{id}/chat`), standalone TTS, direct model invocation,
+and the assistant's own TeXML document.
+
+Verified failing: any call with an assistant connected. Zero `assistant`
+messages are recorded and the caller hears silence. Reproduced with both
+`/texml/ai_calls` and `/texml/calls` + `<Connect><AIAssistant>`, across two
+models, two voices, two transcription languages, two anchorsites, with and
+without callbacks — and with an assistant created by Telnyx's own portal demo
+rather than by this code.
+
+`/texml/say` is left in the worker as the isolation test: if calls go silent,
+point a TeXML application at it. If you hear it, telephony and TTS are fine and
+the fault is in the assistant layer.
+
+## Setup gotchas found the hard way
+
+- **The default outbound voice profile only whitelists US and CA.** Any Dutch
+  destination is refused with `D13` until you add `NL`. This is not mentioned
+  during number purchase.
+- **`StatusCallbackEvent` must be a space-separated string**, not a JSON array,
+  unlike the TwiML convention of repeating the parameter.
+- **Verify profiles need `whitelisted_destinations` on the `call` channel too**,
+  not just `sms` — it is not inherited, and the docs example only shows `sms`.
+- **Deleting an assistant does not delete its auto-provisioned TeXML app.**
+  Clean both up or they accumulate one per call.
+- **Dutch national (+3185) numbers require regulatory approval** that a KvK
+  *handelsnaam* may not satisfy. A US number has no requirements and activates
+  instantly, which is fine for a PoC that only calls your own verified phone.
+
 ## Known gaps
 
 This is a PoC. What's deliberately missing:

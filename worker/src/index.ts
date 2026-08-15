@@ -13,12 +13,11 @@ export interface Env {
   // vars — set in wrangler.toml
   TELNYX_FROM_NUMBER: string;
   /**
-   * Persistent TeXML application used to place calls. We do NOT use the app
-   * Telnyx auto-creates per assistant: that one defaults to anchorsite
-   * "Latency" rather than a pinned region, and is not the connection the
-   * from-number is assigned to.
+   * Region to pin each call's media to, e.g. "Amsterdam, Netherlands".
+   * Applied to the assistant's auto-created TeXML app, which would otherwise
+   * default to "Latency".
    */
-  TELNYX_CONNECTION_ID: string;
+  TELNYX_ANCHORSITE: string;
   ASSISTANT_MODEL: string;
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
@@ -169,21 +168,31 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     greeting,
   });
 
-  // Telnyx auto-provisions a TeXML app per assistant. We do not place calls
-  // through it — it defaults to anchorsite "Latency" and is not the connection
-  // the from-number is assigned to — but we do have to clean it up, since
-  // deleting the assistant leaves it behind.
+  // Calls MUST go through the assistant's own auto-created TeXML app: its
+  // voice_url points at /ai/assistants/{id}/texml, which is what actually
+  // drives the conversation.
+  const connectionId = assistant.telephony_settings?.default_texml_app_id;
+  if (!connectionId) {
+    await telnyx.deleteAssistant(env.TELNYX_API_KEY, assistant.id).catch(() => {});
+    return fail(502, "Telnyx did not return a TeXML app for the assistant");
+  }
+
+  // That app defaults to anchorsite "Latency". Pin it to the configured region
+  // so media anchors where we want it — non-fatal if it fails, since a call
+  // from the wrong PoP beats no call at all.
+  await telnyx.setAnchorsite(env.TELNYX_API_KEY, connectionId, env.TELNYX_ANCHORSITE).catch(() => {});
+
   const record: CallRecord = {
     phone: s.phone,
     assistantId: assistant.id,
-    texmlAppId: assistant.telephony_settings?.default_texml_app_id,
+    texmlAppId: connectionId,
     status: "initiated",
     createdAt: Date.now(),
   };
   await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
 
   try {
-    await telnyx.initiateAiCall(env.TELNYX_API_KEY, env.TELNYX_CONNECTION_ID, {
+    await telnyx.initiateAiCall(env.TELNYX_API_KEY, connectionId, {
       from: env.TELNYX_FROM_NUMBER,
       // The session's phone, never a value from the request body. This is the
       // property that keeps the PoC from being a dialer.
@@ -322,7 +331,7 @@ function missingConfig(env: Env): string[] {
     "TELNYX_VERIFY_PROFILE_ID",
     "SESSION_SECRET",
     "TELNYX_FROM_NUMBER",
-    "TELNYX_CONNECTION_ID",
+    "TELNYX_ANCHORSITE",
   ];
   return required.filter((k) => !env[k] || typeof env[k] !== "string");
 }
@@ -336,6 +345,32 @@ export default {
 
     try {
       const missing = missingConfig(env);
+      /**
+       * TeXML that connects the call to an assistant.
+       *
+       * This is the same document Telnyx serves at
+       * /v2/ai/assistants/{id}/texml, but served by us so the call can be
+       * placed through /texml/calls — which works — instead of
+       * /texml/ai_calls, which connects and then sits silent.
+       */
+      if (path === "/texml/assistant") {
+        const id = url.searchParams.get("id") ?? "";
+        if (!/^assistant-[\w-]+$/.test(id)) return fail(400, "bad assistant id");
+        return new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><AIAssistant id="${id}"></AIAssistant></Connect></Response>`,
+          { headers: { "Content-Type": "application/xml" } },
+        );
+      }
+
+      // Diagnostic: plain TeXML with no AI assistant involved. Lets us test the
+      // telephony + TTS path in isolation when an assistant call goes silent.
+      if (path === "/texml/say") {
+        return new Response(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="female" language="en-US">This is a plain TeXML test call. If you can hear this, telephony and text to speech are working.</Say><Pause length="2"/><Say>Goodbye.</Say></Response>`,
+          { headers: { "Content-Type": "application/xml" } },
+        );
+      }
+
       if (method === "GET" && path === "/health")
         return json(missing.length ? { ok: false, missing } : { ok: true }, missing.length ? 503 : 200);
 

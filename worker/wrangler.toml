@@ -5,15 +5,21 @@ account_id = "080fd9e0587416d2fa30ed1f527e2323"
 
 [vars]
 # The Telnyx number the call comes *from*. Must be a number you own.
-# NL national, ordered 2026-08-15. Anonymous CLI is illegal for NL
-# telemarketing, so this must stay a real, answerable number.
-TELNYX_FROM_NUMBER = "+31850835195"
+#
+# Currently a US number, because it has no regulatory requirements and
+# activates instantly. Fine for a PoC that only ever dials your own verified
+# phone, where the caller ID is cosmetic.
+#
+# Swap back to the NL number (+31850835195) once its regulatory review clears:
+# anonymous or foreign CLI is not acceptable for real NL outbound, and the
+# Amsterdam AnchorSite pairs with an NL origin.
+TELNYX_FROM_NUMBER = "+16412153640"
 
-# Persistent TeXML application ("voxcall") that calls are placed through.
-# Pinned to the Amsterdam AnchorSite and holding the outbound voice profile;
-# TELNYX_FROM_NUMBER is assigned to this connection. Deliberately NOT the app
-# Telnyx auto-creates per assistant, which defaults to anchorsite "Latency".
-TELNYX_CONNECTION_ID = "3026913543002784831"
+# Region each call's media is anchored to. Telnyx's EU GPUs are co-located
+# with the telephony PoPs in Amsterdam, which is the point of using Telnyx for
+# Dutch calls at all. Applied per call to the assistant's own TeXML app, which
+# would otherwise default to "Latency".
+TELNYX_ANCHORSITE = "Amsterdam, Netherlands"
 
 # LLM driving the conversation. Telnyx hosts several; Haiku is fast and cheap,
 # which matters because LLM time-to-first-token is the largest single slice of
