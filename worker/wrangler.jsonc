@@ -44,10 +44,17 @@
     // Narrow to a comma-separated list of ISO codes ("NL,BE,DE") to restrict.
     "ALLOWED_DESTINATIONS": "*",
 
-    // Envelope sender for the nightly edition. The domain must be verified in
-    // Resend before anything sends, or every mail 403s at sweep time — which is
-    // silent, because the sweep runs on cron with nobody watching.
-    "MAIL_FROM": "screenless <press@screenless.sh>",
+    // Sender for the edition and for confirmation codes.
+    //
+    // hello@ rather than press@ because this address can also *receive*:
+    // Cloudflare Email Routing forwards it to a real mailbox. A From address
+    // that bounces is bad manners — someone replies to the paper and it
+    // vanishes — and a mildly negative signal to spam filters besides.
+    //
+    // Deliverability does not depend on the local part at all: Resend verifies
+    // the domain, and DKIM signs for screenless.sh however the mailbox is
+    // named. press@ can come back the moment it has a routing rule.
+    "MAIL_FROM": "screenless <hello@screenless.sh>",
 
     // Default recipient, so the nightly loop needs no --to. Leave empty to
     // require --to on every send.
