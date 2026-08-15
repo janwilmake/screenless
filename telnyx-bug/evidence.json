@@ -1,0 +1,262 @@
+{
+  "_test": "Single call: <Say> spoke and was heard, then <Connect><AIAssistant> produced no audio. STT captured the caller. Same leg, same connection, seconds apart.",
+  "texml_served": "https://api.screenless.sh/texml/assistant?id=assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71&say=1",
+  "assistant": {
+    "id": "assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71",
+    "name": "screenless-say-then-ai",
+    "description": "",
+    "model": "anthropic/claude-haiku-4-5",
+    "instructions": "You are testing a phone system. Greet the person and ask how they are. One short sentence per turn.",
+    "tools": [],
+    "mcp_servers": [],
+    "mcp_messages": [],
+    "created_at": "2026-08-15T18:18:23.440424Z",
+    "version_id": "20260815T181823440424",
+    "version_created_at": "2026-08-15T18:18:24.391694Z",
+    "greeting": "Hi, you are speaking with an AI assistant. Can you hear me?",
+    "llm_api_key_ref": null,
+    "fallback_config": null,
+    "external_llm": null,
+    "voice_settings": {
+      "voice": "Telnyx.Ultra.00967b2f-88a6-4a31-8153-110a92134b9f",
+      "api_key_ref": null,
+      "voice_speed": 1.0,
+      "background_audio": {
+        "type": "predefined_media",
+        "value": "silence",
+        "volume": 0.5
+      },
+      "temperature": null,
+      "repetition_penalty": null,
+      "top_p": null,
+      "similarity_boost": 0.5,
+      "style": 0.0,
+      "use_speaker_boost": true,
+      "language_boost": null,
+      "expressive_mode": false,
+      "pronunciation_dict_id": null
+    },
+    "transcription": {
+      "model": "deepgram/flux",
+      "language": "en",
+      "api_key_ref": null,
+      "region": null,
+      "settings": {
+        "smart_format": null,
+        "numerals": null,
+        "eot_threshold": 0.8,
+        "eot_timeout_ms": 5000,
+        "eager_eot_threshold": 0.4,
+        "keyterm": null,
+        "eager_turn_probability": null,
+        "final_turn_probability": null,
+        "end_of_turn_confidence_threshold": null,
+        "min_turn_silence": null,
+        "max_turn_silence": null,
+        "interim_results": null,
+        "enable_endpoint_detection": null,
+        "max_endpoint_delay_ms": null
+      }
+    },
+    "telephony_settings": {
+      "default_texml_app_id": "3027216293427151889",
+      "supports_unauthenticated_web_calls": null,
+      "noise_suppression": "krisp",
+      "noise_suppression_config": null,
+      "time_limit_secs": 600,
+      "user_idle_timeout_secs": null,
+      "user_idle_reply_secs": 10,
+      "fallback_destination": null,
+      "voicemail_detection": null,
+      "recording_settings": {
+        "enabled": true,
+        "channels": "dual",
+        "format": "mp3",
+        "stop_on_conversation_end": false
+      },
+      "send_conversation_message_events": false,
+      "disable_dtmf": false
+    },
+    "messaging_settings": null,
+    "enabled_features": [
+      "telephony"
+    ],
+    "insight_settings": {
+      "insight_group_id": "9e461aa2-62dc-42a4-84f1-ecaed9b2fee6",
+      "use_insights_for_memory": null
+    },
+    "privacy_settings": {
+      "data_retention": true,
+      "pii_redaction": "disabled"
+    },
+    "post_conversation_settings": {
+      "enabled": false
+    },
+    "dynamic_variables_webhook_url": null,
+    "dynamic_variables_webhook_timeout_ms": 1500,
+    "dynamic_variables": null,
+    "import_metadata": null,
+    "widget_settings": null,
+    "interruption_settings": {
+      "enable": true,
+      "disable_greeting_interruption": false,
+      "start_speaking_plan": {
+        "wait_seconds": 0.1,
+        "transcription_endpointing_plan": {
+          "on_punctuation_seconds": 0.1,
+          "on_no_punctuation_seconds": 0.1,
+          "on_number_seconds": 0.1
+        },
+        "custom_endpointing_rules": null
+      },
+      "interrupt_prediction_threshold": 0.0
+    },
+    "integrations": null,
+    "observability_settings": null,
+    "version_name": "New assistant",
+    "related_mission_ids": [],
+    "conversation_flow": null,
+    "tags": []
+  },
+  "texml_app": {
+    "data": {
+      "id": "3027216293427151889",
+      "record_type": "texml_application",
+      "friendly_name": "ai-assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71",
+      "active": true,
+      "anchorsite_override": "Latency",
+      "dtmf_type": "RFC 2833",
+      "first_command_timeout": false,
+      "first_command_timeout_secs": 30,
+      "voice_url": "https://api.telnyx.com/v2/ai/assistants/assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71/texml",
+      "voice_fallback_url": "https://api.telnyx.com/v2/ai/assistants/assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71/texml",
+      "voice_method": "get",
+      "status_callback": null,
+      "status_callback_method": "post",
+      "created_at": "2026-08-15T18:18:23Z",
+      "updated_at": "2026-08-15T18:18:23Z",
+      "tags": [],
+      "rtcp_settings": {
+        "port": "rtp+1",
+        "report_frequency_secs": 5,
+        "capture_enabled": false
+      },
+      "call_cost_in_webhooks": false,
+      "send_webhooks_in_parallel": false,
+      "siprec_tokens": [],
+      "conversation_persistence": false,
+      "inbound": {
+        "channel_limit": null,
+        "sip_subdomain": "assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71",
+        "sip_subdomain_receive_settings": "from_anyone",
+        "shaken_stir_enabled": false,
+        "codecs": [
+          "OPUS",
+          "AMR-WB",
+          "G722",
+          "G711A",
+          "G711U"
+        ]
+      },
+      "outbound": {
+        "channel_limit": null,
+        "outbound_voice_profile_id": "3026894532512843042"
+      }
+    }
+  },
+  "conversation": {
+    "data": {
+      "id": "f1cfe466-ddd4-4a9f-b2af-3759c75be9aa",
+      "name": "Voice Assistant Conversation",
+      "created_at": "2026-08-15T18:18:38.427645",
+      "system_prompt": "You are testing a phone system. Greet the person and ask how they are. One short sentence per turn.",
+      "metadata": {
+        "to": "+31XXXXXXXXX",
+        "from": "+16412153640",
+        "call_leg_id": "b4aa86ea-98d5-11f1-be95-02420a1f0b69",
+        "assistant_id": "assistant-3626bbdf-45d8-4646-9bc7-1bcaec4bad71",
+        "call_control_id": "v3:8WbJPpjy_MW1vO6IN8kkKJGNXmnLljZdOx861Q-kFtCVBhvlG_Zj0Q",
+        "call_session_id": "b4a58762-98d5-11f1-975f-02420a1f0b69",
+        "telnyx_agent_target": "+16412153640",
+        "assistant_version_id": "20260815T181823440424",
+        "telnyx_end_user_target": "+31XXXXXXXXX",
+        "telnyx_conversation_channel": "phone_call",
+        "telnyx_shaken_stir_attestation": "a",
+        "telnyx_end_user_target_verified": false
+      },
+      "json_schema": null,
+      "insight_id": null,
+      "insight_group_id": null,
+      "use_insights_for_memory": false,
+      "last_message_at": "2026-08-15T18:18:47.598000Z",
+      "retention_in_hours": null,
+      "pii_redaction": "disabled",
+      "error": null,
+      "number_of_messages": 1
+    }
+  },
+  "messages": {
+    "data": [
+      {
+        "name": "User",
+        "role": "user",
+        "text": "Hello. Hello.",
+        "created_at": "2026-08-15T18:18:53.029765Z",
+        "sent_at": "2026-08-15T18:18:47.598000Z",
+        "ended_at": "2026-08-15T18:18:47.888000Z",
+        "tools": null,
+        "tool_calls": null,
+        "tool_choice": null,
+        "tool_call_id": null,
+        "metadata": {
+          "telnyx_conversation_channel": "phone_call"
+        },
+        "reasoning": null
+      }
+    ],
+    "meta": {
+      "total_pages": 1,
+      "total_results": 1,
+      "page_number": 1,
+      "page_size": 100
+    }
+  },
+  "insights": {
+    "data": [
+      {
+        "id": "beea92b2-67fc-45b2-9628-61a8d800ac52",
+        "status": "completed",
+        "created_at": "2026-08-15T18:18:53.841911Z",
+        "conversation_insights": [
+          {
+            "result": "There is no conversation to summarize as the user's input was a greeting with no specific topic, question, or task discussed. The conversation started and ended at the same time, 2026-08-15 18:18:47 UTC, with no key facts, decisions, or goals established. The user simply said \"Hello\" twice. No further context or information is available to inform future tasks.",
+            "insight_id": "cfcc865c-d3d4-4823-8a4b-f0df57d9f56f"
+          }
+        ],
+        "webhook": "",
+        "insight_id": null,
+        "insight_group_id": "9e461aa2-62dc-42a4-84f1-ecaed9b2fee6",
+        "json_schema": null
+      }
+    ],
+    "meta": {
+      "total_pages": 1,
+      "total_results": 1,
+      "page_number": 1,
+      "page_size": 20
+    }
+  },
+  "call": {
+    "data": {
+      "is_alive": false,
+      "call_control_id": "v3:8WbJPpjy_MW1vO6IN8kkKJGNXmnLljZdOx861Q-kFtCVBhvlG_Zj0Q",
+      "record_type": "call",
+      "start_time": "2026-08-15T18:18:32Z",
+      "call_leg_id": "b4aa86ea-98d5-11f1-be95-02420a1f0b69",
+      "end_time": "2026-08-15T18:18:52Z",
+      "client_state": "g3QAAAAHbQAAAANhbWR3A25pbG0AAAAMY29udmVyc2F0aW9udAAAAANtAAAACGNhbGxiYWNrdwNuaWxtAAAAD2NhbGxiYWNrX21ldGhvZG0AAAAEUE9TVG0AAAASb3B0aW9uYWxfY2FsbGJhY2tzam0AAAALZGF0YV9jZW50ZXJtAAAAA2RjMm0AAAASZGVlcGZha2VfZGV0ZWN0aW9udwNuaWxtAAAACmRlcGxveW1lbnRtAAAABGJhc2VtAAAAD2RpYWxlZF9ieV90ZXhtbHcEdHJ1ZW0AAAAPeG1sX3JlcXVlc3RfdXJsbQAAAGFodHRwczovL2FwaS5zY3JlZW5sZXNzLnNoL3RleG1sL2Fzc2lzdGFudD9pZD1hc3Npc3RhbnQtMzYyNmJiZGYtNDVkOC00NjQ2LTliYzctMWJjYWVjNGJhZDcxJnNheT0x",
+      "call_session_id": "b4a58762-98d5-11f1-975f-02420a1f0b69",
+      "call_duration": 20
+    }
+  }
+}

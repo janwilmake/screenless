@@ -749,8 +749,16 @@ export default {
       if (path === "/texml/assistant") {
         const id = url.searchParams.get("id") ?? "";
         if (!/^assistant-[\w-]+$/.test(id)) return fail(400, "bad assistant id");
+        // ?say=1 prepends a plain <Say> before connecting the assistant. It is
+        // a diagnostic: hearing the Say and then silence proves the audio path
+        // works on that exact leg and isolates the fault to the assistant,
+        // inside a single call rather than across two.
+        const say =
+          url.searchParams.get("say") === "1"
+            ? `<Say voice="female" language="en-US">Test line. If you can hear this, audio works. Connecting the assistant now.</Say>`
+            : "";
         return new Response(
-          `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><AIAssistant id="${id}"></AIAssistant></Connect></Response>`,
+          `<?xml version="1.0" encoding="UTF-8"?><Response>${say}<Connect><AIAssistant id="${id}"></AIAssistant></Connect></Response>`,
           { headers: { "Content-Type": "application/xml" } },
         );
       }
