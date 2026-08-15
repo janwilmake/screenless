@@ -15,7 +15,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, resolve, extname, join } from "node:path";
+import { dirname, resolve, extname, join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import * as charts from "../lib/charts.mjs";
 
@@ -186,12 +186,15 @@ ${(edition.pages ?? []).map(page).join("\n")}
 
 /* --------------------------------------------------------------------- pdf */
 
-const work = join(tmpdir(), `screenless-press-${Date.now()}`);
-mkdirSync(work, { recursive: true });
-const htmlPath = join(work, "edition.html");
-writeFileSync(htmlPath, html);
-
 mkdirSync(dirname(OUT), { recursive: true });
+
+// With --keep-html the intermediate belongs next to the PDF, not buried in
+// /var/folders: the point of keeping it is to open it while iterating, and a
+// path you have to hunt for is a path nobody opens.
+const work = KEEP_HTML ? dirname(OUT) : join(tmpdir(), `screenless-press-${Date.now()}`);
+mkdirSync(work, { recursive: true });
+const htmlPath = join(work, KEEP_HTML ? `${basename(OUT, ".pdf")}.html` : "edition.html");
+writeFileSync(htmlPath, html);
 
 if (!CHROME) {
   console.error("no Chrome/Chromium found — pass --chrome <path>. HTML written to:");

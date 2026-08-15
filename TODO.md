@@ -10,7 +10,7 @@
 
 - [ ] Cron placing a parked brief
 - [ ] A real inbound call to +1 641 215 3640
-- [ ] The nightly loop, once, against hyre
+- [x] ~~The nightly loop, once, against hyre~~ — ran, produced an 8-page edition; parked nothing (no session at the time)
 - [ ] A Resend send — domain still `Pending`, DNS is live and correct
 
 ## Backlog

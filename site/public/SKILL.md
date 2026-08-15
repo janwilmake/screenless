@@ -217,10 +217,15 @@ is not a nine-minute call.
 ### 6. Park the paper for wake-up
 
 ```bash
-screenless mail <outDir>/<date>.pdf --to <deliverTo> \
-  --at <the callAt from step 7, or a little before> \
+screenless settings --json          # callAt, and the machine's timezone
+screenless mail <outDir>/<date>.pdf --at <that callAt, or a little before> \
   --subject "screenless · <repo> · <date>"
 ```
+
+Read the settings here rather than in step 7: this step needs the call time
+too, and a step that depends on a value the *next* step fetches only works
+while nothing fails. The recipient is not passed — it is the address confirmed
+against the account, and `screenless email` is how it changes.
 
 This hands the PDF to the Worker, which holds it and sends at the requested
 local time. Delivery is the Worker's job rather than an MCP's for one reason:

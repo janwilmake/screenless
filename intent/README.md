@@ -25,6 +25,7 @@ exactly how something was worded.
 | Session | What it decided |
 |---|---|
 | [Session 1 — finding the product](2026-08-15-session-1-finding-the-product.md) | Vendor choice (Telnyx, EU anchoring), the phone-verified CLI, `press` as a nightly PDF, the rename from voxcall. Includes the upstream silent-assistant bug, and a long drift into outreach. |
+| [Session 3 — the first real loop run](2026-08-15-session-3-first-real-loop-run.md) | A trial run against a real repo, in its own window. Produced an 8-page edition and a call brief; parked neither, for want of a session. Found the collector's silent PR undercount. |
 | [Session 2 — the paywall, the installer, and the call's real boundary](2026-08-15-session-2-paywall-and-install.md) | `curl \| bash` install, Stripe 7-day trial at $99/mo, call-time and timezone settings, ring-back on a declined call, and the correction that the phone assistant takes **no** action. |
 
 ## Rules

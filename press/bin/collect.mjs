@@ -143,6 +143,21 @@ function staleness(areas) {
 
 /* -------------------------------------------------------------- pull reqs */
 
+/**
+ * How many pull requests to ask GitHub for.
+ *
+ * The first version asked for 60 and filtered to the window locally, which on a
+ * busy repo is a silent lie: hyre merged 159 in seven days and the paper
+ * reported 60 without saying so. A collector that under-reports is worse than
+ * one that errors, because the whole arrangement rests on scripts owning the
+ * facts and the model trusting them.
+ *
+ * So: ask for far more than any week should contain, scope the merged query
+ * server-side by date, and — when the ceiling is actually reached — say so in
+ * the output rather than quietly truncating.
+ */
+const PR_LIMIT = 500;
+
 function pullRequests() {
   const open = run(
     "gh",
@@ -152,13 +167,16 @@ function pullRequests() {
       "--state",
       "open",
       "--limit",
-      "60",
+      String(PR_LIMIT),
       "--json",
       "number,title,author,createdAt,updatedAt,isDraft,additions,deletions,changedFiles,labels,headRefName,url",
     ],
     { json: true },
   );
 
+  // Filtered by GitHub rather than locally, so the limit applies to the window
+  // we care about instead of to all history.
+  const since = new Date(Date.now() - DAYS * 86_400_000).toISOString().slice(0, 10);
   const merged = run(
     "gh",
     [
@@ -166,8 +184,10 @@ function pullRequests() {
       "list",
       "--state",
       "merged",
+      "--search",
+      `merged:>=${since}`,
       "--limit",
-      "60",
+      String(PR_LIMIT),
       "--json",
       "number,title,author,mergedAt,additions,deletions,changedFiles,url",
     ],
@@ -176,8 +196,14 @@ function pullRequests() {
 
   if (!open && !merged) return { available: false, open: [], mergedRecently: [] };
 
+  // Hitting the ceiling exactly is indistinguishable from having exactly that
+  // many, so treat it as suspect and let the edition say the number is a floor.
+  const truncated = (open ?? []).length >= PR_LIMIT || (merged ?? []).length >= PR_LIMIT;
+
   return {
     available: true,
+    truncated,
+    limit: PR_LIMIT,
     open: (open ?? []).map((p) => ({
       number: p.number,
       title: p.title,
