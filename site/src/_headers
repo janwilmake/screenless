@@ -1,0 +1,7 @@
+# Cloudflare reads this rather than serving it. Assets are content-typed by
+# extension, and the installer deliberately has none — it has to stay
+# `curl -fsSL https://screenless.sh/install`. With no type declared the browser
+# sniffs it as Latin-1 and renders every em dash as mojibake, which matters
+# because the landing page invites people to read the script before running it.
+/install
+  Content-Type: text/plain; charset=utf-8
