@@ -5,7 +5,9 @@ account_id = "080fd9e0587416d2fa30ed1f527e2323"
 
 [vars]
 # The Telnyx number the call comes *from*. Must be a number you own.
-TELNYX_FROM_NUMBER = "+31000000000"
+# NL national, ordered 2026-08-15. Anonymous CLI is illegal for NL
+# telemarketing, so this must stay a real, answerable number.
+TELNYX_FROM_NUMBER = "+31850835195"
 
 # LLM driving the conversation. Telnyx hosts several; Haiku is fast and cheap,
 # which matters because LLM time-to-first-token is the largest single slice of
