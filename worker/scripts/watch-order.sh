@@ -34,7 +34,10 @@ else:
       echo "ACTIVATED"
       exit 0
       ;;
-    *rejected*|*failed*|*cancel*)
+    # "requirement-info-exception" is what a DECLINED requirement looks like.
+    # It does not contain "rejected" or "failed", so it must be matched
+    # explicitly — otherwise a decline is indistinguishable from waiting.
+    *exception*|*rejected*|*failed*|*cancel*|*deleted*)
       echo "ORDER PROBLEM: $status"
       exit 1
       ;;
