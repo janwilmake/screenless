@@ -98,3 +98,13 @@ poked with both encodings before trusting it.
 **15:18** — put expanding to other coding agents in the backlog in todo.md for now, lets ensure the instlalation also installs it into claude. but the question is: where to install the skill/loop? globally on the pc, or in the repo? i guess global is fine? wdyt?
 
 **15:24** — great. ill share the agents output later. for now, pls push ur work and intent
+
+**15:32** — cool. i read the paper and the main thing i'd like to see next time is also a deep dive that gives a higher level picture of how something in our product works now, for a broader picture for somethign we're working on. this requires real research in the codebase but can be very insightful to make better decisions. dedicate part of the newspaper to that. also i didint like the graphs showing the files changed per pr, its not useful at all, instead, try finding other things to visuallize like db schemas or data models or api schemas or whtaever. update the skill.
+
+**15:41** — shall we auto install the loop? also maybe ask in the setup if the current repo is the repo u wanna install it in (if it is a git root) and if not, instruct to run 'screenless init' in the repo to install it in. also since we have the settings in a json file, do they need to be in the skill ? seems strang,so my email doesnt need to be in it ritht? maybe thats outdated(in todo)
+
+**15:52** — go over the repo. what other thigns are we forgetting for a succesful poc?
+
+**16:01** — yes lets bind to to one email that needs to be verified at startup! yes on 2 too, pls make it safer. 3 - fix it 4-fix it in a way thats sutibale for a simple poc, maybe we shouldnt claim it but maybe we can and its an easy fix? LISENCE MIT.
+
+**16:14** — create a document intent/SUMMARY.md that summarizes all intent in succinct fashion. e.g. if something was changed later the latest intent should win. and match it against the product. create a section 'missing intent' for stuff that wasnt inthe product yet, and a section 'assumptions' for things u assumed without my specific intent. btw first update intent to the latest hihi

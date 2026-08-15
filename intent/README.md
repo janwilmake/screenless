@@ -4,10 +4,21 @@ The prompts this repo was built from, one file per session, oldest first.
 
 Git records what changed. This records what was *asked for* — which is the part
 that gets lost, and the part you need when a decision looks arbitrary six weeks
-later. A commit message can tell you the timezone is guessed from the dialling
-code. Only the prompt tells you the instruction was "we can guess based on the
-phone number country code, but u should be able to edit", which is why the guess
-is labelled as a guess in the CLI instead of quietly assumed.
+later.
+
+The timezone is the example worth keeping. A commit log shows it guessed from
+the dialling code, then made editable, then made a searchable picker, then
+deleted outright in favour of reading the machine. Only the prompts show why:
+"using the machine-set time is muuuuch better actually. lets simplify and make
+this not configurable at all." Without that line the deletion looks like
+scope-cutting rather than the simplification it was.
+
+## Start here
+
+[SUMMARY.md](SUMMARY.md) — every instruction collapsed to its final form and
+checked against the code, with what is still missing and what was assumed
+without being asked. Read that; read the session files when you need to know
+exactly how something was worded.
 
 ## Sessions
 
