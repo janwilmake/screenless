@@ -208,8 +208,6 @@ export interface AiCallOptions {
   assistantId: string;
   statusCallback: string;
   conversationCallback: string;
-  /** Our own TeXML document, which connects the leg to the assistant. */
-  texmlUrl: string;
 }
 
 /**
@@ -239,7 +237,12 @@ export function initiateAiCall(
     {
       From: o.from,
       To: o.to,
-      Url: o.texmlUrl,
+      // No Url. The connection here is the assistant's own auto-created TeXML
+      // app, whose voice_url already points at
+      // /ai/assistants/{id}/texml — the document Telnyx generates to connect
+      // the leg to the assistant. Overriding it with our own copy of that same
+      // document put this worker in the call path for no gain; without it,
+      // Telnyx serves the canonical version and we are out of the way.
       StatusCallback: o.statusCallback,
       // Space-separated string, not an array — Telnyx rejects a JSON array here
       // with 10026 "must be of type 'string'", unlike the TwiML convention of

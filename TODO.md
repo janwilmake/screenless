@@ -6,13 +6,26 @@
 - [ ] **Telnyx silent-call bug** — still live, with Telnyx support. What is now known:
       the transcript of a completed call contains the human's turn and **zero
       assistant turns**, not even the greeting Telnyx speaks on answer. Ruled
-      out: the model, the voice, the language, and the endpoint — switching
-      from `/texml/ai_calls` to `/texml/calls` with our own TeXML changed
-      nothing. The assistant is created successfully and returns a TeXML app
+      out: the model (two vendor families), the voice, the language, the
+      endpoint (`/texml/ai_calls` and `/texml/calls` both), and this worker
+      entirely. The assistant is created successfully and returns a TeXML app
       id, so it exists; it simply never runs.
-      Next diagnostic, if support stalls: place a call at `/texml/say`, which
-      speaks fixed text with no assistant involved. Speech there isolates the
-      fault to the assistant; silence there moves it to the audio path.
+
+      The `/texml/say` diagnostic is **done**: a plain `<Say>` call on the same
+      number and connection was audible for 11s
+      (session `d0ca2ae6-9886-11f1-9044-02420a1f0a69`), 60 seconds before a
+      silent assistant call. That isolates the fault to the assistant, not the
+      audio path.
+
+      Also done: dropping the `Url` override so Telnyx serves its own
+      `/ai/assistants/{id}/texml` document. Still silent
+      (session `bd6742f2-98d3-11f1-af69-02420a1f0b69`, 2026-08-15 18:04 UTC) —
+      placed by bare curl against a freshly created assistant, so no part of
+      this codebase is in the path. It also reproduces from Telnyx's own portal
+      button on their own unmodified `Blank` assistant.
+
+      Only untried variable left: `external_llm` with our own OpenAI key, which
+      takes a different inference path from Telnyx-hosted models.
 - [ ] **Stripe is test mode.** Live product + price + webhook, then swap 3 values.
 
 ## Never run end to end

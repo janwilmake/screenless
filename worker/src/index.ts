@@ -442,7 +442,6 @@ async function startCall(
       // property that keeps the PoC from being a dialer.
       to: phone,
       assistantId: assistant.id,
-      texmlUrl: `${origin}/texml/assistant?id=${assistant.id}`,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
       conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
     });
