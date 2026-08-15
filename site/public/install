@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+#
+# screenless installer.
+#
+#   curl -fsSL https://screenless.sh/install | bash
+#
+# Drops the CLI in ~/.screenless, puts a launcher on PATH, and — when there is
+# a terminal to talk to — goes straight into `screenless setup`, which verifies
+# your phone number and starts the trial. One command, from nothing to a
+# working install.
+#
+# Deliberately does not install Node. A tool that silently mutates your
+# toolchain is a tool you cannot reason about later; if Node is missing we say
+# so and stop.
+
+set -euo pipefail
+
+readonly BASE_URL="${SCREENLESS_BASE_URL:-https://screenless.sh}"
+readonly INSTALL_DIR="${SCREENLESS_INSTALL_DIR:-$HOME/.screenless}"
+readonly LIB_DIR="$INSTALL_DIR/lib"
+readonly BIN_DIR="$INSTALL_DIR/bin"
+readonly MIN_NODE=20
+
+# Colour only when a terminal is actually watching. Piped into a log, the
+# escape codes are noise.
+if [ -t 1 ]; then
+  bold=$'\033[1m'; dim=$'\033[2m'; red=$'\033[31m'; green=$'\033[32m'; reset=$'\033[0m'
+else
+  bold=''; dim=''; red=''; green=''; reset=''
+fi
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s✓%s %s\n' "$green" "$reset" "$*"; }
+die()  { printf '%s✗%s %s\n' "$red" "$reset" "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------- preflight
+
+case "$(uname -s)" in
+  Darwin|Linux) ;;
+  *) die "unsupported platform: $(uname -s). On Windows, use WSL." ;;
+esac
+
+command -v node >/dev/null 2>&1 || die "Node ${MIN_NODE}+ is required but not installed.
+  macOS:  brew install node
+  Linux:  https://nodejs.org/en/download
+  Then run this again."
+
+node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "$node_major" -lt "$MIN_NODE" ]; then
+  die "Node ${MIN_NODE}+ is required, found $(node -v). Upgrade Node and run this again."
+fi
+
+command -v tar >/dev/null 2>&1 || die "tar is required but not installed."
+
+if command -v curl >/dev/null 2>&1; then
+  fetch() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+  fetch() { wget -qO "$2" "$1"; }
+else
+  die "curl or wget is required."
+fi
+
+# ------------------------------------------------------------------ install
+
+say ""
+say "${bold}screenless${reset} ${dim}— review your agents' overnight work by phone${reset}"
+say ""
+
+tmp="$(mktemp -d)"
+# Runs on failure too, so a half-downloaded tarball never survives the script.
+trap 'rm -rf "$tmp"' EXIT
+
+fetch "$BASE_URL/screenless.tar.gz" "$tmp/screenless.tar.gz" \
+  || die "could not download the CLI from $BASE_URL"
+
+# Only lib/ is replaced. The config file next to it holds a session token and
+# a verified phone number, and reinstalling is not a reason to lose either.
+rm -rf "$LIB_DIR"
+mkdir -p "$LIB_DIR" "$BIN_DIR"
+tar -xzf "$tmp/screenless.tar.gz" -C "$LIB_DIR" || die "the download was corrupt — try again"
+[ -f "$LIB_DIR/index.js" ] || die "the download was incomplete — try again"
+
+# A launcher rather than a symlink into lib/: this way `screenless` works even
+# where the shebang's `env node` resolves differently, and the path it execs is
+# fixed at install time.
+cat > "$BIN_DIR/screenless" <<EOF
+#!/bin/sh
+exec node "$LIB_DIR/index.js" "\$@"
+EOF
+chmod +x "$BIN_DIR/screenless"
+
+ok "installed to ${dim}$INSTALL_DIR${reset}"
+
+# --------------------------------------------------------------------- PATH
+
+on_path=0
+case ":$PATH:" in *":$BIN_DIR:"*) on_path=1 ;; esac
+
+if [ "$on_path" -eq 0 ]; then
+  # Written to the rc file for future shells; the current one is handled by the
+  # explicit export below, since a sourced rc cannot reach back into it.
+  line="export PATH=\"$BIN_DIR:\$PATH\""
+  case "${SHELL##*/}" in
+    zsh)  rc="$HOME/.zshrc" ;;
+    bash) if [ "$(uname -s)" = "Darwin" ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi ;;
+    fish) rc="$HOME/.config/fish/config.fish"; line="fish_add_path $BIN_DIR" ;;
+    *)    rc="" ;;
+  esac
+
+  if [ -n "$rc" ]; then
+    mkdir -p "$(dirname "$rc")"
+    if ! grep -qF "$BIN_DIR" "$rc" 2>/dev/null; then
+      printf '\n# screenless\n%s\n' "$line" >> "$rc"
+      ok "added to PATH in ${dim}$rc${reset}"
+    fi
+  else
+    say "  ${dim}add this to your shell profile:${reset} export PATH=\"$BIN_DIR:\$PATH\""
+  fi
+  export PATH="$BIN_DIR:$PATH"
+fi
+
+# -------------------------------------------------------------------- setup
+
+# Piped through bash, stdin is the script itself, so setup's prompts have to
+# read from the terminal directly. When there isn't one — CI, a Dockerfile,
+# someone's provisioning script — we stop here and say what comes next.
+if [ "${SCREENLESS_NO_SETUP:-}" = "1" ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then
+  say ""
+  say "Next: ${bold}screenless setup${reset} ${dim}— verify your number, start the 7-day trial${reset}"
+  say ""
+  exit 0
+fi
+
+say ""
+say "${bold}Setting up.${reset} ${dim}A code by SMS, then a card for the 7-day free trial.${reset}"
+say ""
+
+exec "$BIN_DIR/screenless" setup < /dev/tty

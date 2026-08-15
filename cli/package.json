@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "bundle": "npm run build && COPYFILE_DISABLE=1 tar -czf ../site/public/screenless.tar.gz -C dist --exclude='*.map' ."
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
