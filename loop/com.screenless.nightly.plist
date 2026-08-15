@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Runs the nightly loop at 03:00.
+
+  StartCalendarInterval is chosen over an interval timer for one property:
+  launchd remembers a calendar job it could not run because the machine was
+  asleep or off, and runs it as soon as the machine comes back. That is exactly
+  the behaviour wanted here — 03:00 if the laptop is on, otherwise first thing
+  when its owner opens it — and it is why nightly.sh has to be idempotent.
+
+  Install:
+    cp loop/com.screenless.nightly.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.screenless.nightly.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.screenless.nightly.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.screenless.nightly</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Edit this path if the repo lives elsewhere. -->
+    <string>/Users/admin/Desktop/oss/screenless/loop/nightly.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- Deliberately false. Loading the agent, or logging in, is not a night. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!--
+    A login shell's PATH is not a launchd job's PATH, and this run needs
+    `claude`, `screenless`, `node`, `gh` and `git`. Homebrew on Apple silicon
+    and Intel, the CLI's own launcher, and the usual system paths.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/admin/.screenless/bin:/Users/admin/.local/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/admin/.screenless/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/admin/.screenless/logs/launchd.err.log</string>
+
+  <!-- One run at a time. A wake during a run must not start a second. -->
+  <key>AbandonProcessGroup</key>
+  <false/>
+</dict>
+</plist>

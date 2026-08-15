@@ -21,7 +21,7 @@ thing to finish first.
 
 | Path | What it is |
 | --- | --- |
-| `SKILL.md` | The nightly loop. Claude Code follows this; it is the product. |
+| `../loop/SKILL.md` | The nightly loop. Claude Code follows this; it is the product. |
 | `bin/collect.mjs` | Deterministic facts from `git` and `gh`. Makes no judgements. |
 | `bin/render.mjs` | `edition.json` → HTML → PDF via headless Chrome. |
 | `lib/charts.mjs` | Dependency-free SVG charts, built for paper. |
@@ -52,7 +52,7 @@ whole design:
 - A model re-deriving line counts burns tokens and gets them wrong.
 - A script deciding what is *interesting* produces a paper nobody reads.
 
-So `collect.mjs` will never rank, and `SKILL.md` will never count.
+So `collect.mjs` will never rank, and `../loop/SKILL.md` will never count.
 
 ## Design constraints
 
@@ -76,3 +76,9 @@ Everything here follows from the output being paper:
   will be wrong for some; there is no override yet.
 - **No layout feedback.** The renderer cannot tell the author a page overflowed,
   so page-count discipline is currently a human check.
+
+## The loop lives elsewhere
+
+This folder is the toolkit: fact collection, the chart library, the print
+stylesheet and the renderer. The nightly run that uses it — and that also
+builds the morning call from the same reading — is [`../loop/SKILL.md`](../loop/SKILL.md).
