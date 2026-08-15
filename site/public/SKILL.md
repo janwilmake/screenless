@@ -24,9 +24,9 @@ Each project carries its own `.screenless.json` at its root:
 {
   "repo": ".",
   "tracker": "linear",
-  "trackerTeam": "Hyre Ops",
-  "ticketPrefix": "HYR2",
-  "appUrl": "http://localhost:5200",
+  "trackerTeam": "Platform",
+  "ticketPrefix": "PLAT",
+  "appUrl": "http://localhost:3000",
   "outDir": "~/screenless/press",
   "deliverTo": "you@example.com",
   "windowDays": 7

@@ -16,7 +16,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
-    "bundle": "npm run build && COPYFILE_DISABLE=1 tar -czf ../site/public/screenless.tar.gz -C dist --exclude='*.map' . && cp ../loop/SKILL.md ../site/public/SKILL.md"
+    "bundle": "npm run build && COPYFILE_DISABLE=1 tar -czf ../site/public/screenless.tar.gz -C dist --exclude='*.map' . && cp ../loop/SKILL.md ../site/public/SKILL.md && cp ../loop/nightly.sh ../site/public/nightly.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

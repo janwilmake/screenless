@@ -25,8 +25,6 @@
 
 - [ ] 30 min/day is sold on the pricing page; code counts 20 calls/hr and no minutes at all
 - [ ] No alerting when the cron sweep throws
-- [ ] `loop/SKILL.md` has a personal email + local path, in a public repo
-- [ ] launchd job never installed (`loop/README.md`)
 - [ ] No local `screenless` session on this machine — installer has never been run here
 
 ## Done

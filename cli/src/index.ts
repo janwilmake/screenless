@@ -315,7 +315,27 @@ async function setup(args: string[]): Promise<void> {
       console.log(c.dim(`\n  move it with `) + c.cyan("screenless settings --at 09:30"));
     }
 
-    console.log(`\nTry: ${c.cyan('screenless call "ask me how my week went"')}`);
+    // Offer the repo they are standing in. The installer runs from wherever
+    // they typed the curl, which for a developer is usually the project they
+    // actually want a paper about — and asking beats making them discover
+    // `screenless init` from the docs later.
+    const { existsSync } = await import("node:fs");
+    const { join, basename } = await import("node:path");
+    const cwd = process.cwd();
+
+    if (existsSync(join(cwd, ".git"))) {
+      const yes = (
+        await rl.question(`\nSet up the nightly loop for ${c.bold(basename(cwd))}? ${c.dim("Y/n")}: `)
+      ).trim().toLowerCase();
+      if (yes !== "n" && yes !== "no") {
+        await init([cwd]);
+        console.log(c.dim(`\n  edit .screenless.json — trackerTeam, ticketPrefix and deliverTo`));
+      }
+    } else {
+      console.log(`\n  ${c.dim("Not in a git repo. Run")} ${c.cyan("screenless init")} ${c.dim("inside the repo you want a paper about.")}`);
+    }
+
+    console.log(`\nTry: ${c.cyan('screenless test')} ${c.dim("— a demo call, right now")}`);
   } finally {
     rl.close();
   }

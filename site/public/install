@@ -20,6 +20,8 @@ readonly INSTALL_DIR="${SCREENLESS_INSTALL_DIR:-$HOME/.screenless}"
 readonly LIB_DIR="$INSTALL_DIR/lib"
 readonly BIN_DIR="$INSTALL_DIR/bin"
 readonly SKILL_DIR="${SCREENLESS_SKILL_DIR:-$HOME/.claude/skills/screenless}"
+readonly AGENT_LABEL="com.screenless.nightly"
+readonly AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
 readonly MIN_NODE=20
 
 # Colour only when a terminal is actually watching. Piped into a log, the
@@ -84,6 +86,7 @@ fetch "$BASE_URL/screenless.tar.gz" "$tmp/screenless.tar.gz" \
 # working CLI rather than fail the whole run.
 mkdir -p "$tmp/skill"
 fetch "$BASE_URL/SKILL.md" "$tmp/skill/SKILL.md" 2>/dev/null || rm -f "$tmp/skill/SKILL.md"
+fetch "$BASE_URL/nightly.sh" "$tmp/nightly.sh" 2>/dev/null || rm -f "$tmp/nightly.sh"
 
 # Only lib/ is replaced. The config file next to it holds a session token and
 # a verified phone number, and reinstalling is not a reason to lose either.
@@ -118,6 +121,65 @@ if [ -f "$tmp/skill/SKILL.md" ]; then
     say "  ${dim}nightly loop skill installed, but Claude Code was not found.${reset}"
     say "  ${dim}The paper and the call brief are written by it: https://claude.com/claude-code${reset}"
   fi
+fi
+
+# ------------------------------------------------------------ nightly job
+
+# The runner is installed next to the CLI, not run from a checkout: the launchd
+# job must survive the repo being moved, renamed or deleted, and a scheduled
+# task that depends on someone's Desktop layout is a task that silently stops.
+if [ -f "$tmp/nightly.sh" ]; then
+  cp "$tmp/nightly.sh" "$BIN_DIR/nightly.sh"
+  chmod +x "$BIN_DIR/nightly.sh"
+fi
+
+install_agent() {
+  [ "$(uname -s)" = "Darwin" ] || return 1
+  [ -f "$BIN_DIR/nightly.sh" ] || return 1
+  command -v launchctl >/dev/null 2>&1 || return 1
+
+  mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR/logs"
+
+  # StartCalendarInterval, not an interval timer: launchd re-runs a calendar job
+  # it missed because the machine was asleep, as soon as it wakes. That is the
+  # "03:00, or first thing when the laptop opens" behaviour, for free.
+  #
+  # PATH is spelled out because a launchd job inherits none of a login shell.
+  cat > "$AGENT_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$AGENT_LABEL</string>
+  <key>ProgramArguments</key><array><string>$BIN_DIR/nightly.sh</string></array>
+  <key>StartCalendarInterval</key><dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$BIN_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
+  </dict>
+  <key>StandardOutPath</key><string>$INSTALL_DIR/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>$INSTALL_DIR/logs/launchd.err.log</string>
+</dict>
+</plist>
+PLIST
+
+  # Reload rather than load, so reinstalling picks up a changed path.
+  launchctl unload "$AGENT_PLIST" >/dev/null 2>&1 || true
+  launchctl load "$AGENT_PLIST" >/dev/null 2>&1 || return 1
+  return 0
+}
+
+if [ "${SCREENLESS_NO_AGENT:-}" = "1" ]; then
+  say "  ${dim}skipping the nightly job (SCREENLESS_NO_AGENT=1)${reset}"
+elif install_agent; then
+  ok "nightly run scheduled for 03:00 ${dim}(and on wake, if the laptop was shut)${reset}"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  say "  ${dim}could not schedule the nightly run — see loop/README.md${reset}"
+else
+  say "  ${dim}on Linux, schedule $BIN_DIR/nightly.sh with a systemd timer (Persistent=true)${reset}"
 fi
 
 # --------------------------------------------------------------------- PATH
