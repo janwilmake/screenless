@@ -211,6 +211,30 @@ to be *said*, not read.
 End the brief with the wrap-up line: the assistant should say the transcript
 goes to their agent, and hang up.
 
+#### 5c. The decisions manifest
+
+Write `<outDir>/<date>.decisions.json` alongside the brief — one entry per
+decision you just asked for, in the same order:
+
+```json
+[
+  { "id": 1, "prs": [412, 418], "tickets": ["PLAT-501"],
+    "repo": "/absolute/path/to/repo",
+    "question": "land together today, or take their turn?",
+    "options": ["expedite both", "normal queue"] }
+]
+```
+
+This exists because of a tension in the brief itself. The brief is *spoken*, so
+it carries no pull request numbers — "the outreach proxy fix", never "PR 418".
+That is right for the ear and useless for the return leg, which has to know
+which pull request a decision was about. The manifest puts the identifiers
+back.
+
+Without it, applying a decision means guessing what "the second one" referred
+to, and a wrong guess merges the wrong code. Write it every time, even when
+there is one decision.
+
 Keep it under ~4000 characters — the Worker rejects more, and anything longer
 is not a nine-minute call.
 

@@ -3,7 +3,7 @@ import * as billing from "./billing";
 import * as schedule from "./schedule";
 import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
 import { session, sign, webhookToken, safeEqual, revokeSessions, tokenVersion } from "./auth";
-import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
+import { scheduleMail, sweepOutbox, sendEmailCode, sendTranscript, isEmail } from "./mail";
 
 export interface Env {
   CALLS: KVNamespace;
@@ -329,9 +329,34 @@ async function captureTranscript(env: Env, callId: string, record: CallRecord): 
     await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
 
     await telnyx.deleteConversation(env.TELNYX_API_KEY, conversationId).catch(() => {});
+    await mailTranscript(env, record, callId);
   } catch (err) {
     console.error("transcript capture failed", callId, (err as Error).message);
   }
+}
+
+/**
+ * Emails the transcript once the call ends.
+ *
+ * The collector on the user's machine is an optimisation, not the guarantee:
+ * it only runs when the laptop is awake, and the transcript is deleted after
+ * 24 hours. A laptop left shut over a weekend would otherwise lose a
+ * conversation the user actually had. This is the copy that survives that,
+ * and it costs one email per call.
+ */
+async function mailTranscript(env: Env, record: CallRecord, callId: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !record.transcript?.length) return;
+
+  const settings = await schedule.loadSettings(env, record.phone);
+  if (!settings.emailVerifiedAt || !settings.email) return;
+
+  const body = record.transcript
+    .map((l) => `${l.role === "assistant" ? "agent" : "you"}  ${l.text}`)
+    .join("\n\n");
+
+  await sendTranscript(env, settings.email, callId, body).catch((err) =>
+    console.error("transcript mail failed", callId, (err as Error).message),
+  );
 }
 
 type Lang = string;
@@ -814,6 +839,13 @@ export default {
         if (!s) return fail(401, "not authenticated");
         const latest = await env.CALLS.get(`last:${s.phone}`);
         if (!latest) return fail(404, "no calls yet");
+
+        // `since` is what makes a five-minute poll affordable: the collector
+        // asks "anything newer than the one I already acted on?" and almost
+        // always gets an empty 204 back. Without it every laptop would pull a
+        // full transcript 288 times a day to learn nothing.
+        if (url.searchParams.get("since") === latest) return new Response(null, { status: 204 });
+
         return await getCall(latest, req, env);
       }
 

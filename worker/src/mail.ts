@@ -94,6 +94,35 @@ export async function sendEmailCode(env: Env, to: string, code: string): Promise
   if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
 }
 
+/**
+ * Sends a finished call's transcript, so a decision survives a laptop that
+ * never wakes before the 24-hour retention window closes.
+ */
+export async function sendTranscript(
+  env: Env,
+  to: string,
+  callId: string,
+  body: string,
+): Promise<void> {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || "screenless <hello@screenless.sh>",
+      to: [to],
+      subject: "What you decided on this morning's call",
+      text:
+        `${body}\n\n---\n` +
+        "Your agent applies these automatically the next time your machine is awake.\n" +
+        `To apply them by hand: screenless apply --call ${callId}\n`,
+    }),
+  });
+  if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
+}
+
 export async function scheduleMail(
   body: unknown,
   env: Env,

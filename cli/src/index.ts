@@ -426,6 +426,91 @@ async function test(args: string[]): Promise<void> {
   await call([DEMO_BRIEF, ...args.filter((a) => a.startsWith("--"))]);
 }
 
+/* ---------------------------------------------------------------- collect */
+
+/**
+ * Local record of which call's decisions have already been acted on.
+ *
+ * Exactly one field, on purpose. An earlier design also tracked what the
+ * machine was *expecting*, which broke the moment a call arrived that nothing
+ * had scheduled — you ring the number back at two in the afternoon, and a
+ * collector waiting for the morning's call ignores it forever. "Newer than the
+ * last one I applied" needs no expectation and covers every case: scheduled,
+ * rung back, second call of the day, placed from another machine.
+ */
+interface LocalState {
+  applied?: string;
+}
+
+async function readState(): Promise<LocalState> {
+  const { readFile } = await import("node:fs/promises");
+  try {
+    return JSON.parse(await readFile(statePath(), "utf8")) as LocalState;
+  } catch {
+    return {};
+  }
+}
+
+async function writeState(next: LocalState): Promise<void> {
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  await mkdir(dirname(statePath()), { recursive: true, mode: 0o700 });
+  await writeFile(statePath(), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+}
+
+function statePath(): string {
+  return `${process.env.HOME}/.screenless/state.json`;
+}
+
+/**
+ * Is there a finished call whose decisions have not been acted on?
+ *
+ * Written to be driven by a script every few minutes, so the quiet path is the
+ * fast one: the Worker answers 204 when nothing is newer than what we have,
+ * and this exits 3 without allocating anything worth mentioning.
+ *
+ * Exit codes: 0 there is work, 3 there is not, 1 something broke.
+ */
+async function collect(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) exit(3);
+
+  const state = await readState();
+  const since = state.applied ? `?since=${encodeURIComponent(state.applied)}` : "";
+
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.apiUrl}/calls/latest${since}`, {
+      headers: { Authorization: `Bearer ${cfg.token}` },
+    });
+  } catch {
+    // Offline is not an error worth waking anyone for; the next tick retries.
+    exit(3);
+  }
+
+  if (res.status === 204 || res.status === 404) exit(3);
+  if (!res.ok) exit(3);
+
+  const call = (await res.json()) as CallStatus;
+  if (!call.done || call.callId === state.applied) exit(3);
+
+  const out = { ready: true, callId: call.callId, status: call.status, transcript: call.transcript ?? [] };
+  console.log(args.includes("--json") ? JSON.stringify(out, null, 2) : call.callId);
+}
+
+/**
+ * Marks a call's decisions as acted on.
+ *
+ * Separate from `collect` so the thing in between — the agent that actually
+ * applies them — can fail without the call being written off as done.
+ */
+async function applied(args: string[]): Promise<void> {
+  const callId = args.find((a) => !a.startsWith("--"));
+  if (!callId) die("usage: screenless applied <callId>");
+  await writeState({ ...(await readState()), applied: callId });
+  console.log(`${c.green("✓")} ${callId} marked applied`);
+}
+
 /* ---------------------------------------------------------------- settings */
 
 interface Settings {
@@ -794,6 +879,8 @@ ${c.bold("Usage")}
   screenless call "<prompt>" [options]       call now, or park it for later
   screenless test                            ring me now with a demo call
   screenless transcript [--wait] [--json]    what was decided on the last call
+  screenless collect [--json]                is there a call not yet acted on?
+  screenless applied <callId>                mark a call's decisions as done
   screenless settings [--at HH:MM]           when the morning call goes out
   screenless init [path]                     configure a repo for the nightly loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
@@ -857,6 +944,8 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   call,
   test,
   transcript,
+  collect,
+  applied,
   settings,
   init,
   mail,

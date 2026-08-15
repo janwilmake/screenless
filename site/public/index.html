@@ -3,169 +3,150 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screenless — understand what your agents built last night</title>
-<meta name="description" content="A morning call and a printed paper that tell you what your coding agents built overnight, and take the decisions they are blocked on. For senior engineers running agents at scale.">
+<title>screenless — your agents wrote the code. You still make the calls.</title>
+<meta name="description" content="A morning phone call that walks the pull requests your coding agents opened overnight and takes your decisions on each. Your own agent applies them. Free nightly paper; $99/month for the call.">
 <meta property="og:title" content="screenless">
-<meta property="og:description" content="Understand what your agents built last night without opening a laptop.">
+<meta property="og:description" content="Your agents wrote the code. You still make the calls — over the phone, before you open a laptop.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
 <style>
-  :root {
-    --ink:#14110f; --spot:#b4341f; --rule:#d6cfc7; --muted:#6f665e;
-    --paper:#fdfcfa; --wash:#f4f0eb;
+  :root{
+    --ink:#14110f; --spot:#b4341f; --rule:#ded7cf; --muted:#6f665e; --soft:#8d837a;
+    --paper:#fdfcfa; --wash:#f5f1ec;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
     --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
-  /* This page commits to paper. There is no dark mode on purpose — the
-     brand is ink on newsprint, and a dark variant would undo the idea. */
+  /* Ink on newsprint, and no dark mode on purpose: the brand is a printed
+     thing, and a dark variant would quietly undo the whole idea. */
   *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{
-    margin:0;background:var(--paper);color:var(--ink);
-    font-family:var(--serif);font-size:18px;line-height:1.5;
-    -webkit-font-smoothing:antialiased;
-  }
-  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
-  a{color:var(--ink)}
-  h1,h2,h3{font-weight:400;letter-spacing:-.015em;margin:0}
-  .rule{height:3px;background:var(--ink)}
-  .hair{height:1px;background:var(--rule)}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font-family:var(--serif);font-size:19px;line-height:1.55;
+       -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:900px;margin:0 auto;padding:0 28px}
+  a{color:var(--ink);text-underline-offset:3px}
+  h1,h2,h3{font-weight:400;letter-spacing:-.022em;margin:0;line-height:1.05}
+  p{margin:0}
 
-  /* ---------------------------------------------------------- masthead */
-  .top{display:flex;justify-content:space-between;align-items:baseline;
-       padding:14px 0;border-bottom:1px solid var(--rule);gap:16px;flex-wrap:wrap}
-  .brand{font-family:var(--sans);font-weight:700;letter-spacing:.2em;
-         text-transform:uppercase;font-size:14px}
-  .top nav{font-family:var(--sans);font-size:13px;color:var(--muted);
-           display:flex;gap:20px;flex-wrap:wrap}
+  /* ------------------------------------------------------------- masthead */
+  .rule{height:4px;background:var(--ink)}
+  .top{display:flex;justify-content:space-between;align-items:center;
+       padding:18px 0 16px;font-family:var(--sans);font-size:13px}
+  .brand{font-weight:700;letter-spacing:.24em;text-transform:uppercase;
+         font-size:13px;text-decoration:none}
+  .top nav{display:flex;gap:22px;color:var(--muted)}
   .top nav a{color:var(--muted);text-decoration:none}
   .top nav a:hover{color:var(--spot)}
 
-  /* -------------------------------------------------------------- hero */
-  .hero{padding:56px 0 40px;border-bottom:1px solid var(--rule)}
-  .hero h1{font-size:clamp(38px,6.2vw,68px);line-height:1.04;max-width:16ch}
-  .hero .stand{font-size:clamp(18px,2.2vw,23px);color:var(--muted);
-               max-width:56ch;margin:22px 0 0}
-  .hero .who{font-family:var(--sans);font-size:13px;text-transform:uppercase;
-             letter-spacing:.12em;color:var(--spot);margin:0 0 18px;font-weight:700}
+  /* ----------------------------------------------------------------- hero */
+  .hero{padding:96px 0 84px;text-align:center}
+  .hero h1{font-size:clamp(44px,7.4vw,86px);max-width:15ch;margin:0 auto}
+  .hero .stand{font-size:clamp(19px,2.2vw,24px);color:var(--muted);
+               max-width:46ch;margin:30px auto 0;line-height:1.45}
 
-  /* --------------------------------------------------- the install command */
-  /* The one thing on this page anyone is meant to do. Ink block on newsprint,
-     so it reads as a stamp rather than as another paragraph. */
-  .cmd{display:flex;align-items:center;gap:14px;margin:30px 0 0;max-width:64ch;
-       background:var(--ink);padding:15px 18px;flex-wrap:wrap}
+  /* The one thing anyone is meant to do. A stamp, not a paragraph. */
+  .cmd{display:inline-flex;align-items:center;gap:18px;margin:44px auto 0;
+       background:var(--ink);padding:16px 20px;text-align:left;max-width:100%}
   .cmd code{font-family:var(--mono);font-size:15px;color:var(--paper);
-            flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
-  /* The prompt is scenery — dimmed so nobody copies the dollar sign. */
-  .cmd code .p{color:#8d837a;user-select:none}
-  .cmd button{font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;
-              text-transform:uppercase;letter-spacing:.1em;background:transparent;
-              color:var(--paper);border:1px solid rgba(253,252,250,.4);padding:7px 12px}
-  .cmd button:hover{border-color:var(--paper);background:rgba(253,252,250,.08)}
-  .cmd-note{font-family:var(--sans);font-size:13px;color:var(--muted);margin:12px 0 0}
-  .cmd-note b{color:var(--ink);font-weight:700}
-  .cta .cmd{background:var(--paper);margin-left:auto;margin-right:auto;text-align:left}
-  .cta .cmd code{color:var(--ink)}
-  .cta .cmd button{color:var(--ink);border-color:rgba(20,17,15,.4)}
-  .cta .cmd button:hover{border-color:var(--ink);background:rgba(20,17,15,.06)}
+            white-space:nowrap;overflow-x:auto}
+  .cmd code .p{color:var(--soft);user-select:none}
+  .cmd button{font-family:var(--sans);font-size:10px;font-weight:700;cursor:pointer;
+              text-transform:uppercase;letter-spacing:.12em;background:transparent;
+              color:var(--paper);border:1px solid rgba(253,252,250,.35);
+              padding:8px 12px;flex-shrink:0}
+  .cmd button:hover{border-color:var(--paper);background:rgba(253,252,250,.1)}
+  .fine{font-family:var(--sans);font-size:13px;color:var(--muted);margin:18px 0 0}
 
-  /* ------------------------------------------------------------ layout */
-  section{padding:52px 0;border-bottom:1px solid var(--rule)}
-  .kicker{font-family:var(--sans);font-size:12px;font-weight:700;
-          text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
-          margin:0 0 14px}
-  h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;max-width:22ch}
-  .lede{font-size:19px;color:var(--muted);max-width:60ch;margin:16px 0 0}
+  /* -------------------------------------------------------------- section */
+  section{padding:84px 0;border-top:1px solid var(--rule)}
+  .kicker{font-family:var(--sans);font-size:11px;font-weight:700;
+          text-transform:uppercase;letter-spacing:.18em;color:var(--spot);
+          margin:0 0 18px}
+  h2{font-size:clamp(30px,4.2vw,46px);max-width:19ch}
+  .lede{font-size:20px;color:var(--muted);max-width:52ch;margin:20px 0 0}
 
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:36px;
-       border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-  .two > div{padding:26px 28px 30px}
-  .two > div:first-child{border-right:1px solid var(--rule)}
-  .two h3{font-size:25px;margin-bottom:4px}
-  .two .sub{font-family:var(--mono);font-size:12px;color:var(--spot);
-            margin-bottom:14px;letter-spacing:.02em}
-  .two p{margin:0 0 12px;font-size:16.5px}
-  .two ul{margin:14px 0 0;padding-left:18px;font-size:16px;color:var(--muted)}
-  .two li{margin-bottom:7px}
+  /* ----------------------------------------------------- the call, spoken */
+  /* Set as speech rather than a chat log, because that is what it is: one
+     voice talking, that you can cut into. A bubble UI would be a lie. */
+  .call{margin-top:52px;border-left:3px solid var(--ink);padding:4px 0 4px 30px}
+  .call p{font-size:21px;line-height:1.5;margin:0 0 26px;max-width:56ch}
+  .call p:last-child{margin-bottom:0}
+  .call .you{color:var(--spot);font-style:italic}
+  .call .you::before{content:"— "}
+  .meta{font-family:var(--mono);font-size:12px;color:var(--soft);
+        margin:34px 0 0;padding-top:14px;border-top:1px solid var(--rule)}
 
-  /* ---------------------------------------------------------- terminal */
-  .term{background:var(--ink);color:#e8e2db;font-family:var(--mono);
-        font-size:13.5px;line-height:1.65;padding:22px 24px;overflow-x:auto;
-        margin-top:34px;border-radius:3px}
-  .term .u{color:#f0b7ab}
-  .term .a{color:#e8e2db}
-  .term .d{color:#8d837a}
-  .term .k{color:#e0705c}
-  .term b{font-weight:700;color:#fff}
+  /* ---------------------------------------------------------------- steps */
+  .steps{margin-top:52px}
+  .step{display:grid;grid-template-columns:74px 1fr;gap:20px;
+        padding:26px 0;border-top:1px solid var(--rule);align-items:baseline}
+  .step:last-child{border-bottom:1px solid var(--rule)}
+  .step .n{font-family:var(--mono);font-size:13px;color:var(--spot)}
+  .step h3{font-size:22px;margin:0 0 6px}
+  .step p{color:var(--muted);font-size:17px;max-width:52ch}
 
-  /* ------------------------------------------------------------- paper */
-  .sheet{background:#fff;border:1px solid var(--rule);padding:26px 28px 30px;
-         margin-top:34px;box-shadow:0 1px 0 var(--rule),4px 6px 0 -2px var(--wash)}
-  .sheet .sheet-top{display:flex;justify-content:space-between;
-                    align-items:baseline;border-bottom:1px solid var(--rule);
-                    padding-bottom:8px;margin-bottom:16px}
-  .sheet .sheet-name{font-family:var(--sans);font-weight:700;font-size:11px;
-                     letter-spacing:.2em;text-transform:uppercase}
-  .sheet .sheet-meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
-  .sheet h4{font-size:27px;font-weight:400;margin:0 0 10px;max-width:20ch;
-            letter-spacing:-.015em}
+  /* ---------------------------------------------------------------- paper */
+  .sheet{background:#fff;border:1px solid var(--rule);padding:30px 32px 34px;
+         margin-top:52px;box-shadow:5px 7px 0 -2px var(--wash)}
+  .sheet-top{display:flex;justify-content:space-between;align-items:baseline;
+             border-bottom:1px solid var(--rule);padding-bottom:10px;margin-bottom:20px}
+  .sheet-name{font-family:var(--sans);font-weight:700;font-size:11px;
+              letter-spacing:.22em;text-transform:uppercase}
+  .sheet-meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sheet h4{font-size:30px;font-weight:400;margin:0 0 12px;max-width:20ch;
+            letter-spacing:-.02em;line-height:1.1}
+  .sheet .sub{color:var(--muted);font-size:17px;margin:0 0 22px;max-width:46ch}
   .stats{display:grid;grid-template-columns:repeat(4,1fr);
-         border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
-         margin:18px 0 20px}
-  .stats div{padding:10px 12px;border-right:1px solid var(--rule)}
+         border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .stats div{padding:14px 14px 14px 0;border-right:1px solid var(--rule)}
   .stats div:last-child{border-right:0}
-  .stats .v{font-family:var(--sans);font-size:24px;font-weight:700;line-height:1}
+  .stats .v{font-family:var(--sans);font-size:26px;font-weight:700;line-height:1}
   .stats .spot .v{color:var(--spot)}
   .stats .l{font-family:var(--sans);font-size:10px;text-transform:uppercase;
-            letter-spacing:.1em;color:var(--muted);margin-top:5px}
-  .cap{font-family:var(--sans);font-size:12.5px;color:var(--muted);
-       border-top:1px solid var(--rule);padding-top:8px;margin-top:10px}
+            letter-spacing:.1em;color:var(--muted);margin-top:6px}
+  .cap{font-family:var(--sans);font-size:13px;color:var(--muted);margin-top:18px}
 
-  /* ------------------------------------------------------------ instal */
-  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:34px}
-  .grid3 h3{font-size:19px;margin-bottom:8px}
-  .grid3 p{font-size:16px;color:var(--muted);margin:0}
-  .num{font-family:var(--mono);font-size:12px;color:var(--spot);
-       display:block;margin-bottom:8px}
-
-  /* ------------------------------------------------------------- price */
-  .price{display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap;margin-top:30px}
-  .price .amt{font-family:var(--sans);font-size:64px;font-weight:700;
-              line-height:1;letter-spacing:-.03em}
-  .price .per{font-family:var(--sans);font-size:14px;color:var(--muted);
-              margin-top:8px}
-  .price ul{margin:0;padding-left:18px;font-size:16.5px;flex:1;min-width:260px}
+  /* ---------------------------------------------------------------- price */
+  .price{display:grid;grid-template-columns:1fr 1fr;margin-top:52px;
+         border:1px solid var(--rule)}
+  .price > div{padding:34px 32px}
+  .price > div:first-child{border-right:1px solid var(--rule)}
+  .price .what{font-family:var(--sans);font-size:11px;font-weight:700;
+               letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .price .amt{font-size:52px;letter-spacing:-.03em;margin:14px 0 4px;line-height:1}
+  .price .per{font-family:var(--sans);font-size:13px;color:var(--muted)}
+  .price ul{margin:22px 0 0;padding-left:18px;font-size:16.5px;color:var(--muted)}
   .price li{margin-bottom:8px}
 
-  /* --------------------------------------------------------------- cta */
-  .cta{background:var(--ink);color:var(--paper);padding:44px 0;border:0}
-  .cta h2{color:var(--paper);max-width:20ch}
-  .cta p{color:#b9b0a8;max-width:52ch;font-size:18px}
-  .btn{display:inline-block;background:var(--spot);color:#fff;
-       font-family:var(--sans);font-weight:700;font-size:15px;
-       padding:14px 26px;text-decoration:none;margin-top:22px;border-radius:3px}
-  .btn:hover{background:#982a17}
-  .cta .fine{font-family:var(--sans);font-size:13px;color:#8d837a;margin-top:16px}
+  /* ---------------------------------------------------------------- close */
+  .close{background:var(--ink);color:var(--paper);padding:92px 0;text-align:center;
+         border:0}
+  .close h2{color:var(--paper);margin:0 auto;max-width:16ch}
+  .close .stand{color:#b9b0a8;max-width:44ch;margin:24px auto 0;font-size:19px}
+  .close .cmd{background:var(--paper)}
+  .close .cmd code{color:var(--ink)}
+  .close .cmd button{color:var(--ink);border-color:rgba(20,17,15,.3)}
+  .close .cmd button:hover{border-color:var(--ink);background:rgba(20,17,15,.07)}
+  .close .fine{color:var(--soft);max-width:52ch;margin:22px auto 0}
 
-  footer{padding:30px 0 46px;font-family:var(--sans);font-size:13px;
-         color:var(--muted);display:flex;justify-content:space-between;
-         gap:16px;flex-wrap:wrap}
+  footer{font-family:var(--sans);font-size:13px;color:var(--muted);
+         padding:26px 0;display:flex;justify-content:space-between;gap:18px;
+         flex-wrap:wrap}
   footer a{color:var(--muted)}
 
-  .note{font-family:var(--sans);font-size:13.5px;color:var(--muted);
-        border-left:3px solid var(--spot);padding:10px 14px;
-        background:var(--wash);margin-top:26px;max-width:64ch}
-
-  @media (max-width:760px){
-    body{font-size:17px}
-    .two{grid-template-columns:1fr}
-    .two > div:first-child{border-right:0;border-bottom:1px solid var(--rule)}
-    .grid3{grid-template-columns:1fr;gap:22px}
+  @media(max-width:720px){
+    body{font-size:18px}
+    .hero{padding:64px 0 56px}
+    section{padding:60px 0}
+    .price{grid-template-columns:1fr}
+    .price > div:first-child{border-right:0;border-bottom:1px solid var(--rule)}
     .stats{grid-template-columns:repeat(2,1fr)}
     .stats div:nth-child(2){border-right:0}
-    .stats div:nth-child(1),.stats div:nth-child(2){border-bottom:1px solid var(--rule)}
+    .call{padding-left:20px}
+    .cmd{width:100%}
+    .step{grid-template-columns:1fr;gap:6px}
   }
 </style>
 </head>
@@ -174,260 +155,191 @@
 <div class="rule"></div>
 <div class="wrap">
   <div class="top">
-    <span class="brand">screenless</span>
+    <a class="brand" href="/">screenless</a>
     <nav>
-      <a href="#rounds">the call</a>
-      <a href="#press">the paper</a>
-      <a href="#install">how it installs</a>
+      <a href="#call">the call</a>
+      <a href="#paper">the paper</a>
+      <a href="#how">how</a>
       <a href="#price">price</a>
-      <a href="https://github.com/janwilmake/screenless">source</a>
     </nav>
   </div>
 
   <header class="hero">
-    <p class="who">for senior engineers running coding agents</p>
-    <h1>Understand what your agents built last night.</h1>
+    <h1>Your agents wrote the code. You still make the calls.</h1>
     <p class="stand">
-      Your agents turn tickets into pull requests overnight. Someone still has to
-      make the calls they can't — scope, priority, whether this belongs in the
-      release. That costs an hour at a screen before coffee. It doesn't need a
-      screen.
+      So make them on the phone, before you open a laptop. One call, six
+      decisions, nine minutes.
     </p>
 
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
-    <p class="cmd-note">
-      macOS or Linux, Node 20+. Installs the CLI and verifies your number by
-      SMS. <b>The nightly paper is free.</b> The morning call is $99/month after
-      a 7-day trial — card up front, cancel from the terminal. Ten languages,
-      most countries.
-    </p>
+    <p class="fine">macOS or Linux · Node 20+ · the nightly paper is free</p>
   </header>
 
-  <section>
-    <p class="kicker">two surfaces, one idea</p>
-    <h2>A call you can interrupt, and a paper you can print.</h2>
+  <section id="call">
+    <p class="kicker">the call</p>
+    <h2>It reads everything. It asks about almost nothing.</h2>
     <p class="lede">
-      Paper and a phone call are the only two media in this workflow that aren't
-      a screen. One asks you to decide; the other asks nothing at all.
+      Your agents opened thirty-five pull requests last night and recorded a
+      hundred and ninety-three decisions they made on your behalf. Five of them
+      actually need you. Finding those five is the product.
     </p>
 
-    <div class="two">
-      <div id="rounds">
-        <h3>rounds</h3>
-        <div class="sub">the morning call · 30 min</div>
-        <p>
-          Clinical rounds for your pull requests. It walks the queue case by
-          case and takes your decision on each. It changes nothing itself —
-          your own agent applies the decisions once you've hung up.
-        </p>
-        <ul>
-          <li>Interruptible — cut in and ask why</li>
-          <li>Decline it and ring back — same brief, same conversation</li>
-          <li>Hangs up when the queue is drained</li>
-          <li>Routes anything that genuinely needs your eyes</li>
-        </ul>
-      </div>
-      <div id="press">
-        <h3>press</h3>
-        <div class="sub">the daily paper · 06:00</div>
-        <p>
-          A printable PDF in your inbox when you wake up. Almost all picture,
-          almost no text. Built to be read with coffee, not skimmed on a phone.
-        </p>
-        <ul>
-          <li>One page per ticket in flight</li>
-          <li>Real screenshots of the surfaces they touch</li>
-          <li>A product map — what's growing, what's neglected</li>
-          <li>Scheduled to land at your wake-up time</li>
-        </ul>
-      </div>
+    <div class="call">
+      <p>
+        Good morning. Thirty-five pull requests overnight, and every one says no
+        human has read it. I have five that genuinely need you — the paper has
+        the rest.
+      </p>
+      <p>
+        First, and this is the one I wouldn't leave. Two open pull requests fix
+        the same permissions bug, and they edit the same few lines, so they
+        conflict. The second one's own notes say the hole stays open until the
+        first lands. Do you want them landed together today, ahead of the queue,
+        or do they take their turn?
+      </p>
+      <p class="you">Together. And check whether it ever reached production.</p>
+      <p>
+        Noted. Second — the lint cleanup got you to zero errors, so the CI gate
+        can finally land. But it got part of the way there by downgrading a
+        hundred accessibility violations to warnings, and your own repo rules
+        say don't disable those, fix them. The agent flagged this as the call it
+        was least comfortable making.
+      </p>
+      <p class="you">Wait. Which ones did it downgrade?</p>
+      <p>Colour contrast and missing labels, mostly. None of the keyboard ones.</p>
+      <p class="you">Then fix them first. The gate can wait.</p>
+      <p>
+        That's five. One I couldn't settle for you: whether that permissions bug
+        ever reached production — that needs your eyes on the logs. Your
+        transcript goes to your agent, which is what actually merges and
+        comments. I don't touch anything.
+      </p>
     </div>
+
+    <p class="meta">
+      ✓ 6 decisions · 8m41s · nothing changed yet — your own loop applies it,
+      on your machine, with your access
+    </p>
   </section>
 
-  <section>
-    <p class="kicker">rounds</p>
-    <h2>It asks the questions. Your own agent does the work.</h2>
-
-    <div class="term">
-<span class="d">03:12</span> <b>screenless call "$(claude -p 'brief me on tonight's PRs')" --at</b>
-<span class="d">✓ parked — calling +316······· at 07:00 · 14 PRs open, 6 need you</span>
-
-<span class="d">07:00</span>
-<span class="k">agent</span>  Morning. Six decisions, about nine minutes. First one:
-       HYR2-441 adds a `notes` field to candidates. The agent
-       put it in a JSONB column. Separate table or leave it?
-<span class="u">you</span>    What else reads it?
-<span class="k">agent</span>  Nothing yet. It's write-only from the intake form.
-<span class="u">you</span>    Leave it. Revisit when something queries it.
-<span class="k">agent</span>  Got it — JSONB stays, revisit on first read. Next:
-       HYR2-448 changes the default page size from 25 to 100 —
-<span class="u">you</span>    Wait, why is that in a ticket about export?
-<span class="k">agent</span>  It isn't scoped there. Split it out, or leave it?
-<span class="u">you</span>    Split it, and hold the export PR until that's gone.
-
-<span class="d">✓ 6 decisions · 8m41s · nothing changed yet</span>
-
-<span class="d">07:09</span> <b>screenless transcript --json | claude -p "apply these"</b>
-<span class="d">✓ 4 merged · 1 split · 1 comment · 1 left for your eyes</span>
-    </div>
-
-    <div class="note">
-      Note where the work happens. The voice on the phone has no tools and no
-      credentials — it collects decisions and hangs up. Your loop, on your
-      machine, is what merges and comments, with the access you already gave it.
-      And one decision couldn't be made by voice: it said so, instead of
-      pressing you for an answer while you're walking the dog.
-    </div>
-  </section>
-
-  <section>
-    <p class="kicker">press</p>
-    <h2>A newspaper about your own product, printed every night.</h2>
+  <section id="paper">
+    <p class="kicker">the paper</p>
+    <h2>And a newspaper about your own product, every night.</h2>
     <p class="lede">
-      Not a changelog. The goal is that reading it makes you understand your
-      product better than you did yesterday — the thing that quietly gets lost
-      when agents write most of the code.
+      Not a changelog. A deep dive on how one part of your product actually
+      works today, built by reading the code — so a month away doesn't cost you
+      the thread. Free, forever.
     </p>
 
     <div class="sheet" aria-label="Example page from the daily paper">
       <div class="sheet-top">
         <span class="sheet-name">screenless</span>
-        <span class="sheet-meta">hyre · 2026-08-15</span>
+        <span class="sheet-meta">2026-08-15 · edition 41</span>
       </div>
       <h4>Matching moved to the centre of the product this week</h4>
+      <p class="sub">
+        Six of nine merged pull requests touched matching or the sync around it.
+        Nothing has been written to the calendar layer in five weeks.
+      </p>
       <div class="stats">
-        <div><div class="v">14</div><div class="l">open PRs</div></div>
-        <div class="spot"><div class="v">6</div><div class="l">need you</div></div>
-        <div><div class="v">9</div><div class="l">merged, 7d</div></div>
-        <div><div class="v">63</div><div class="l">commits, 7d</div></div>
+        <div><div class="v">38</div><div class="l">open PRs</div></div>
+        <div class="spot"><div class="v">5</div><div class="l">need you</div></div>
+        <div><div class="v">171</div><div class="l">merged, 7d</div></div>
+        <div><div class="v">36k</div><div class="l">lines waiting</div></div>
       </div>
-
-      <svg viewBox="0 0 620 250" width="100%" role="img" aria-label="Treemap of codebase composition">
-        <rect x="0" y="0" width="248" height="250" fill="#2b2521" stroke="#fff" stroke-width="1.5"/>
-        <text x="6" y="16" font-size="11" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">app/routes</text>
-        <text x="6" y="29" font-size="9" fill="#eee" font-family="Helvetica,Arial,sans-serif">184</text>
-        <rect x="248" y="0" width="322" height="142" fill="#5c534b" stroke="#fff" stroke-width="1.5"/>
-        <text x="254" y="16" font-size="11" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">app/components</text>
-        <text x="254" y="29" font-size="9" fill="#eee" font-family="Helvetica,Arial,sans-serif">142</text>
-        <rect x="248" y="142" width="322" height="108" fill="#8d837a" stroke="#fff" stroke-width="1.5"/>
-        <text x="254" y="158" font-size="11" font-weight="600" fill="#14110f" font-family="Helvetica,Arial,sans-serif">app/lib</text>
-        <text x="254" y="171" font-size="9" fill="#3a332e" font-family="Helvetica,Arial,sans-serif">96</text>
-        <rect x="570" y="0" width="50" height="160" fill="#b4341f" stroke="#fff" stroke-width="1.5"/>
-        <text x="575" y="16" font-size="10" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">services</text>
-        <rect x="570" y="160" width="50" height="50" fill="#2b2521" stroke="#fff" stroke-width="1.5"/>
-        <rect x="570" y="210" width="50" height="40" fill="#b9b0a8" stroke="#fff" stroke-width="1.5"/>
-      </svg>
-      <div class="cap">
-        app/services is highlighted because it absorbed most of this week's change
-        despite being a fifth the size of app/routes.
-      </div>
+      <p class="cap">
+        Printable, mostly picture, and short enough to finish with one coffee.
+      </p>
     </div>
   </section>
 
-  <section id="install">
-    <p class="kicker">how it installs</p>
-    <h2>It runs on your machine, in a nightly loop, through Claude Code.</h2>
-    <p class="lede">
-      That is the whole integration story. There is no OAuth app to approve and
-      no integration matrix to wait for.
-    </p>
+  <section id="how">
+    <p class="kicker">how it works</p>
+    <h2>It runs on your machine. That is the whole trick.</h2>
 
-    <div class="cmd">
-      <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
-      <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
-    </div>
-    <p class="cmd-note">
-      One command, and it finishes the job: the CLI lands in
-      <code>~/.screenless</code>, then it asks for your number, texts you a
-      code, and opens Stripe for the trial. Nothing is installed system-wide and
-      nothing touches your Node setup — if Node 20+ isn't there, it says so and
-      stops. Read it first if you'd rather:
-      <a href="/install">screenless.sh/install</a>.
-    </p>
-    <p class="cmd-note">
-      It calls at <b>08:00</b> by default; <code>screenless settings --at 09:30</code>
-      moves it. Your timezone is read from the machine you install on, so there
-      is nothing to configure and travelling fixes itself. Decline the call and
-      ring the number back whenever suits — it picks up the same brief,
-      mid-morning or on the train.
-    </p>
-
-    <div class="grid3">
-      <div>
-        <span class="num">01</span>
-        <h3>Your MCPs are the integrations</h3>
-        <p>
-          Linear, GitHub, Slack, your ATS — whatever you've already connected, it
-          can already read. Nothing new to grant.
-        </p>
+    <div class="steps">
+      <div class="step">
+        <span class="n">03:00</span>
+        <div>
+          <h3>Your agent reads the night</h3>
+          <p>
+            Through the MCPs you already connected — your tracker, your repo,
+            your browser. Nothing new to grant, and your code never leaves.
+          </p>
+        </div>
       </div>
-      <div>
-        <span class="num">02</span>
-        <h3>Your browser is the camera</h3>
-        <p>
-          The paper's screenshots come from your real app in your real session,
-          already logged in. A hosted service can't do that without credentials
-          you shouldn't hand over.
-        </p>
+      <div class="step">
+        <span class="n">08:00</span>
+        <div>
+          <h3>The phone rings</h3>
+          <p>
+            Interruptible, in ten languages, and it hangs up when the queue is
+            drained. Decline it and ring back whenever suits — same brief,
+            same conversation.
+          </p>
+        </div>
       </div>
-      <div>
-        <span class="num">03</span>
-        <h3>Your subscription is the model</h3>
-        <p>
-          It runs on the Claude subscription you already pay for. Nothing is
-          metered per token, and nothing leaves your machine but the call and
-          the email.
-        </p>
+      <div class="step">
+        <span class="n">08:09</span>
+        <div>
+          <h3>Your agent does the work</h3>
+          <p>
+            The voice has no tools and no credentials. It collects decisions and
+            hangs up; your own loop merges, comments and closes, with the access
+            you already gave it.
+          </p>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="price">
     <p class="kicker">price</p>
-    <h2>One plan, priced against the hour it gives back.</h2>
+    <h2>The paper is free. The call is the product.</h2>
+
     <div class="price">
       <div>
-        <div class="amt">$99</div>
-        <div class="per">per month for the call · the paper is free</div>
+        <div class="what">the paper</div>
+        <div class="amt">Free</div>
+        <div class="per">no card, no trial</div>
+        <ul>
+          <li>A nightly edition about your own product</li>
+          <li>Deep dive, schemas, and what isn't moving</li>
+          <li>Install tonight, read it tomorrow</li>
+        </ul>
       </div>
-      <ul>
-        <li><b>The daily paper is free</b> — no card, no trial, install and it runs tonight</li>
-        <li>7-day free trial on the call — card up front, cancel before day 8</li>
-        <li>Up to 30 minutes of call a day — it hangs up early when the queue is short</li>
-        <li>The daily paper, scheduled to your wake-up time</li>
-        <li>Unlimited repositories on one machine</li>
-        <li>Bring your own Claude subscription</li>
-      </ul>
-    </div>
-    <div class="note">
-      Telephony is a real cost, not a rounding error, so the call is sold with a
-      minute ceiling rather than as “unlimited.” We'd rather quote a number that
-      survives contact with a heavy user.
+      <div>
+        <div class="what">the call</div>
+        <div class="amt">$99</div>
+        <div class="per">per month · 7 days free</div>
+        <ul>
+          <li>Up to 30 minutes a day — usually ten</li>
+          <li>Ring the number back any time</li>
+          <li>Cancel from the terminal, one command</li>
+        </ul>
+      </div>
     </div>
   </section>
 </div>
 
-<section class="cta">
+<section class="close">
   <div class="wrap">
     <h2>Take tomorrow's call.</h2>
-    <p>
-      One command installs it, verifies your number, and asks when you want to
-      be called. Seven days free.
+    <p class="stand">
+      One command. It installs, verifies your number, and asks what time you
+      want to be woken up to.
     </p>
-
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
-
     <p class="fine">
-      Early, and we'd rather say so: the telephony works, the paper renders, and
-      the part that reads your pull requests is being built now. The trial is
-      seven days precisely so you can find that out before you pay for it —
-      <code>screenless billing --manage</code> cancels in one click.
+      Early, and we'd rather say it: the telephony works and the paper ships
+      nightly. The part that reads your pull requests is being built now, with
+      the first fifty people. Your price is locked for as long as you stay.
     </p>
   </div>
 </section>
@@ -435,20 +347,21 @@
 <div class="wrap">
   <footer>
     <span>screenless — a call and a paper for people whose agents write the code</span>
-    <span><a href="/terms">terms</a> · <a href="/privacy">privacy</a> · <a href="https://github.com/janwilmake/screenless">github</a></span>
+    <span>
+      <a href="/terms">terms</a> ·
+      <a href="/privacy">privacy</a> ·
+      <a href="mailto:hello@screenless.sh">hello@screenless.sh</a> ·
+      <a href="https://github.com/janwilmake/screenless">github</a>
+    </span>
   </footer>
 </div>
 
 <script>
-  // The only script on the page. Copy-to-clipboard for the install command,
-  // because the alternative is a triple-click that also grabs the prompt.
   document.querySelectorAll("button[data-copy]").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var restore = function () { btn.textContent = "copy"; };
       navigator.clipboard.writeText(btn.dataset.copy).then(
         function () { btn.textContent = "copied"; setTimeout(restore, 1600); },
-        // Insecure context, or permission refused. Say so rather than lie with
-        // a "copied" that didn't.
         function () { btn.textContent = "select it"; setTimeout(restore, 1600); }
       );
     });
