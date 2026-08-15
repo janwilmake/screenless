@@ -1,0 +1,16 @@
+# Replaces Cloudflare's managed robots.txt, which carried the content-signal
+# boilerplate and no actual directives — so nothing was blocked, and nothing
+# pointed anywhere either.
+#
+# Everything is allowed on purpose, AI training included. This is a product
+# sold to people who run coding agents; being quoted accurately by an
+# assistant is acquisition, not leakage. llms.txt is the file that makes that
+# quote correct.
+
+User-agent: *
+Allow: /
+Disallow: /paid.html
+
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+
+Sitemap: https://screenless.sh/sitemap.xml
