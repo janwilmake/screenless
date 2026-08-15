@@ -345,3 +345,164 @@ function truncate(s, n) {
 function empty(w, h, label) {
   return svg(w, h, label ? text(w / 2, h / 2, label, { anchor: "middle", size: 10, fill: tint(2) }) : "", "chart--empty");
 }
+
+/* ------------------------------------------------------------------ schema */
+
+/**
+ * Entity boxes with their fields, and the relations between them.
+ *
+ * This exists because "lines changed per area" is a chart about the diff, not
+ * about the product — it tells you a PR touched `prisma` without telling you
+ * what it did to the data. A reader who sees the shape of the tables learns
+ * something they keep; a reader who sees a churn bar learns something that is
+ * stale tomorrow.
+ *
+ * Laid out in columns rather than routed like a real ERD: crossing edges are
+ * unreadable in print at this size, so relations are drawn as short labelled
+ * connectors between adjacent columns and anything more tangled belongs in two
+ * figures rather than one.
+ *
+ * @param {{name:string, fields?:{name:string,type?:string,note?:string,spot?:boolean}[],
+ *          column?:number, spot?:boolean}[]} entities
+ * @param {{from:string, to:string, label?:string}[]} relations
+ */
+export function schema({ entities, relations = [], width = 620 }) {
+  const boxes = (entities ?? []).filter((e) => e && e.name);
+  if (!boxes.length) return empty(width, 80, "no entities");
+
+  // Column assignment: explicit if given, otherwise fill left-to-right.
+  const columns = Math.max(1, Math.min(3, Math.max(...boxes.map((e) => (e.column ?? 0) + 1), 1)));
+  const colWidth = (width - (columns - 1) * 34) / columns;
+  const rowH = 15;
+  const headH = 24;
+
+  const placed = [];
+  const nextY = new Array(columns).fill(0);
+  boxes.forEach((e, i) => {
+    const col = Math.min(e.column ?? i % columns, columns - 1);
+    const fields = e.fields ?? [];
+    const h = headH + fields.length * rowH + 8;
+    const x = col * (colWidth + 34);
+    const y = nextY[col];
+    nextY[col] = y + h + 22;
+    placed.push({ e, x, y, h, w: colWidth, fields });
+  });
+
+  const height = Math.max(...nextY) + 4;
+
+  const body = placed
+    .map(({ e, x, y, h, w, fields }) => {
+      const stroke = e.spot ? SPOT : INK;
+      const head =
+        `<rect x="${round(x)}" y="${round(y)}" width="${round(w)}" height="${headH}" ` +
+        `fill="${e.spot ? SPOT : tint(4)}"/>` +
+        text(x + 8, y + 16, e.name, { size: 11, weight: 700, fill: PAPER, mono: true });
+
+      const rows = fields
+        .map((f, i) => {
+          const fy = y + headH + i * rowH + 11;
+          const room = Math.floor((w - 16) / 5.4);
+          const label = f.type ? `${f.name}  ${f.type}` : f.name;
+          return (
+            text(x + 8, fy, truncate(label, room), {
+              size: 9,
+              mono: true,
+              fill: f.spot ? SPOT : INK,
+              weight: f.spot ? 700 : 400,
+            }) +
+            (f.note
+              ? text(x + w - 8, fy, truncate(f.note, 18), { size: 8, anchor: "end", fill: tint(2) })
+              : "")
+          );
+        })
+        .join("");
+
+      return (
+        `<rect x="${round(x)}" y="${round(y)}" width="${round(w)}" height="${round(h)}" ` +
+        `fill="${PAPER}" stroke="${stroke}" stroke-width="1"/>` +
+        head +
+        rows
+      );
+    })
+    .join("");
+
+  // Connectors are drawn last so they sit above the boxes' fills but read as
+  // rules rather than arrows — an arrowhead at this size is a smudge.
+  const byName = new Map(placed.map((p) => [p.e.name, p]));
+  const edges = relations
+    .map((r) => {
+      const a = byName.get(r.from);
+      const b = byName.get(r.to);
+      if (!a || !b || a === b) return "";
+      const ax = a.x + a.w;
+      const ay = a.y + a.h / 2;
+      const bx = b.x;
+      const by = b.y + b.h / 2;
+      const mid = (ax + bx) / 2;
+      return (
+        `<path d="M${round(ax)} ${round(ay)} H${round(mid)} V${round(by)} H${round(bx)}" ` +
+        `fill="none" stroke="${tint(2)}" stroke-width="0.75"/>` +
+        (r.label
+          ? text(mid + 3, (ay + by) / 2 - 3, r.label, { size: 8, fill: tint(3) })
+          : "")
+      );
+    })
+    .join("");
+
+  return svg(width, height, edges + body, "chart--schema");
+}
+
+/* ------------------------------------------------------------------- table */
+
+/**
+ * A ruled table, for surfaces that are lists rather than quantities — API
+ * routes, event names, config keys, permissions.
+ *
+ * A bar chart of these would be a lie: there is no magnitude, only membership,
+ * and the useful column is usually the one saying which rows are unusual.
+ *
+ * @param {string[]} columns
+ * @param {{cells:string[], spot?:boolean}[]|string[][]} rows
+ */
+export function table({ columns, rows, width = 620 }) {
+  const cols = columns ?? [];
+  const data = (rows ?? []).map((r) => (Array.isArray(r) ? { cells: r } : r));
+  if (!cols.length || !data.length) return empty(width, 80, "no rows");
+
+  const rowH = 19;
+  const headH = 22;
+  const height = headH + data.length * rowH + 4;
+  // First column carries the identifier and gets the room; the rest split.
+  const firstW = Math.min(width * 0.34, 220);
+  const restW = (width - firstW) / Math.max(cols.length - 1, 1);
+  const xOf = (i) => (i === 0 ? 0 : firstW + (i - 1) * restW);
+
+  const head =
+    cols
+      .map((c, i) => text(xOf(i), 14, String(c).toUpperCase(), { size: 8, weight: 700, fill: tint(3) }))
+      .join("") + `<line x1="0" y1="${headH - 5}" x2="${width}" y2="${headH - 5}" stroke="${INK}" stroke-width="1"/>`;
+
+  const body = data
+    .map((r, i) => {
+      const y = headH + i * rowH + 12;
+      const rule =
+        i < data.length - 1
+          ? `<line x1="0" y1="${round(y + 6)}" x2="${width}" y2="${round(y + 6)}" stroke="${RULE}" stroke-width="0.5"/>`
+          : "";
+      const cells = (r.cells ?? [])
+        .map((c, j) => {
+          const room = Math.floor(((j === 0 ? firstW : restW) - 10) / 4.6);
+          return text(xOf(j), y, truncate(c, room), {
+            size: 9,
+            mono: j === 0,
+            fill: r.spot && j === 0 ? SPOT : INK,
+            weight: r.spot && j === 0 ? 700 : 400,
+          });
+        })
+        .join("");
+      return cells + rule;
+    })
+    .join("");
+
+  return svg(width, height, head + body, "chart--table");
+}

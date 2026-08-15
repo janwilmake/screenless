@@ -84,6 +84,12 @@ function renderChart(spec) {
     case "spark":
       body = charts.sparkline({ values: spec.values ?? [], spot: spec.spot });
       break;
+    case "schema":
+      body = charts.schema({ entities: spec.entities ?? [], relations: spec.relations ?? [] });
+      break;
+    case "table":
+      body = charts.table({ columns: spec.columns ?? [], rows: spec.rows ?? [] });
+      break;
     default:
       return `<div class="chart-missing">unknown chart type: ${charts.esc(type)}</div>`;
   }

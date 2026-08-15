@@ -126,11 +126,38 @@ before writing your first one. Structure, in order:
    "Matching moved to the centre of the product" beats "Weekly summary".
 2. **A composition page** — treemap of what the product is made of.
 3. **A movement page** — churn by area, plus the ticket status bar.
-4. **One page per ticket in flight**, four to six. Each gets a plain-language
-   caption, a chart of the areas it touches, and — where one exists — the
-   `decision` line naming what is needed from the reader.
-5. **An attention page** — PR ages, what is not moving, what is stale, which
+4. **The deep dive** — one or two pages explaining how *one thing in the
+   product actually works today*. See below; this is the part of the paper
+   worth the most and the part that takes real reading.
+5. **One page per ticket in flight**, four to six. Each gets a plain-language
+   caption, a figure that shows something structural about what the change
+   touches, and — where one exists — the `decision` line naming what is needed
+   from the reader.
+6. **An attention page** — PR ages, what is not moving, what is stale, which
    docs the week made wrong.
+
+#### The deep dive
+
+Pick **one** area the reader is working on or about to decide about, and
+explain how it works *now*. Not what changed — what it is. The test is that
+someone who has been away for a month could make a call about that area after
+reading two pages.
+
+This needs real research, not a diff summary. Read the models, the routes, the
+jobs, the places that write and the places that read. Follow one path all the
+way through: what enters, what stores it, what transforms it, what reads it
+back. Where you find a surprise — two sources of truth, a table nothing reads,
+a route with no auth, a queue with no retry — that surprise *is* the deep dive.
+
+Build it out of figures, not paragraphs:
+
+- a `schema` figure of the entities involved and how they relate
+- a `table` of the routes, events or jobs that touch them
+- captions naming what to notice, and one sentence on what it means
+
+Rotate the subject nightly, and say at the top why this area was chosen —
+"because three of this week's PRs touched it and none of them agreed about
+where matching state lives" is a better opening than a title.
 
 Writing rules:
 
@@ -138,6 +165,12 @@ Writing rules:
   belongs on the call instead.
 - **Every chart earns a caption saying what to notice.** Uncaptioned charts are
   decoration.
+- **Never chart lines-changed or files-touched per PR.** It is a fact about the
+  diff, not about the product: it says a change touched `prisma` without saying
+  what it did to the data, and it is stale the next morning. Chart the thing
+  the change acts on instead — the tables, the routes, the events, the states.
+  If nothing structural is worth drawing for a ticket, give it no figure at
+  all; a caption alone is honest, a churn bar is filler.
 - **Spot colour once per page at most.** Used twice it marks nothing.
 - **`decision` is only for genuine taste-and-scope questions.** Correctness is
   the reviewer's job, not the reader's over coffee.
@@ -149,8 +182,16 @@ node press/bin/render.mjs <edition.json> --out <outDir>/<date>.pdf
 ```
 
 `--keep-html` prints the intermediate HTML while iterating. Check the page
-count: more than about eight pages means it is trying to be complete rather
-than useful. Cut ticket pages until it fits.
+count: more than about ten pages means it is trying to be complete rather than
+useful. Cut ticket pages before you cut the deep dive — a ticket page the
+reader could have got from the PR list is the cheapest thing in the paper.
+
+Figures available: `treemap`, `bar`, `status`, `age`, `spark`, `schema`,
+`table`. `schema` takes `entities` (each with `fields`, optional `column` 0-2,
+optional `spot`) and `relations` (`from`, `to`, `label`). `table` takes
+`columns` and `rows`, where a row is an array of cells or
+`{cells, spot}`. Both are defined in `press/lib/charts.mjs` — read it before
+inventing a figure it cannot draw.
 
 #### 5b. The call brief
 
