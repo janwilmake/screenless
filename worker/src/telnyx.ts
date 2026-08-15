@@ -174,6 +174,16 @@ export function deleteAssistant(apiKey: string, assistantId: string) {
   return call(apiKey, "DELETE", `/ai/assistants/${assistantId}`);
 }
 
+/**
+ * Creating an assistant always auto-provisions a TeXML application, and
+ * deleting the assistant does NOT remove it. We place calls through our own
+ * persistent connection instead, so these auto-created apps are dead weight —
+ * delete them or they accumulate one per call.
+ */
+export function deleteTexmlApplication(apiKey: string, appId: string) {
+  return call(apiKey, "DELETE", `/texml_applications/${appId}`);
+}
+
 /* ------------------------------------------------------------------- calls */
 
 export interface AiCallOptions {

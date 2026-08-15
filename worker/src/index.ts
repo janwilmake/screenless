@@ -12,6 +12,13 @@ export interface Env {
 
   // vars — set in wrangler.toml
   TELNYX_FROM_NUMBER: string;
+  /**
+   * Persistent TeXML application used to place calls. We do NOT use the app
+   * Telnyx auto-creates per assistant: that one defaults to anchorsite
+   * "Latency" rather than a pinned region, and is not the connection the
+   * from-number is assigned to.
+   */
+  TELNYX_CONNECTION_ID: string;
   ASSISTANT_MODEL: string;
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
@@ -27,6 +34,8 @@ const OTP_RATE_LIMIT = 5;
 interface CallRecord {
   phone: string;
   assistantId: string;
+  /** The app Telnyx auto-provisioned for this assistant; deleted alongside it. */
+  texmlAppId?: string;
   status: "initiated" | "ringing" | "answered" | "completed" | "failed";
   conversationId?: string;
   createdAt: number;
@@ -112,6 +121,18 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
 
 /* ------------------------------------------------------------------- calls */
 
+/**
+ * Tears down the per-call assistant and the TeXML app Telnyx created with it.
+ * Best-effort: a failure here must never surface to the caller, but skipping
+ * the app leaves one orphan per call.
+ */
+async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
+  await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
+  if (record.texmlAppId) {
+    await telnyx.deleteTexmlApplication(env.TELNYX_API_KEY, record.texmlAppId).catch(() => {});
+  }
+}
+
 async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
   const s = await session(req, env.SESSION_SECRET);
   if (!s) return fail(401, "not authenticated — run `voxcall setup`");
@@ -148,24 +169,21 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     greeting,
   });
 
-  // Telnyx provisions a TeXML app alongside the assistant; its id is the
-  // connection we place the call through.
-  const connectionId = assistant.telephony_settings?.default_texml_app_id;
-  if (!connectionId) {
-    await telnyx.deleteAssistant(env.TELNYX_API_KEY, assistant.id).catch(() => {});
-    return fail(502, "Telnyx did not return a TeXML app for the assistant");
-  }
-
+  // Telnyx auto-provisions a TeXML app per assistant. We do not place calls
+  // through it — it defaults to anchorsite "Latency" and is not the connection
+  // the from-number is assigned to — but we do have to clean it up, since
+  // deleting the assistant leaves it behind.
   const record: CallRecord = {
     phone: s.phone,
     assistantId: assistant.id,
+    texmlAppId: assistant.telephony_settings?.default_texml_app_id,
     status: "initiated",
     createdAt: Date.now(),
   };
   await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
 
   try {
-    await telnyx.initiateAiCall(env.TELNYX_API_KEY, connectionId, {
+    await telnyx.initiateAiCall(env.TELNYX_API_KEY, env.TELNYX_CONNECTION_ID, {
       from: env.TELNYX_FROM_NUMBER,
       // The session's phone, never a value from the request body. This is the
       // property that keeps the PoC from being a dialer.
@@ -175,7 +193,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
       conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
     });
   } catch (err) {
-    await telnyx.deleteAssistant(env.TELNYX_API_KEY, assistant.id).catch(() => {});
+    await cleanupAssistant(env, record);
     await env.CALLS.delete(`call:${callId}`);
     return fail(502, `failed to place call: ${(err as Error).message}`);
   }
@@ -270,7 +288,7 @@ async function handleWebhook(
   // Once the call is done and we have the transcript handle, the per-call
   // assistant has served its purpose.
   if (record.status === "completed" || record.status === "failed") {
-    await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
+    await cleanupAssistant(env, record);
   }
 
   return json({ ok: true });
@@ -304,6 +322,7 @@ function missingConfig(env: Env): string[] {
     "TELNYX_VERIFY_PROFILE_ID",
     "SESSION_SECRET",
     "TELNYX_FROM_NUMBER",
+    "TELNYX_CONNECTION_ID",
   ];
   return required.filter((k) => !env[k] || typeof env[k] !== "string");
 }

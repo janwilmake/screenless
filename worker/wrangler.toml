@@ -9,6 +9,12 @@ account_id = "080fd9e0587416d2fa30ed1f527e2323"
 # telemarketing, so this must stay a real, answerable number.
 TELNYX_FROM_NUMBER = "+31850835195"
 
+# Persistent TeXML application ("voxcall") that calls are placed through.
+# Pinned to the Amsterdam AnchorSite and holding the outbound voice profile;
+# TELNYX_FROM_NUMBER is assigned to this connection. Deliberately NOT the app
+# Telnyx auto-creates per assistant, which defaults to anchorsite "Latency".
+TELNYX_CONNECTION_ID = "3026913543002784831"
+
 # LLM driving the conversation. Telnyx hosts several; Haiku is fast and cheap,
 # which matters because LLM time-to-first-token is the largest single slice of
 # per-turn latency.
