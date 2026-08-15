@@ -42,7 +42,7 @@
     // Worldwide. The real spend guard is BLOCKED_PREFIXES in src/index.ts,
     // which blocks satellite and SMS-pumping ranges regardless of this value.
     // Narrow to a comma-separated list of ISO codes ("NL,BE,DE") to restrict.
-    "ALLOWED_DESTINATIONS": "*",
+    "ALLOWED_DESTINATIONS": "US,CA,NL,BE,GB,IE,DE,AT,CH,FR,ES,PT,IT,SE,NO,DK,FI,PL,CZ,LU,IN,JP,BR,MX,AU,NZ,ZA,SG",
 
     // Sender for the edition and for confirmation codes.
     //

@@ -169,11 +169,16 @@ function destinationAllowed(phone: string, allowed: string): boolean {
   const list = allowed.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
   if (!list.length || list.includes("*")) return true;
 
+  // Must stay a superset of the outbound voice profile's whitelist. Telnyx
+  // rejects a call to a country the profile does not list with D13, after the
+  // call is already placed — so anything missing here fails late and opaquely
+  // instead of failing here with a sentence the caller can act on.
   const prefixes: Record<string, string> = {
     NL: "+31", BE: "+32", DE: "+49", GB: "+44", US: "+1", CA: "+1",
     FR: "+33", ES: "+34", IT: "+39", PT: "+351", IE: "+353", DK: "+45",
     SE: "+46", NO: "+47", PL: "+48", CH: "+41", AT: "+43", AU: "+61",
     NZ: "+64", SG: "+65", JP: "+81", IN: "+91", BR: "+55", ZA: "+27",
+    FI: "+358", CZ: "+420", LU: "+352", MX: "+52",
   };
   return list.some((c) => prefixes[c] && phone.startsWith(prefixes[c]));
 }
@@ -246,7 +251,10 @@ async function authStart(req: Request, env: Env): Promise<Response> {
 
   if (!isE164(phone)) return fail(400, "phone must be E.164, e.g. +31612345678");
   if (!destinationAllowed(phone, env.ALLOWED_DESTINATIONS))
-    return fail(403, `destination not allowed (ALLOWED_DESTINATIONS=${env.ALLOWED_DESTINATIONS})`);
+    return fail(
+      403,
+      "we can't call that country yet — mail hello@screenless.sh and we'll add it",
+    );
   if (!(await rateLimit(env, `otp:${phone}`, OTP_RATE_LIMIT)))
     return fail(429, "too many verification attempts for this number, try again in an hour");
 
