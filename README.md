@@ -238,7 +238,7 @@ Telnyx requires a `verify_profile_id` on every OTP. The Worker has a one-shot
 admin endpoint for this:
 
 ```bash
-curl -X POST https://screenless.<you>.workers.dev/admin/verify-profile \
+curl -X POST https://api.screenless.sh/admin/verify-profile \
   -H "X-Admin-Secret: <your ADMIN_SECRET>"
 ```
 
@@ -256,7 +256,7 @@ npx wrangler deploy
 cd ../cli
 npm install && npm run build && npm link
 
-screenless setup --api https://screenless.<you>.workers.dev
+screenless setup --api https://api.screenless.sh
 ```
 
 You'll get an SMS with a code (`--voice` gets you a phone call instead). Enter

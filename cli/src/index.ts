@@ -56,7 +56,7 @@ async function setup(args: string[]): Promise<void> {
     const existing = await config.load();
     const apiUrl = (
       argFlag(args, "--api") ??
-      (await rl.question(`Worker URL ${c.dim(existing?.apiUrl ?? "https://screenless.you.workers.dev")}: `)) ??
+      (await rl.question(`Worker URL ${c.dim(existing?.apiUrl ?? "https://api.screenless.sh")}: `)) ??
       ""
     ).trim() || existing?.apiUrl;
 

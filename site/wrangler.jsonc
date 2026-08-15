@@ -1,0 +1,25 @@
+{
+  // The landing page. A Worker with a static-assets binding and no `main`, so
+  // Cloudflare serves the files from its edge cache and no JS runs per request.
+  //
+  // Deploy:  cd site && npx wrangler deploy
+  "name": "screenless-site",
+  "compatibility_date": "2026-08-01",
+  "account_id": "080fd9e0587416d2fa30ed1f527e2323",
+
+  // Apex plus www. `custom_domain` makes Cloudflare manage both the DNS record
+  // and the certificate; it requires screenless.sh to be an active zone on
+  // this account, which it is.
+  "routes": [
+    { "pattern": "screenless.sh", "custom_domain": true },
+    { "pattern": "www.screenless.sh", "custom_domain": true }
+  ],
+
+  "assets": {
+    "directory": "./public",
+    // Unknown paths return a real 404 rather than rewriting to index.html.
+    // This is a one-page site, not an SPA, and soft-404s are the classic way
+    // to get junk URLs indexed.
+    "not_found_handling": "none"
+  }
+}
