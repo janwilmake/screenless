@@ -1,4 +1,6 @@
 import * as telnyx from "./telnyx";
+import * as billing from "./billing";
+import * as schedule from "./schedule";
 import { session, sign, webhookToken, safeEqual } from "./auth";
 import { scheduleMail, sweepOutbox } from "./mail";
 
@@ -10,7 +12,14 @@ export interface Env {
   TELNYX_VERIFY_PROFILE_ID: string;
   SESSION_SECRET: string;
   ADMIN_SECRET: string;
-  /** Optional — only needed for `screenless mail`. */
+  /**
+   * Optional. While unset the paywall is inert and every verified number is
+   * entitled, which is what keeps `wrangler dev` usable.
+   */
+  STRIPE_SECRET_KEY: string;
+  /** Signing secret for the Stripe webhook endpoint. */
+  STRIPE_WEBHOOK_SECRET: string;
+  /** Sends the nightly edition. Without it the outbox fills and never drains. */
   RESEND_API_KEY: string;
 
   // vars — set in wrangler.toml
@@ -24,9 +33,15 @@ export interface Env {
   ASSISTANT_MODEL: string;
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
-  /** Envelope sender for the nightly edition, e.g. "screenless <press@screenless.sh>". */
+  /** Recurring price the trial converts to. Falls back to $99/month if unset. */
+  STRIPE_PRICE_ID: string;
+  /** Landing page, used for Checkout's success and cancel redirects. */
+  SITE_URL: string;
+  /** This Worker's own hostname. Cron has no request to infer it from. */
+  API_HOST: string;
+  /** Envelope sender for the edition. The domain must be verified in Resend. */
   MAIL_FROM: string;
-  /** Default recipient, so `screenless mail` does not need --to every night. */
+  /** Default recipient, so the nightly loop needs no --to. */
   MAIL_TO: string;
 }
 
@@ -63,6 +78,20 @@ const isE164 = (s: unknown): s is string =>
   typeof s === "string" && /^\+[1-9]\d{7,14}$/.test(s);
 
 /**
+ * Repairs a caller id arriving in a form-encoded webhook body.
+ *
+ * `application/x-www-form-urlencoded` decodes `+` as a space, so a `From` of
+ * `+31612345678` sent as a literal plus arrives as ` 31612345678` and fails
+ * every E.164 check. Providers disagree about whether to percent-encode it, and
+ * the cost of guessing wrong is that inbound calls are answered with "I could
+ * not read your number" — a failure that only shows up on a real call.
+ */
+function normalizeCallerId(raw: string): string {
+  const trimmed = raw.trim();
+  return /^\d{8,15}$/.test(trimmed) ? `+${trimmed}` : trimmed;
+}
+
+/**
  * Country allowlist, checked against the dial prefix. This is a cost control as
  * much as a policy one — it is the difference between a compromised token
  * costing you a few euros and costing you a few thousand.
@@ -80,6 +109,53 @@ async function rateLimit(env: Env, key: string, limit: number): Promise<boolean>
   if (current >= limit) return false;
   await env.CALLS.put(k, String(current + 1), { expirationTtl: 3600 });
   return true;
+}
+
+/**
+ * Settings as the CLI wants them: the stored values plus the two things that
+ * are derived from them and awkward to compute on a laptop — the next actual
+ * ring time, and the number to ring back on.
+ */
+function withNextCall(settings: schedule.Settings, env: Env) {
+  return {
+    ...settings,
+    nextCallAt: schedule.nextCallTime(settings),
+    inboundNumber: env.TELNYX_FROM_NUMBER,
+  };
+}
+
+/**
+ * Blocks anything that costs money to run when the caller has no live
+ * subscription, and hands back the link that fixes it.
+ *
+ * Returns null when the caller may proceed. The 402 carries a checkout URL so
+ * the CLI never has to send anyone to a web page to find out how to pay — the
+ * paywall is answered in the same terminal that hit it.
+ */
+async function requireSubscription(env: Env, phone: string): Promise<Response | null> {
+  if (!billing.billingEnabled(env)) return null;
+
+  const status = await billing.status(env, phone);
+  if (status.active) return null;
+
+  let checkoutUrl: string | undefined;
+  try {
+    checkoutUrl = (await billing.createCheckout(env, phone, "")).url;
+  } catch (err) {
+    console.error("checkout for gated request failed", (err as Error).message);
+  }
+
+  return json(
+    {
+      error:
+        status.status === "none"
+          ? "no subscription — start your 7-day free trial"
+          : `subscription is ${status.status}`,
+      status: status.status,
+      checkoutUrl,
+    },
+    402,
+  );
 }
 
 /* -------------------------------------------------------------------- auth */
@@ -139,40 +215,68 @@ async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
   }
 }
 
-async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET);
-  if (!s) return fail(401, "not authenticated — run `screenless setup`");
+type Lang = "en" | "nl" | "multi";
 
-  const { prompt, language } = (await req.json().catch(() => ({}))) as {
-    prompt?: string;
-    language?: string;
-  };
-  if (typeof prompt !== "string" || !prompt.trim()) return fail(400, "prompt is required");
-  if (prompt.length > 4000) return fail(400, "prompt too long (max 4000 chars)");
+/** "multi" lets Deepgram Flux follow Dutch/English code-switching mid-sentence. */
+const asLang = (v: unknown): Lang =>
+  v === "en" || v === "nl" || v === "multi" ? v : "en";
 
-  // "multi" lets Deepgram Flux follow Dutch/English code-switching mid-sentence,
-  // which is how people actually speak in a Dutch business context.
-  const lang = language === "en" || language === "nl" || language === "multi" ? language : "en";
-  if (!(await rateLimit(env, `call:${s.phone}`, 20)))
-    return fail(429, "call limit reached for this number, try again in an hour");
+/**
+ * EU AI Act Article 50 requires the caller be told they are talking to an AI.
+ * Hard-coded as the assistant's greeting rather than left to the system
+ * prompt, because a prompt instruction is something the model can skip.
+ */
+const greetingFor = (lang: Lang): string =>
+  lang === "nl"
+    ? "Hoi, je spreekt met een AI-assistent. "
+    : "Hi, you're speaking with an AI assistant. ";
 
+/**
+ * Everything the assistant is told, from the brief the loop wrote.
+ *
+ * The boundary this paragraph draws is the whole architecture: the assistant
+ * on the phone decides nothing and touches nothing. It collects decisions and
+ * hangs up, and the loop on the user's own machine — which has their MCPs,
+ * their credentials and their browser — is what acts on the transcript
+ * afterwards. Saying so in the prompt keeps the model from promising to "go
+ * ahead and merge that", which it otherwise cheerfully does.
+ */
+const instructionsFor = (prompt: string): string =>
+  `${prompt}
+
+## What you can and cannot do
+You are on a phone call. You cannot take any action yourself: you cannot merge,
+comment, label, close, deploy, or write anything anywhere. You have no tools.
+Your only job is to walk the caller through the items above, ask for the
+decision on each, and make sure you have understood it.
+
+Never say or imply that you have done something, or that you will do it. The
+transcript of this call is handed back to the caller's own agent afterwards,
+and that agent carries out every decision. If asked whether something is done,
+say plainly that their agent will apply it after the call.`;
+
+/**
+ * Creates the per-call assistant and dials out.
+ *
+ * Shared by the CLI's blocking `screenless call` and by the cron that places
+ * parked briefs, so a scheduled call and an on-demand one are the same call.
+ */
+async function startCall(
+  env: Env,
+  phone: string,
+  prompt: string,
+  lang: Lang,
+  origin: string,
+): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   const callId = crypto.randomUUID();
   const wToken = await webhookToken(callId, env.SESSION_SECRET);
 
-  // EU AI Act Article 50 requires the caller be told they are talking to an AI.
-  // This is hard-coded as the assistant's greeting rather than left to the
-  // system prompt, because a prompt instruction is something the model can skip.
-  const greeting =
-    lang === "en"
-      ? "Hi, you're speaking with an AI assistant. "
-      : "Hoi, je spreekt met een AI-assistent. ";
-
   const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-${callId}`, {
-    instructions: prompt,
+    instructions: instructionsFor(prompt),
     model: env.ASSISTANT_MODEL,
     voice: env.ASSISTANT_VOICE,
     language: lang,
-    greeting,
+    greeting: greetingFor(lang),
   });
 
   // Calls MUST go through the assistant's own auto-created TeXML app: its
@@ -181,7 +285,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   const connectionId = assistant.telephony_settings?.default_texml_app_id;
   if (!connectionId) {
     await telnyx.deleteAssistant(env.TELNYX_API_KEY, assistant.id).catch(() => {});
-    return fail(502, "Telnyx did not return a TeXML app for the assistant");
+    return { ok: false, status: 502, error: "Telnyx did not return a TeXML app for the assistant" };
   }
 
   // That app defaults to anchorsite "Latency". Pin it to the configured region
@@ -190,7 +294,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   await telnyx.setAnchorsite(env.TELNYX_API_KEY, connectionId, env.TELNYX_ANCHORSITE).catch(() => {});
 
   const record: CallRecord = {
-    phone: s.phone,
+    phone,
     assistantId: assistant.id,
     texmlAppId: connectionId,
     status: "initiated",
@@ -201,9 +305,9 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   try {
     await telnyx.initiateAiCall(env.TELNYX_API_KEY, connectionId, {
       from: env.TELNYX_FROM_NUMBER,
-      // The session's phone, never a value from the request body. This is the
+      // The verified phone, never a value from a request body. This is the
       // property that keeps the PoC from being a dialer.
-      to: s.phone,
+      to: phone,
       assistantId: assistant.id,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
       conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
@@ -211,10 +315,137 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   } catch (err) {
     await cleanupAssistant(env, record);
     await env.CALLS.delete(`call:${callId}`);
-    return fail(502, `failed to place call: ${(err as Error).message}`);
+    return { ok: false, status: 502, error: `failed to place call: ${(err as Error).message}` };
   }
 
-  return json({ callId, to: s.phone, status: "initiated" });
+  // Lets the loop find the transcript of a call it never initiated — the 07:00
+  // one it was asleep for.
+  await env.CALLS.put(`last:${phone}`, callId, { expirationTtl: CALL_TTL_SECS });
+
+  return { ok: true, callId };
+}
+
+async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
+  const s = await session(req, env.SESSION_SECRET);
+  if (!s) return fail(401, "not authenticated — run `screenless setup`");
+
+  const unpaid = await requireSubscription(env, s.phone);
+  if (unpaid) return unpaid;
+
+  const { prompt, language, at, hold } = (await req.json().catch(() => ({}))) as {
+    prompt?: string;
+    language?: string;
+    at?: string;
+    hold?: boolean;
+  };
+  if (typeof prompt !== "string" || !prompt.trim()) return fail(400, "prompt is required");
+  if (prompt.length > 4000) return fail(400, "prompt too long (max 4000 chars)");
+
+  const lang = asLang(language);
+
+  // Parked rather than placed: the loop finishes at 03:00 and the call is
+  // wanted at 07:00, so the Worker holds the brief in between. It is also what
+  // the user reaches if they ring in before then.
+  if (at || hold) {
+    const parked = await schedule.parkBrief(env, s.phone, { prompt, language: lang, at, hold });
+    if (!parked.ok) return fail(400, parked.error);
+    return json({
+      parked: true,
+      dueAt: parked.brief.dueAt,
+      callAt: (await schedule.loadSettings(env, s.phone)).callAt,
+      inboundNumber: env.TELNYX_FROM_NUMBER,
+    });
+  }
+
+  if (!(await rateLimit(env, `call:${s.phone}`, 20)))
+    return fail(429, "call limit reached for this number, try again in an hour");
+
+  const result = await startCall(env, s.phone, prompt, lang, origin);
+  if (!result.ok) return fail(result.status, result.error);
+
+  return json({ callId: result.callId, to: s.phone, status: "initiated" });
+}
+
+/* ---------------------------------------------------------------- inbound */
+
+/**
+ * Answers a call *to* our number with the brief already waiting for that
+ * caller.
+ *
+ * This is the "not now, I'll ring you back" path, and it matters more than it
+ * looks: an outbound-only service has to be answered on its terms, at its
+ * time. Because the brief is stored rather than held in the outbound call, the
+ * conversation someone gets at 06:40 by dialling in is the same conversation
+ * they would have got at 07:00.
+ */
+async function answerInbound(req: Request, env: Env): Promise<Response> {
+  const provided = new URL(req.url).searchParams.get("t") ?? "";
+  const expected = await webhookToken("inbound", env.SESSION_SECRET);
+  if (!safeEqual(provided, expected)) return fail(403, "bad webhook token");
+
+  const say = (text: string) =>
+    new Response(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="female" language="en-US">${text}</Say><Hangup/></Response>`,
+      { headers: { "Content-Type": "application/xml" } },
+    );
+
+  const body = await req.text();
+  const params = new URLSearchParams(body);
+  // Telnyx posts TeXML callbacks form-encoded, but accept JSON rather than
+  // depend on that.
+  let from = params.get("From") ?? "";
+  if (!from) {
+    try {
+      const parsed = JSON.parse(body) as { From?: string; from?: string };
+      from = parsed.From ?? parsed.from ?? "";
+    } catch {
+      /* form-encoded after all, and From really is absent */
+    }
+  }
+  from = normalizeCallerId(from);
+  if (!isE164(from)) return say("Sorry, I could not read your number. Goodbye.");
+
+  const brief = await schedule.loadBrief(env, from);
+  if (!brief) {
+    return say(
+      "There is nothing queued for this number right now. Your agent will park a brief tonight. Goodbye.",
+    );
+  }
+
+  const status = await billing.status(env, from);
+  if (!status.active) {
+    return say("This number does not have an active subscription. Check your terminal. Goodbye.");
+  }
+
+  const lang = asLang(brief.language);
+  const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-in-${Date.now()}`, {
+    instructions: instructionsFor(brief.prompt),
+    model: env.ASSISTANT_MODEL,
+    voice: env.ASSISTANT_VOICE,
+    language: lang,
+    greeting: greetingFor(lang),
+  });
+
+  const callId = crypto.randomUUID();
+  const record: CallRecord = {
+    phone: from,
+    assistantId: assistant.id,
+    texmlAppId: assistant.telephony_settings?.default_texml_app_id,
+    status: "answered",
+    createdAt: Date.now(),
+  };
+  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await env.CALLS.put(`last:${from}`, callId, { expirationTtl: CALL_TTL_SECS });
+
+  // Delivered — so the 07:00 sweep does not ring them about it again.
+  brief.status = "placed";
+  brief.callId = callId;
+  await schedule.saveBrief(env, from, brief);
+
+  return new Response(
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><AIAssistant id="${assistant.id}"></AIAssistant></Connect></Response>`,
+    { headers: { "Content-Type": "application/xml" } },
+  );
 }
 
 async function getCall(callId: string, req: Request, env: Env): Promise<Response> {
@@ -288,6 +519,17 @@ async function handleWebhook(
     } else if (["failed", "busy", "no-answer", "canceled"].includes(status)) {
       record.status = "failed";
       record.endedAt = Date.now();
+
+      // Declining the call is a legitimate answer to "now?", not a lost brief.
+      // It goes back on the shelf held rather than rescheduled: we do not ring
+      // someone who just pressed decline, we wait for them to ring us.
+      const brief = await schedule.loadBrief(env, record.phone);
+      if (brief && brief.callId === callId) {
+        brief.status = "parked";
+        brief.dueAt = null;
+        brief.attempts += 1;
+        await schedule.saveBrief(env, record.phone, brief);
+      }
     } else if (status === "in-progress" || status === "answered") {
       record.status = "answered";
     } else if (status === "ringing") {
@@ -322,6 +564,29 @@ async function createVerifyProfile(req: Request, env: Env): Promise<Response> {
   return json({
     verifyProfileId: profile.data.id,
     next: `wrangler secret put TELNYX_VERIFY_PROFILE_ID  # paste ${profile.data.id}`,
+  });
+}
+
+/**
+ * The signed voice_url to point TELNYX_FROM_NUMBER at, so the number can be
+ * rung back.
+ *
+ * Handed out rather than configured for you: assigning a number to a TeXML
+ * application is a one-off click in the Telnyx portal, and doing it through
+ * the API here would mean writing number-management code that runs once and is
+ * never exercised again.
+ */
+async function inboundUrl(req: Request, env: Env, origin: string): Promise<Response> {
+  const secret = req.headers.get("X-Admin-Secret") ?? "";
+  if (!env.ADMIN_SECRET || !safeEqual(secret, env.ADMIN_SECRET)) return fail(403, "forbidden");
+
+  const token = await webhookToken("inbound", env.SESSION_SECRET);
+  return json({
+    number: env.TELNYX_FROM_NUMBER,
+    voiceUrl: `${origin}/texml/inbound?t=${token}`,
+    next:
+      "Telnyx portal → Voice → TeXML Applications → (new or existing) → set the " +
+      "Voice URL above and POST, then assign this number to that application.",
   });
 }
 
@@ -369,6 +634,11 @@ export default {
         );
       }
 
+      // Inbound: someone ringing the number back. Telnyx has been seen to use
+      // either verb for a voice_url, so accept both.
+      if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
+        return await answerInbound(req, env);
+
       // Diagnostic: plain TeXML with no AI assistant involved. Lets us test the
       // telephony + TTS path in isolation when an assistant call goes silent.
       if (path === "/texml/say") {
@@ -395,6 +665,98 @@ export default {
       if (method === "POST" && path === "/calls") return await placeCall(req, env, origin);
       if (method === "POST" && path === "/admin/verify-profile")
         return await createVerifyProfile(req, env);
+      if (method === "GET" && path === "/admin/inbound-url")
+        return await inboundUrl(req, env, origin);
+
+      /* --------------------------------------------------------- settings */
+
+      if (path === "/settings" && (method === "GET" || method === "POST")) {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+
+        if (method === "POST") {
+          const patch = (await req.json().catch(() => ({}))) as schedule.SettingsPatch;
+          const result = await schedule.updateSettings(env, s.phone, patch);
+          if (!result.ok) return fail(400, result.error);
+          return json(withNextCall(result.settings, env));
+        }
+
+        return json(withNextCall(await schedule.loadSettings(env, s.phone), env));
+      }
+
+      // What is queued, and when it will ring. The loop reads this to decide
+      // whether it still has time to park tonight's brief.
+      if (method === "GET" && path === "/brief") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const brief = await schedule.loadBrief(env, s.phone);
+        return json(
+          brief
+            ? {
+                queued: true,
+                status: brief.status,
+                dueAt: brief.dueAt,
+                attempts: brief.attempts,
+                callId: brief.callId ?? null,
+                createdAt: brief.createdAt,
+              }
+            : { queued: false },
+        );
+      }
+
+      if (method === "DELETE" && path === "/brief") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        await schedule.clearBrief(env, s.phone);
+        return json({ cleared: true });
+      }
+
+      // The transcript of whatever call happened last, which for a scheduled
+      // call is the only handle the loop ever gets — it was asleep when the
+      // call id was minted.
+      if (method === "GET" && path === "/calls/latest") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated");
+        const latest = await env.CALLS.get(`last:${s.phone}`);
+        if (!latest) return fail(404, "no calls yet");
+        return await getCall(latest, req, env);
+      }
+
+      /* ---------------------------------------------------------- billing */
+
+      // Stripe signs the raw body, so this must stay ahead of anything that
+      // would read the request, and outside the session check — Stripe has no
+      // token, only a signature.
+      if (method === "POST" && path === "/stripe/webhook")
+        return await billing.handleWebhook(req, env);
+
+      if (method === "GET" && path === "/billing/status") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        return json(await billing.status(env, s.phone));
+      }
+
+      // Safe to call repeatedly: an already-subscribed caller gets their
+      // status back instead of a second Checkout Session.
+      if (method === "POST" && path === "/billing/checkout") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        if (!billing.billingEnabled(env)) return fail(503, "billing is not configured");
+
+        const current = await billing.status(env, s.phone);
+        if (current.active) return json({ alreadyActive: true, ...current });
+
+        const { url } = await billing.createCheckout(env, s.phone, origin);
+        return json({ url });
+      }
+
+      // Changing the card, or cancelling, without us holding either.
+      if (method === "POST" && path === "/billing/portal") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const url = await billing.createPortal(env, s.phone);
+        return url ? json({ url }) : fail(404, "no subscription to manage");
+      }
 
       const call = path.match(/^\/calls\/([\w-]+)$/);
       if (method === "GET" && call) return await getCall(call[1], req, env);
@@ -404,6 +766,8 @@ export default {
       if (method === "POST" && path === "/mail") {
         const s = await session(req, env.SESSION_SECRET);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const unpaid = await requireSubscription(env, s.phone);
+        if (unpaid) return unpaid;
         if (!(await rateLimit(env, `mail:${s.phone}`, 12)))
           return fail(429, "mail limit reached for this number, try again in an hour");
 
@@ -424,19 +788,75 @@ export default {
         console.error("telnyx error", err.status, err.path, err.body);
         return fail(502, `telnyx: ${err.message}`);
       }
+      if (err instanceof billing.StripeError) {
+        console.error("stripe error", err.status, err.path, err.message);
+        return fail(502, `stripe: ${err.message}`);
+      }
       console.error("unhandled", err);
       return fail(500, (err as Error).message ?? "internal error");
     }
   },
 
   /**
-   * Cron sweep for parked editions. Runs every 5 minutes, which is the
-   * resolution the reader actually perceives — nobody notices a paper that
-   * arrives at 06:32 instead of 06:30.
+   * Cron sweep for parked briefs. Runs every 5 minutes, which is the
+   * resolution a caller actually perceives — a call at 08:03 is a call at
+   * eight.
    */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
-    if (!env.RESEND_API_KEY) return;
-    const { sent, failed } = await sweepOutbox(env);
-    if (sent || failed) console.log(`outbox swept: ${sent} sent, ${failed} failed`);
+    if (env.RESEND_API_KEY) {
+      const { sent, failed } = await sweepOutbox(env);
+      if (sent || failed) console.log(`outbox swept: ${sent} sent, ${failed} failed`);
+    }
+    await sweepBriefs(env);
   },
 };
+
+/**
+ * Places every brief whose time has come.
+ *
+ * The five-minute tick is the resolution of the whole product: a call at 07:03
+ * is a call at seven. Each brief is marked placed *before* the outcome is
+ * known, because the failure that actually costs something here is dialling
+ * the same person twice, not missing a tick.
+ */
+async function sweepBriefs(env: Env): Promise<void> {
+  const due = await schedule.dueBriefs(env);
+  if (!due.length) return;
+
+  // Cron has no request to take an origin from, so the callback host has to be
+  // configured rather than inferred.
+  const origin = `https://${env.API_HOST || "api.screenless.sh"}`;
+
+  for (const { phone, brief } of due) {
+    const entitled = await billing.status(env, phone);
+    if (!entitled.active) {
+      // Not dropped: if they pay tomorrow, tomorrow's brief is what should
+      // ring, and this one will have aged out of KV by then anyway.
+      console.log(`brief skipped, subscription ${entitled.status}`, phone);
+      continue;
+    }
+
+    const settings = await schedule.loadSettings(env, phone);
+    if (!settings.callEnabled) continue;
+
+    brief.status = "placed";
+    brief.attempts += 1;
+    await schedule.saveBrief(env, phone, brief);
+
+    const result = await startCall(env, phone, brief.prompt, asLang(brief.language), origin);
+
+    if (result.ok) {
+      brief.callId = result.callId;
+      await schedule.saveBrief(env, phone, brief);
+      console.log(`brief placed`, phone, result.callId);
+    } else {
+      // Held rather than retried on the next tick: something is wrong with
+      // Telnyx or the account, and re-dialling every five minutes turns one
+      // broken morning into a very expensive one.
+      brief.status = "parked";
+      brief.dueAt = null;
+      await schedule.saveBrief(env, phone, brief);
+      console.error(`brief failed to place`, phone, result.error);
+    }
+  }
+}

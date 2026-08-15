@@ -1,6 +1,6 @@
 {
-  // The API the CLI talks to: telephony, verification, call records, and the
-  // outbox that mails the nightly edition at wake-up.
+  // The API the CLI talks to: telephony, verification, call records, billing,
+  // and the parked briefs the morning call is placed from.
   //
   // Deploy:  cd worker && npx wrangler deploy
   "name": "screenless",
@@ -56,21 +56,40 @@
     "ALLOWED_DESTINATIONS": "NL",
 
     // Envelope sender for the nightly edition. The domain must be verified in
-    // Resend before anything sends, or every mail 403s at sweep time — which
-    // is silent, because the sweep runs on cron with nobody watching.
+    // Resend before anything sends, or every mail 403s at sweep time — which is
+    // silent, because the sweep runs on cron with nobody watching.
     "MAIL_FROM": "screenless <press@screenless.sh>",
 
-    // Default recipient, so `screenless mail` needs no --to on a nightly loop.
-    // Leave empty to require --to on every send.
-    "MAIL_TO": ""
+    // Default recipient, so the nightly loop needs no --to. Leave empty to
+    // require --to on every send.
+    "MAIL_TO": "",
+
+    // Where Checkout sends people when they finish or bail. Also the return
+    // target from the billing portal.
+    "SITE_URL": "https://screenless.sh",
+
+    // This Worker's own hostname. Used to build Telnyx callback URLs from the
+    // cron sweep, which — unlike a fetch — has no request to read it from.
+    "API_HOST": "api.screenless.sh",
+
+    // The recurring price the 7-day trial converts to. Leave empty and the
+    // Worker inlines $99/month at Checkout instead — the paywall works either
+    // way, but a real price id is what makes Stripe's revenue reporting mean
+    // anything.
+    //
+    // TEST MODE. $99/month on product prod_V4pc9EmdyrVtBH. Going live means a
+    // live-mode product, price, and webhook, then swapping this id along with
+    // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET — no code changes.
+    "STRIPE_PRICE_ID": "price_1U4fwvCL0Yranfl4MDErDZbh"
   },
 
-  // Stores call records, OTP rate-limit counters, and the parked outbox.
+  // Stores call records, settings, subscriptions, parked briefs, and OTP
+  // rate-limit counters.
   // Create with: wrangler kv namespace create CALLS
   "kv_namespaces": [{ "binding": "CALLS", "id": "1f4267f254c74f82a24737a84070f991" }],
 
-  // Sweeps the outbox and sends any edition that has come due. Five minutes is
-  // well inside what a reader notices; a paper at 06:32 reads the same as 06:30.
+  // Places any brief whose call time has come. Five minutes is well inside
+  // what a caller perceives — a call at 08:03 is a call at eight.
   "triggers": { "crons": ["*/5 * * * *"] }
 
   // Secrets (never put these here — use `wrangler secret put NAME`):
@@ -78,5 +97,7 @@
   //   TELNYX_VERIFY_PROFILE_ID
   //   SESSION_SECRET
   //   ADMIN_SECRET
-  //   RESEND_API_KEY        — only needed for `screenless mail`
+  //   STRIPE_SECRET_KEY     — while unset, every verified number is entitled
+  //   STRIPE_WEBHOOK_SECRET — from `stripe webhook_endpoints create`
+  //   RESEND_API_KEY        — sends the nightly edition
 }
