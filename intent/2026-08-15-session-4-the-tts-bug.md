@@ -43,11 +43,13 @@ names that were simply wrong. Four survived. The user asked the right question
 — "r u sure the current code does the right thing according to docs?" — before
 any of it was sent.
 
-**Still open:** `ALLOWED_DESTINATIONS` is `"*"` in the Worker while the
-outbound profile lists twenty-eight countries, so a caller outside them fails at
-Telnyx with `D13` rather than getting a clear message from us. The NL number
-`+31850835195` is still attached to a connection belonging to a deleted probe
-assistant. Both are noted in TODO.
+**Closed later in the same session:** the destination lists were reconciled —
+config, code prefix map and carrier profile all name the same twenty-eight
+countries — and the NL number was moved off the deleted probe assistant's
+connection onto `screenless-inbound`.
+
+**Still open:** the two API keys pasted into chat need rotating. The user
+removed that reminder when he trimmed TODO, so it exists only here.
 
 ## Prompts
 
@@ -112,3 +114,50 @@ Dutch kept Azure Fenna — ~396ms against AWS Laura-Neural's ~418ms is inside
 run-to-run noise, and Fenna held the first working call. Polly's non-neural
 voices are ~100ms faster and audibly worse. The measurement is time to render a
 whole clip, not time to first audio in a stream, so it is a proxy.)*
+
+**20:09** kewl. clean up my telnyx with all stuff that was for testing and isnt
+used. also, waht shall i say to sonam now? copy to clipboard.
+
+**20:11** start the msg with "oh damn after a lot of trial and error, i found a
+solution! ..."
+
+*(Telnyx cleaned to what the product uses: 0 assistants, 1 TeXML app
+`screenless-inbound`, 0 integration secrets, both numbers on that connection.)*
+
+**20:18** push the repo
+
+*(Stopped before pushing. The repo is public and `telnyx-bug/evidence.json` — a
+raw API dump — carried the user's personal mobile in three places, which
+CLAUDE.md says to redact. Scrubbed from the working tree and from the five
+unpushed commits, backup refs dropped, verified absent from every reachable
+commit, then pushed. The US number stayed: it is a business DID already on the
+site.)*
+
+**20:24** ok to the mirror the 28-country list
+
+*(`ALLOWED_DESTINATIONS` was `"*"` against a profile listing two countries, so
+everyone outside NL and US passed our check and was refused by Telnyx with D13
+after the call was placed. Config, code prefix map and carrier profile now all
+list the same 28; the map has to stay a superset or the rejection moves back to
+the carrier. Added FI, CZ, LU, MX. The refusal now says what to do instead of
+echoing an env var.)*
+
+**20:31** i am gonna test now. inbound call works but nothing to discuss it said
+
+*(Correct behaviour, not a fault — no brief was parked. Parked one directly into
+KV so the next inbound call has something to say. That bypasses `POST /calls`
+and therefore the session and subscription checks, so it does not exercise the
+path the CLI uses.)*
+
+**20:33** resend send works too ive received multiple emails
+
+**20:36** uptdate the todo → **20:38** just remove and keep the todo succinct.
+
+*(Trimmed to 41 lines, then the user cut it himself to 14 — dropping the Done
+roll-call, the Small list, `rounds`, and the key-rotation reminder. Pushed as
+given.)*
+
+**20:44** push changes
+
+**20:46** finish the sesh
+

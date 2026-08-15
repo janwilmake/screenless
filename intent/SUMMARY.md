@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 15 August 2026** — covers sessions 1–3, through the prompt at
-17:56. If the session files carry prompts newer than that, this document is
+**Last updated 15 August 2026** — covers sessions 1–4, through the prompt at
+20:46. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -29,19 +29,21 @@ product, never executed against reality · **not built**.
 | Auth by phone number + OTP, no passwords, no Google SSO *(was: Google SSO)* | built |
 | Only ever dials the number that was verified | built |
 | Telnyx, EU media anchoring, interruptible, code-switching | built |
+| The assistant is actually audible on a phone call | **built and proven** — needed a third-party voice; Telnyx's own TTS renders nothing on PSTN (`telnyx-bug/`) |
+| Voices chosen on measured latency, English and Dutch first | built — AWS Polly Joanna-Neural ~300ms, Azure Fenna ~396ms |
 | Call time configurable, default 08:00 *(was: 07:00)* | built |
 | Timezone always from the machine, not configurable at all *(was: guessed from dialling code and editable; briefly a searchable picker)* | built |
 | Decline the call and ring the number back for the same brief | built, unrun |
 | Language chosen at setup, English default, Dutch second, ten total, stored per account | built, unrun |
 | A way to trigger a demo call immediately | built — `screenless test` |
-| Worldwide, as long as SMS cost is reasonable *(was: NL only)* | built |
+| 28 countries, with a fraud blocklist and a 0.25 USD/min rate cap *(was: worldwide; before that NL only)* | built — config, code and carrier profile reconciled |
 | Sessions last a year | built |
 
 ## The paper
 
 | Intent | Status |
 |---|---|
-| Delivered by Resend *(was: over whatever messaging MCP is connected)* | **built and proven** — domain verified, mail lands in the Inbox |
+| Delivered by Resend *(was: over whatever messaging MCP is connected)* | **built and proven** — domain verified, multiple emails received |
 | Free; only the call is paid *(was: both behind the trial)* | built |
 | Sent to one confirmed email, bound to the account | **built and proven** — confirmed on two accounts |
 | A deep dive on how one area works today, from real codebase research | built, unrun |
@@ -99,14 +101,7 @@ Things asked for that the product does not yet do.
    triage, agenda building, the "this needs your eyes" router. Session 1's
    entire premise. What exists is `screenless call "<prompt>"`, the primitive
    underneath it. Everything else in this document is packaging.
-2. **The paper has never been delivered.** Resend still shows `screenless.sh`
-   as pending, so no edition has ever reached an inbox, and the email
-   confirmation flow written today has never executed.
-3. **The call has no audio.** An outbound call now completes end to end —
-   placed, answered, transcript captured, stored, and emailed — with zero
-   assistant turns in it. Everything around the call works; the call does not.
-   With Telnyx support.
-4. **The return leg has never run.** Collector, manifest and apply skill are
+2. **The return leg has never run.** Collector, manifest and apply skill are
    written and unexecuted, because there has been no call worth applying.
 4. **The deep dive and the new figures are unrendered.** Written into the skill
    after you read the first paper; no edition has used them.
@@ -115,10 +110,13 @@ Things asked for that the product does not yet do.
 6. **The Dutch number is still blocked.** Regulatory review rejected the
    business name twice; calls come from a US number, which was meant to be
    temporary.
-7. **The upstream Telnyx bug** — assistant connects, stays silent — has had no
-   status since 15 Aug 09:32. If unresolved, none of the call side works.
-8. **Stripe is in test mode**, so no one can actually pay.
-9. **Multi-repo** is supported by the registry and untested.
+7. **Stripe is in test mode**, so no one can actually pay.
+8. **Multi-repo** is supported by the registry and untested.
+9. **Parking has only been done by writing KV directly**, which skips the
+   session and subscription checks the CLI goes through. The cron placing a
+   parked brief is the last untested link in the chain.
+10. **Two API keys were pasted into a chat transcript** on 15 Aug and need
+   rotating. The reminder was removed from TODO when it was trimmed.
 
 ## Assumptions
 
