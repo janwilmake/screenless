@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>screenless — your agents wrote the code. You still make the calls.</title>
-<meta name="description" content="A morning phone call that walks the pull requests your coding agents opened overnight and takes your decisions on each. Your own agent applies them. Free nightly paper; $99/month for the call.">
+<meta name="description" content="Your coding agents open pull requests overnight. A morning phone call finds the handful that actually need you, takes your decisions, and hands them to your own agent to apply. Free nightly paper about your codebase; $99/month for the call.">
 <meta property="og:title" content="screenless">
 <meta property="og:description" content="Your agents wrote the code. You still make the calls — over the phone, before you open a laptop.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh">
+<meta name="theme-color" content="#fdfcfa">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
 <style>
   :root{
@@ -27,7 +28,14 @@
        -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   .wrap{max-width:900px;margin:0 auto;padding:0 28px}
   a{color:var(--ink);text-underline-offset:3px}
-  h1,h2,h3{font-weight:400;letter-spacing:-.022em;margin:0;line-height:1.05}
+  /* Inline commands sit in running prose, so they are sized down to the serif
+     around them rather than left at the browser's default. */
+  code{font-family:var(--mono);font-size:.86em;background:var(--wash);
+       padding:1px 5px;white-space:nowrap}
+  /* Balanced rather than ragged: at these sizes a single orphaned word on the
+     last line is the difference between a headline and a paragraph. */
+  h1,h2,h3{font-weight:400;letter-spacing:-.022em;margin:0;line-height:1.05;
+           text-wrap:balance}
   p{margin:0}
 
   /* ------------------------------------------------------------- masthead */
@@ -41,31 +49,57 @@
   .top nav a:hover{color:var(--spot)}
 
   /* ----------------------------------------------------------------- hero */
-  .hero{padding:96px 0 84px;text-align:center}
+  .hero{padding:82px 0 78px;text-align:center}
   .hero h1{font-size:clamp(44px,7.4vw,86px);max-width:15ch;margin:0 auto}
-  .hero .stand{font-size:clamp(19px,2.2vw,24px);color:var(--muted);
-               max-width:46ch;margin:30px auto 0;line-height:1.45}
+  .hero .stand{font-size:clamp(19px,2.2vw,23px);color:var(--muted);
+               max-width:50ch;margin:28px auto 0;line-height:1.45}
+  /* Says who the page is for before it says what the thing is. Someone who
+     doesn't run agents overnight should be able to leave in two seconds. */
+  .for{font-family:var(--sans);font-size:11px;font-weight:700;
+       text-transform:uppercase;letter-spacing:.18em;color:var(--spot);
+       margin:0 0 24px}
 
   /* The one thing anyone is meant to do. A stamp, not a paragraph. */
-  .cmd{display:inline-flex;align-items:center;gap:18px;margin:44px auto 0;
+  .cmd{display:inline-flex;align-items:center;gap:18px;margin:40px auto 0;
        background:var(--ink);padding:16px 20px;text-align:left;max-width:100%}
   .cmd code{font-family:var(--mono);font-size:15px;color:var(--paper);
-            white-space:nowrap;overflow-x:auto}
+            white-space:nowrap;overflow-x:auto;background:none;padding:0}
   .cmd code .p{color:var(--soft);user-select:none}
   .cmd button{font-family:var(--sans);font-size:10px;font-weight:700;cursor:pointer;
               text-transform:uppercase;letter-spacing:.12em;background:transparent;
               color:var(--paper);border:1px solid rgba(253,252,250,.35);
               padding:8px 12px;flex-shrink:0}
   .cmd button:hover{border-color:var(--paper);background:rgba(253,252,250,.1)}
-  .fine{font-family:var(--sans);font-size:13px;color:var(--muted);margin:18px 0 0}
+  .fine{font-family:var(--sans);font-size:13px;color:var(--muted);margin:16px 0 0}
+  .fine a{color:var(--muted)}
+
+  /* Three claims a developer weighs before running a script off the internet,
+     answered at the point they decide, not in an FAQ they may not reach. */
+  .assure{display:flex;justify-content:center;gap:0;margin:44px auto 0;
+          border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+          max-width:760px;font-family:var(--sans)}
+  .assure div{flex:1;padding:16px 14px;border-right:1px solid var(--rule)}
+  .assure div:last-child{border-right:0}
+  .assure b{display:block;font-size:13px;font-weight:700;letter-spacing:.01em}
+  .assure span{display:block;font-size:12.5px;color:var(--muted);margin-top:4px}
 
   /* -------------------------------------------------------------- section */
-  section{padding:84px 0;border-top:1px solid var(--rule)}
+  section{padding:82px 0;border-top:1px solid var(--rule)}
   .kicker{font-family:var(--sans);font-size:11px;font-weight:700;
           text-transform:uppercase;letter-spacing:.18em;color:var(--spot);
           margin:0 0 18px}
   h2{font-size:clamp(30px,4.2vw,46px);max-width:19ch}
   .lede{font-size:20px;color:var(--muted);max-width:52ch;margin:20px 0 0}
+
+  /* ------------------------------------------------------------- problem */
+  /* Three columns because the pain is three beats, and a reader who only
+     takes the bold line of each still gets the argument. */
+  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:52px;
+        border-top:1px solid var(--rule)}
+  .cols > div{padding:26px 26px 4px 0;border-right:1px solid var(--rule)}
+  .cols > div:last-child{border-right:0;padding-right:0}
+  .cols h3{font-size:21px;margin:0 0 10px;max-width:16ch}
+  .cols p{color:var(--muted);font-size:16.5px}
 
   /* ----------------------------------------------------- the call, spoken */
   /* Set as speech rather than a chat log, because that is what it is: one
@@ -86,6 +120,29 @@
   .step .n{font-family:var(--mono);font-size:13px;color:var(--spot)}
   .step h3{font-size:22px;margin:0 0 6px}
   .step p{color:var(--muted);font-size:17px;max-width:52ch}
+
+  /* ----------------------------------------------------------- try it now */
+  /* The one place the page shows a terminal doing something rather than a
+     command to paste — because the phone ringing is the thing that sells it. */
+  .term{background:var(--ink);color:var(--paper);margin-top:44px;
+        padding:26px 28px;font-family:var(--mono);font-size:14.5px;
+        line-height:1.75;overflow-x:auto}
+  .term .p{color:var(--soft);user-select:none}
+  .term .c{color:var(--soft)}
+  .term .out{color:#b9b0a8}
+  .term .hit{color:#e08a72}
+
+  /* ------------------------------------------------------------- boundary */
+  .split{display:grid;grid-template-columns:1fr 1fr;margin-top:52px;
+         border:1px solid var(--rule)}
+  .split > div{padding:28px 30px}
+  .split > div:first-child{border-right:1px solid var(--rule)}
+  .split .what{font-family:var(--sans);font-size:11px;font-weight:700;
+               letter-spacing:.18em;text-transform:uppercase;margin-bottom:16px}
+  .split .no .what{color:var(--spot)}
+  .split ul{margin:0;padding-left:18px;font-size:17px;color:var(--muted)}
+  .split li{margin-bottom:9px}
+  .split li:last-child{margin-bottom:0}
 
   /* ---------------------------------------------------------------- paper */
   .sheet{background:#fff;border:1px solid var(--rule);padding:30px 32px 34px;
@@ -119,6 +176,15 @@
   .price .per{font-family:var(--sans);font-size:13px;color:var(--muted)}
   .price ul{margin:22px 0 0;padding-left:18px;font-size:16.5px;color:var(--muted)}
   .price li{margin-bottom:8px}
+  .guarantee{font-family:var(--sans);font-size:14px;color:var(--muted);
+             margin-top:20px;border-left:3px solid var(--spot);padding-left:16px;
+             max-width:62ch}
+
+  /* ------------------------------------------------------------------ faq */
+  .faq{display:grid;grid-template-columns:1fr 1fr;gap:0 44px;margin-top:44px}
+  .faq div{padding:22px 0;border-top:1px solid var(--rule)}
+  .faq h3{font-size:18px;margin:0 0 8px;max-width:30ch}
+  .faq p{color:var(--muted);font-size:16.5px}
 
   /* ---------------------------------------------------------------- close */
   .close{background:var(--ink);color:var(--paper);padding:92px 0;text-align:center;
@@ -129,7 +195,14 @@
   .close .cmd code{color:var(--ink)}
   .close .cmd button{color:var(--ink);border-color:rgba(20,17,15,.3)}
   .close .cmd button:hover{border-color:var(--ink);background:rgba(20,17,15,.07)}
-  .close .fine{color:var(--soft);max-width:52ch;margin:22px auto 0}
+  .close .fine{color:var(--soft);max-width:56ch;margin:20px auto 0}
+  .close .fine a{color:#b9b0a8}
+
+  /* Standing where it is honest to stand: after the reader knows what the
+     thing is, before they are asked to run it. */
+  .early{border-top:1px solid var(--rule);background:var(--wash)}
+  .early .lede{max-width:58ch}
+  .early .lede + .lede{margin-top:18px}
 
   footer{font-family:var(--sans);font-size:13px;color:var(--muted);
          padding:26px 0;display:flex;justify-content:space-between;gap:18px;
@@ -138,14 +211,27 @@
 
   @media(max-width:720px){
     body{font-size:18px}
-    .hero{padding:64px 0 56px}
-    section{padding:60px 0}
-    .price{grid-template-columns:1fr}
-    .price > div:first-child{border-right:0;border-bottom:1px solid var(--rule)}
+    /* Five nav items in one row on a phone squeeze until the labels break
+       mid-phrase — "the / call" — so the masthead stacks instead. */
+    .top{flex-direction:column;align-items:flex-start;gap:10px}
+    .top nav{gap:16px;flex-wrap:wrap}
+    .hero{padding:56px 0 52px}
+    section{padding:58px 0}
+    .price,.split,.faq,.cols{grid-template-columns:1fr}
+    .price > div:first-child,.split > div:first-child{
+      border-right:0;border-bottom:1px solid var(--rule)}
+    .cols > div{border-right:0;padding:22px 0 4px;
+                border-bottom:1px solid var(--rule)}
+    .cols > div:last-child{border-bottom:0}
+    .faq div:first-child{border-top:1px solid var(--rule)}
     .stats{grid-template-columns:repeat(2,1fr)}
     .stats div:nth-child(2){border-right:0}
+    .assure{flex-direction:column}
+    .assure div{border-right:0;border-bottom:1px solid var(--rule);padding:14px 0}
+    .assure div:last-child{border-bottom:0}
     .call{padding-left:20px}
     .cmd{width:100%}
+    .term{font-size:13px;padding:20px}
     .step{grid-template-columns:1fr;gap:6px}
   }
 </style>
@@ -158,25 +244,82 @@
     <a class="brand" href="/">screenless</a>
     <nav>
       <a href="#call">the call</a>
+      <a href="#try">try it</a>
       <a href="#paper">the paper</a>
-      <a href="#how">how</a>
       <a href="#price">price</a>
+      <a href="#faq">faq</a>
     </nav>
   </div>
 
   <header class="hero">
+    <p class="for">For engineers whose agents open pull requests overnight</p>
     <h1>Your agents wrote the code. You still make the calls.</h1>
     <p class="stand">
-      So make them on the phone, before you open a laptop. One call, six
-      decisions, nine minutes.
+      Thirty-five pull requests land while you sleep and not one has been read
+      by a human. Five actually need you. Take those five on the phone at
+      eight — nine minutes, and the queue is decided before you open a laptop.
     </p>
 
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
-    <p class="fine">macOS or Linux · Node 20+ · the nightly paper is free</p>
+    <p class="fine">
+      macOS or Linux · Node 20+ · Claude Code ·
+      <a href="/install">read the script first</a>
+    </p>
+
+    <div class="assure">
+      <div>
+        <b>It runs on your machine</b>
+        <span>Through the MCPs you already connected</span>
+      </div>
+      <div>
+        <b>Your code never leaves it</b>
+        <span>What we hold is a brief and a transcript</span>
+      </div>
+      <div>
+        <b>The voice has no credentials</b>
+        <span>It cannot merge, write, or touch a repo</span>
+      </div>
+    </div>
   </header>
+
+  <section id="problem">
+    <p class="kicker">the problem</p>
+    <h2>Agents made writing code cheap. They made deciding expensive.</h2>
+    <p class="lede">
+      You did not adopt coding agents in order to become a full-time reviewer
+      of code you did not write. But that is the job now, and it arrives all at
+      once, before you have had coffee.
+    </p>
+
+    <div class="cols">
+      <div>
+        <h3>The queue outruns you</h3>
+        <p>
+          Overnight your agents open more work than one person can read before
+          standup. So it carries to tomorrow, and tomorrow it is bigger.
+        </p>
+      </div>
+      <div>
+        <h3>So you merge on trust</h3>
+        <p>
+          Not because you read it — thirty-five is not a number anyone reads.
+          The gap between <em>reviewed</em> and <em>approved</em> widens quietly,
+          and only ever shows itself in production.
+        </p>
+      </div>
+      <div>
+        <h3>And the five are in there</h3>
+        <p>
+          Two fixes for the same bug that conflict. A gate that went green by
+          lowering the bar. Nothing marks them. Finding them is the whole job,
+          and it is the part nobody has time for.
+        </p>
+      </div>
+    </div>
+  </section>
 
   <section id="call">
     <p class="kicker">the call</p>
@@ -225,13 +368,41 @@
     </p>
   </section>
 
+  <section id="try">
+    <p class="kicker">the part worth trying first</p>
+    <h2>Have it ring you, about a minute from now.</h2>
+    <p class="lede">
+      Not a video and not a sandbox. Install it, type one command, and your own
+      phone rings — a real call on a real line that you can interrupt
+      mid-sentence and argue with. Almost nobody has been telephoned by a
+      developer tool before. Do that part before you decide anything else.
+    </p>
+
+    <div class="term">
+      <span class="p">$ </span>screenless setup<br>
+      <span class="out">&nbsp;&nbsp;✓ code sent to +31 6 •• •• •• ••<br>
+      &nbsp;&nbsp;✓ number verified</span><br>
+      <br>
+      <span class="p">$ </span>screenless test<br>
+      <span class="out">&nbsp;&nbsp;<span class="hit">ringing</span> — pick up, and talk over it whenever you like</span><br>
+      <br>
+      <span class="p">$ </span>screenless init<br>
+      <span class="out">&nbsp;&nbsp;✓ tonight's run points at ~/code/your-repo</span>
+    </div>
+
+    <p class="cap">
+      Then go to bed. At 03:00 your own agent reads the repo; by morning there
+      is a paper in your inbox and a brief waiting on the phone.
+    </p>
+  </section>
+
   <section id="paper">
     <p class="kicker">the paper</p>
     <h2>And a newspaper about your own product, every night.</h2>
     <p class="lede">
       Not a changelog. A deep dive on how one part of your product actually
       works today, built by reading the code — so a month away doesn't cost you
-      the thread. Free, forever.
+      the thread. Free, forever, no card.
     </p>
 
     <div class="sheet" aria-label="Example page from the daily paper">
@@ -296,6 +467,37 @@
     </div>
   </section>
 
+  <section id="boundary">
+    <p class="kicker">the boundary</p>
+    <h2>The voice on the phone cannot touch your code. On purpose.</h2>
+    <p class="lede">
+      A hosted service cannot have your MCPs, your logged-in browser and your
+      Claude subscription without asking you for credentials nobody should hand
+      over. So it doesn't ask. It takes decisions and gives them back.
+    </p>
+
+    <div class="split">
+      <div>
+        <div class="what">what the call does</div>
+        <ul>
+          <li>Reads out what your own agent found overnight</li>
+          <li>Asks only about what it could not settle for you</li>
+          <li>Takes your answer, including "wait, explain that one"</li>
+          <li>Hands the transcript back to your machine</li>
+        </ul>
+      </div>
+      <div class="no">
+        <div class="what">what it will never do</div>
+        <ul>
+          <li>Hold a token, a key or a repo credential</li>
+          <li>Merge, close, comment or push</li>
+          <li>Keep your source on our servers</li>
+          <li>Change anything at all while you are on the phone</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <section id="price">
     <p class="kicker">price</p>
     <h2>The paper is free. The call is the product.</h2>
@@ -304,7 +506,7 @@
       <div>
         <div class="what">the paper</div>
         <div class="amt">Free</div>
-        <div class="per">no card, no trial</div>
+        <div class="per">forever · no card</div>
         <ul>
           <li>A nightly edition about your own product</li>
           <li>Deep dive, schemas, and what isn't moving</li>
@@ -322,8 +524,104 @@
         </ul>
       </div>
     </div>
+
+    <p class="guarantee">
+      Setup asks for a card so the trial can roll into a subscription — you are
+      not charged for seven days, and <code>screenless billing --manage</code>
+      cancels it in one command. Cancel and the paper keeps arriving.
+    </p>
+  </section>
+
+  <section id="faq">
+    <p class="kicker">before you paste that command</p>
+    <h2>The things you were about to ask.</h2>
+
+    <div class="faq">
+      <div>
+        <h3>Does my code leave my machine?</h3>
+        <p>
+          No. The reading happens locally, through MCPs you already connected.
+          What reaches us is the short brief the call is placed from and the
+          transcript of what you said back — both deleted within days.
+        </p>
+      </div>
+      <div>
+        <h3>Which coding agents does it work with?</h3>
+        <p>
+          Whatever opens the pull requests — Claude Code, Codex, Cursor, a
+          human on a bad day. The loop reads your repo and your tracker, not
+          your agent. Claude Code is what writes the paper, so you need that.
+        </p>
+      </div>
+      <div>
+        <h3>What if I don't pick up at eight?</h3>
+        <p>
+          Nothing is lost. Decline it and ring the number back whenever suits —
+          same brief, same conversation. <code>screenless settings --pause</code>
+          stops the morning call for as long as you want it stopped.
+        </p>
+      </div>
+      <div>
+        <h3>What if there's nothing worth asking about?</h3>
+        <p>
+          Then it doesn't call. A drained queue ends the call early; an empty
+          one never starts it. A phone that rings every morning regardless is a
+          phone you stop answering.
+        </p>
+      </div>
+      <div>
+        <h3>Can I read the install script first?</h3>
+        <p>
+          Please do — it's <a href="/install">plain bash, right here</a>, and
+          the CLI it fetches is two files with no dependencies. All of it is on
+          <a href="https://github.com/janwilmake/screenless">GitHub</a>, MIT.
+        </p>
+      </div>
+      <div>
+        <h3>Will it call my country?</h3>
+        <p>
+          Twenty-eight so far, across Europe, the Americas, Asia-Pacific and
+          South Africa. <code>screenless setup</code> tells you in the first ten
+          seconds if yours isn't one of them, before any card is asked for.
+        </p>
+      </div>
+      <div>
+        <h3>Do I have to talk to it in English?</h3>
+        <p>
+          Ten languages, chosen at setup, and it will follow you if you switch
+          mid-sentence. Voices were picked on measured latency, so it answers
+          at conversation speed rather than waiting a beat.
+        </p>
+      </div>
+      <div>
+        <h3>What does cancelling look like?</h3>
+        <p>
+          One command into Stripe's own portal. No email, no retention call —
+          which would be a strange thing for us of all products to do.
+        </p>
+      </div>
+    </div>
   </section>
 </div>
+
+<section class="early">
+  <div class="wrap">
+    <p class="kicker">where this actually is</p>
+    <h2>The telephony works. The paper ships. The rest is being built with the first fifty.</h2>
+    <p class="lede">
+      We would rather say it here than have you find out on day three. Calling
+      works — ten languages, interruptible — and it took a fortnight to prove,
+      because our own carrier's text-to-speech renders silence on a phone line.
+      The nightly paper ships. The part that reads thirty-five pull requests and
+      picks the five is what we are building now, in the open.
+    </p>
+    <p class="lede">
+      That is the offer: install it today, get the paper for nothing, and if you
+      take the call while it is still being built, your price is locked for as
+      long as you stay.
+    </p>
+  </div>
+</section>
 
 <section class="close">
   <div class="wrap">
@@ -337,9 +635,9 @@
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
     <p class="fine">
-      Early, and we'd rather say it: the telephony works and the paper ships
-      nightly. The part that reads your pull requests is being built now, with
-      the first fifty people. Your price is locked for as long as you stay.
+      The paper costs nothing and always will. The call is $99/month with seven
+      days free — and if a phone call turns out to be the wrong shape for your
+      mornings, say so, cancel in one command, and keep the paper.
     </p>
   </div>
 </section>
