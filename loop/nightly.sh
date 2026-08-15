@@ -8,8 +8,8 @@
 
 set -euo pipefail
 
-REPO_DIR="${SCREENLESS_REPO_DIR:-$HOME/Desktop/oss/screenless}"
 STATE_DIR="${SCREENLESS_STATE_DIR:-$HOME/.screenless}"
+REGISTRY="$STATE_DIR/projects.json"
 LOG_DIR="$STATE_DIR/logs"
 STAMP="$STATE_DIR/last-run"
 
@@ -57,6 +57,27 @@ fi
 
 # ----------------------------------------------------------------------- run
 
+# Repos registered with `screenless init`. Kept here rather than in the skill
+# because which projects run tonight is a property of this machine, not of any
+# one checkout.
+if [ ! -f "$REGISTRY" ]; then
+  say "no projects registered — run \`screenless init\` in a repo first"
+  exit 0
+fi
+
+projects="$(node -e '
+  const fs = require("fs");
+  try {
+    const list = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (Array.isArray(list)) console.log(list.join("\n"));
+  } catch { /* unreadable registry is the same as no projects */ }
+' "$REGISTRY")"
+
+if [ -z "$projects" ]; then
+  say "registry is empty — run \`screenless init\` in a repo first"
+  exit 0
+fi
+
 say "starting nightly run"
 
 # Stamped before the run, not after. A crash mid-run must not turn into four
@@ -64,14 +85,29 @@ say "starting nightly run"
 # four phone calls.
 printf '%s' "$today" > "$STAMP"
 
-cd "$REPO_DIR"
+failures=0
+while IFS= read -r project; do
+  [ -n "$project" ] || continue
+  if [ ! -d "$project" ]; then
+    say "skipping $project — no longer there"
+    continue
+  fi
 
-if claude -p "Run the screenless nightly loop for tonight." \
-    --permission-mode acceptEdits \
-    >>"$log" 2>&1; then
-  say "done — see $log"
-else
-  status=$?
-  say "run failed with status $status — see $log"
-  exit "$status"
-fi
+  say "running for $project"
+  cd "$project"
+
+  # One project failing must not cost the others their night.
+  if claude -p "Run the screenless nightly loop for this repo." \
+      --permission-mode acceptEdits \
+      >>"$log" 2>&1; then
+    say "done: $project"
+  else
+    failures=$((failures + 1))
+    say "failed: $project — see $log"
+  fi
+done <<EOF
+$projects
+EOF
+
+say "finished with $failures failure(s) — see $log"
+[ "$failures" -eq 0 ]

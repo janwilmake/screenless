@@ -38,7 +38,28 @@ The catch-up case also changes what the run does. Parking a brief for 08:00 at
 laptop opens. Instead the skill parks it **held**: nothing dials, and the user
 rings the number when they are ready.
 
+## What lives where
+
+| | Where | Why |
+|---|---|---|
+| The skill | `~/.claude/skills/screenless/SKILL.md` | Same for every repo. Installed by `curl \| bash`, replaced on reinstall. |
+| A project's settings | `<repo>/.screenless.json` | Belongs with the code it describes. Written by `screenless init`. |
+| Which repos run at 03:00 | `~/.screenless/projects.json` | A property of the machine, not of any checkout. |
+
+The split is the point. Putting the settings in the skill meant one global file
+that only ever worked for one repo; putting the skill in the repo meant it could
+not be installed in one command, and launchd had nowhere to look.
+
 ## Install
+
+The skill arrives with the CLI:
+
+```bash
+curl -fsSL https://screenless.sh/install | bash
+screenless init            # in each repo you want a paper about
+```
+
+Then the nightly job:
 
 ```bash
 cp loop/com.screenless.nightly.plist ~/Library/LaunchAgents/

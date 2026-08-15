@@ -641,6 +641,66 @@ async function mail(args: string[]): Promise<void> {
   );
 }
 
+/**
+ * Registers the current repo with the nightly loop.
+ *
+ * Two files, because they have different lifetimes. `.screenless.json` sits in
+ * the repo and describes it — it is committed, reviewed, and travels with the
+ * code it configures. `~/.screenless/projects.json` is a list of the repos this
+ * *machine* runs at 03:00, which is a property of the laptop and not of any
+ * checkout.
+ */
+async function init(args: string[]): Promise<void> {
+  const { writeFile, readFile, mkdir } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  const { resolve, basename, join } = await import("node:path");
+  const { homedir } = await import("node:os");
+
+  const repo = resolve(args.find((a) => !a.startsWith("--")) ?? process.cwd());
+  if (!existsSync(join(repo, ".git"))) die(`${repo} is not a git repository`);
+
+  const configPath = join(repo, ".screenless.json");
+  if (existsSync(configPath) && !args.includes("--force")) {
+    console.log(`${c.dim("already configured:")} ${configPath}`);
+  } else {
+    const config = {
+      repo: ".",
+      tracker: "linear",
+      trackerTeam: "",
+      ticketPrefix: "",
+      appUrl: "",
+      outDir: "~/screenless/press",
+      deliverTo: "",
+      windowDays: 7,
+    };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    console.log(`${c.green("✓")} wrote ${configPath}`);
+    console.log(c.dim("  fill in trackerTeam, ticketPrefix and deliverTo before the first run"));
+  }
+
+  // The registry is append-only and deduped: registering twice is a no-op
+  // rather than a second nightly run against the same repo.
+  const dir = join(homedir(), ".screenless");
+  const registry = join(dir, "projects.json");
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+
+  let projects: string[] = [];
+  try {
+    projects = JSON.parse(await readFile(registry, "utf8")) as string[];
+  } catch {
+    /* first project on this machine */
+  }
+  if (!projects.includes(repo)) {
+    projects.push(repo);
+    await writeFile(registry, `${JSON.stringify(projects, null, 2)}\n`);
+    console.log(`${c.green("✓")} registered ${c.bold(basename(repo))} for the nightly run`);
+  } else {
+    console.log(c.dim(`  already registered for the nightly run`));
+  }
+
+  console.log(`\n  ${projects.length} project${projects.length === 1 ? "" : "s"} in ${c.dim(registry)}`);
+}
+
 async function logout(): Promise<void> {
   await config.clear();
   console.log(`${c.green("✓")} signed out, ${c.dim(config.configPath)} removed`);
@@ -655,6 +715,7 @@ ${c.bold("Usage")}
   screenless test                            ring me now with a demo call
   screenless transcript [--wait] [--json]    what was decided on the last call
   screenless settings [--at HH:MM]           when the morning call goes out
+  screenless init [path]                     configure a repo for the nightly loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
   screenless whoami                          show the verified number
   screenless billing [--manage]              trial status, or Stripe's portal
@@ -717,6 +778,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   test,
   transcript,
   settings,
+  init,
   mail,
   whoami,
   billing,

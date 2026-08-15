@@ -3,14 +3,20 @@
   "version": "0.1.0",
   "description": "Review your agents' overnight pull requests by phone, before you open a laptop",
   "type": "module",
-  "bin": { "screenless": "./dist/index.js" },
-  "files": ["dist"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "screenless": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
-    "bundle": "npm run build && COPYFILE_DISABLE=1 tar -czf ../site/public/screenless.tar.gz -C dist --exclude='*.map' ."
+    "bundle": "npm run build && COPYFILE_DISABLE=1 tar -czf ../site/public/screenless.tar.gz -C dist --exclude='*.map' . && cp ../loop/SKILL.md ../site/public/SKILL.md"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

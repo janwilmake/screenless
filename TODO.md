@@ -13,12 +13,21 @@
 - [ ] The nightly loop, once, against hyre
 - [ ] A Resend send — domain still `Pending`, DNS is live and correct
 
+## Backlog
+
+- [ ] **Other coding agents.** The loop is Claude Code only — `SKILL.md` is Claude's
+      format and `nightly.sh` shells out to `claude -p`. Nothing in the architecture
+      requires it: the Worker takes text and a PDF and does not care what wrote them.
+      Cursor / Codex / Amp would each need their own thin runner.
+- [ ] Multi-repo: the registry supports it, nothing has tested it
+
 ## Small
 
 - [ ] 30 min/day is sold on the pricing page; code counts 20 calls/hr and no minutes at all
 - [ ] No alerting when the cron sweep throws
 - [ ] `loop/SKILL.md` has a personal email + local path, in a public repo
 - [ ] launchd job never installed (`loop/README.md`)
+- [ ] No local `screenless` session on this machine — installer has never been run here
 
 ## Done
 
