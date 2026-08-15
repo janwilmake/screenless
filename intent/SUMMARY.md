@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 15 August 2026** — covers sessions 1–4, through the prompt at
-20:46. If the session files carry prompts newer than that, this document is
+**Last updated 15 August 2026** — covers sessions 1–5, through the prompt at
+20:35 in session 5. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -56,6 +56,7 @@ product, never executed against reality · **not built**.
 |---|---|
 | One command, bun-style: `curl -fsSL https://screenless.sh/install \| bash` | built |
 | The landing page's job is to action developers into that command | built |
+| The landing page should argue the problem, not assume it — who it is for, the wow moment, the objections | built, undeployed — rewritten in session 5, screenless.sh still serves the old page |
 | Setup verifies the phone, then takes payment if unpaid | built |
 | Worker URL defaults to ours; self-hosted is a `y/N` question | built |
 | The installer also installs the loop into Claude, globally | built |
@@ -163,7 +164,9 @@ at what you wanted; any of them can be reversed cheaply.
 - Every line of the terms and privacy pages beyond "simple pages, accepted at
   setup" — including naming **W** as a Dutch sole proprietorship and putting
   disputes in Amsterdam, inferred from session 1.
-- The landing page's design-partner framing and all marketing copy.
+- The landing page's design-partner framing and all marketing copy — including,
+  from session 5, every FAQ answer and the choice of `screenless test` as the
+  thing to put in front of a stranger first.
 - `GTM.md` beyond the four choices you made: the phasing, the gates, the
   metrics, and the risks.
 - Commit messages, and this document's structure.

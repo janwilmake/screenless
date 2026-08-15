@@ -41,4 +41,5 @@ exactly how something was worded.
   numbers redacted before they land here.
 
 See [CLAUDE.md](../CLAUDE.md) for when to write these.
+| [Session 5 — the landing page argument](2026-08-15-session-5-the-landing-page-argument.md) | The landing page rewritten to argue rather than assume: problem section, the `screenless test` wow moment, the no-credentials boundary, an FAQ, and the design-partner honesty promoted out of the fine print. Includes a mobile overflow bug that turned out to be headless Chrome's 500px floor. |
 | [Session 4 — the silent call was Telnyx's own TTS](2026-08-15-session-4-the-tts-bug.md) | The bug that blocked every call since session 1: Telnyx-hosted TTS renders no audio on PSTN. All ten languages moved to AWS/Azure voices, chosen on measured latency. Includes the `<Say>`-then-assistant reproduction, and half a friction list retracted after checking the docs. |
