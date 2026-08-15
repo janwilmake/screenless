@@ -1,6 +1,7 @@
 name = "voxcall"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
+account_id = "080fd9e0587416d2fa30ed1f527e2323"
 
 [vars]
 # The Telnyx number the call comes *from*. Must be a number you own.
@@ -25,7 +26,7 @@ ALLOWED_DESTINATIONS = "NL"
 # Create with: wrangler kv namespace create CALLS
 [[kv_namespaces]]
 binding = "CALLS"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "1f4267f254c74f82a24737a84070f991"
 
 # Secrets (never put these here — use `wrangler secret put NAME`):
 #   TELNYX_API_KEY
