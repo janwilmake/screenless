@@ -11,9 +11,11 @@ TELNYX_FROM_NUMBER = "+31000000000"
 # per-turn latency.
 ASSISTANT_MODEL = "anthropic/claude-haiku-4-5"
 
-# Voice id, format Telnyx.<model>.<voice>. The default below is ENGLISH —
-# pick a Dutch-capable voice before using this for real. See README.
-ASSISTANT_VOICE = "Telnyx.KokoroTTS.af_heart"
+# Dutch voice, verified present on a live Telnyx account.
+# "Sanne - Clear Companion" — cheerful female for engaging conversations.
+# Telnyx-hosted, so it needs no third-party key and runs on Telnyx's own GPUs.
+# Run `npm run voices` to see the other 11 Dutch options.
+ASSISTANT_VOICE = "Telnyx.Ultra.0eb213fe-4658-45bc-9442-33a48b24b133"
 
 # Countries whose numbers may be verified and dialled. Doubles as a spend guard.
 # Use "*" to disable the check (not recommended).

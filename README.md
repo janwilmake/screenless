@@ -46,6 +46,8 @@ The Worker is also the webhook receiver, so the CLI never needs a tunnel — it 
 
 You need a [Telnyx account](https://telnyx.com/sign-up) and a Cloudflare account. Budget about 20 minutes.
 
+**Only Telnyx is required — there is no separate Deepgram account.** Telnyx hosts the Deepgram models, selected via `transcription.model` in the assistant config, and bills them inside the $0.05/min. You would only need your own Deepgram or ElevenLabs key to bypass Telnyx's hosting (ElevenLabs voices require one, passed as `api_key_ref`).
+
 ### 1. Telnyx: get a number and a key
 
 1. Buy a phone number. For a business, a Dutch **national** number is the easiest legitimate option — it needs a Dutch address but no area-code match and no proof-of-address document. **Local** (+31 geographic) numbers additionally require an address in the matching area code plus proof dated within 3 months. **Mobile** numbers have the lightest KYC but are flagged A2P-only, which is a poor fit for a conversational agent.
@@ -118,9 +120,20 @@ The `call` command blocks until the call reaches a terminal state, polling every
 
 ## Before this is useful, read this
 
-### Pick a Dutch voice
+### Voices
 
-`ASSISTANT_VOICE` in `wrangler.toml` defaults to `Telnyx.KokoroTTS.af_heart`, which is **English**. A Dutch prompt with an English voice sounds exactly as bad as it sounds. Browse the voices available on your account and set a Dutch one before doing anything real — the format is `Telnyx.<model_id>.<voice_id>`.
+`ASSISTANT_VOICE` defaults to **"Sanne - Clear Companion"** (`Telnyx.Ultra.0eb213fe-…`), a Dutch female voice verified present on a live Telnyx account. To see the alternatives:
+
+```bash
+cd worker
+npm run voices            # 12 Telnyx-hosted Dutch voices
+npm run voices nl all     # all 43, including AWS/Azure/Inworld/MiniMax
+npm run voices nl-BE all  # Flemish — 3 voices, all third-party
+```
+
+Prefer `hosted: true` voices (Telnyx.Ultra.*, Resemble.Pro.*): they run on Telnyx's own GPUs, so they need no third-party API key and avoid a network hop mid-call. The Flemish (nl-BE) options are AWS and Azure only — consistent with Flemish being the least-served variant across the whole industry.
+
+Ten of the Dutch voices are Telnyx's own, with descriptions like *"Clear, articulate Dutch female for efficient professional assistance"* — pick by use case rather than by guessing.
 
 ### Costs
 

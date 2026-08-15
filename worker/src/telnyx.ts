@@ -64,7 +64,13 @@ export function createVerifyProfile(apiKey: string, destinations: string[]) {
       default_verification_timeout_secs: 300,
       whitelisted_destinations: destinations,
     },
-    call: { app_name: "voxcall", default_verification_timeout_secs: 300 },
+    // The API rejects the profile unless `call` carries its own destination
+    // allowlist too — it is not inherited from `sms`.
+    call: {
+      app_name: "voxcall",
+      default_verification_timeout_secs: 300,
+      whitelisted_destinations: destinations,
+    },
   });
 }
 
