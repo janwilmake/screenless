@@ -122,3 +122,25 @@ poked with both encodings before trusting it.
 **16:58** — u r steve jobs. transform the landingpage to a beaut & depl9oyyyy
 
 **17:02** — whydiduduplicate the apply/collect/nightly in site/ppulic? explain me
+
+**17:10** — whats the targz?
+
+**17:14** — yes do it the cleaner way wwith a generated folder
+
+**17:19** — shouldnt we gitignore the generataed stuff?
+
+**17:23** — nice. now i can install it?
+
+**17:28** — remove it from this machine, i wanna just test on the other one
+
+**17:36** — after i ran setup and i filled in phone number, accepted terms, then fill language nethernads. but then i got 'error: not authenticated - run `screenless setup`.' wtf?
+
+**17:38** — jdeploy a fix. tell me when deployed using 'say'
+
+**17:47** — i ran screenless test. the ai was quiet, expected, still a bug. but after hanging up the cli never unblocks. oh actually it just took a while clonger . after a while i got the transcript!
+
+**17:49** — i used wijnand@hyre.io btw, so use gmail mcp
+
+**17:54** — still quiet. but its fine i will wait for telnyx support
+
+**17:56** — lets finish up. im gonna eat smth

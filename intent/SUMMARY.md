@@ -1,7 +1,7 @@
 # Intent, resolved
 
 **Last updated 15 August 2026** — covers sessions 1–3, through the prompt at
-17:02. If the session files carry prompts newer than that, this document is
+17:56. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -41,9 +41,9 @@ product, never executed against reality · **not built**.
 
 | Intent | Status |
 |---|---|
-| Delivered by Resend *(was: over whatever messaging MCP is connected)* | built, unsent — domain unverified |
+| Delivered by Resend *(was: over whatever messaging MCP is connected)* | **built and proven** — domain verified, mail lands in the Inbox |
 | Free; only the call is paid *(was: both behind the trial)* | built |
-| Sent to one confirmed email, bound to the account | built, unrun |
+| Sent to one confirmed email, bound to the account | **built and proven** — confirmed on two accounts |
 | A deep dive on how one area works today, from real codebase research | built, unrun |
 | No charts of files or lines changed per PR — visualise schemas, data models, API surfaces instead | built, unrun |
 | The nightly run schedules the call | built — ran once, parked nothing (no session at the time) |
@@ -66,9 +66,9 @@ product, never executed against reality · **not built**.
 | Intent | Status |
 |---|---|
 | After the call, results reach the machine as fast as possible | built, unrun — 5-minute collector, ≤5 min awake or after waking |
+| Nothing lost if the laptop never wakes | **built and proven** — the transcript email arrived in the Inbox |
 | The machine acts on the decisions | built, unrun — `loop/APPLY.md` via the user's own MCPs |
 | A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
-| Nothing lost if the laptop never wakes | built, unrun — the Worker emails the transcript |
 
 ## Money
 
@@ -102,9 +102,12 @@ Things asked for that the product does not yet do.
 2. **The paper has never been delivered.** Resend still shows `screenless.sh`
    as pending, so no edition has ever reached an inbox, and the email
    confirmation flow written today has never executed.
-3. **The return leg has never run.** Collector, manifest, apply skill and
-   transcript email are all written and none has executed. The loop itself has
-   run once and produced a genuinely good brief.
+3. **The call has no audio.** An outbound call now completes end to end —
+   placed, answered, transcript captured, stored, and emailed — with zero
+   assistant turns in it. Everything around the call works; the call does not.
+   With Telnyx support.
+4. **The return leg has never run.** Collector, manifest and apply skill are
+   written and unexecuted, because there has been no call worth applying.
 4. **The deep dive and the new figures are unrendered.** Written into the skill
    after you read the first paper; no edition has used them.
 5. **"Up to 30 minutes of call a day"** is on the pricing page and enforced
