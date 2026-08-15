@@ -108,3 +108,17 @@ poked with both encodings before trusting it.
 **16:01** — yes lets bind to to one email that needs to be verified at startup! yes on 2 too, pls make it safer. 3 - fix it 4-fix it in a way thats sutibale for a simple poc, maybe we shouldnt claim it but maybe we can and its an easy fix? LISENCE MIT.
 
 **16:14** — create a document intent/SUMMARY.md that summarizes all intent in succinct fashion. e.g. if something was changed later the latest intent should win. and match it against the product. create a section 'missing intent' for stuff that wasnt inthe product yet, and a section 'assumptions' for things u assumed without my specific intent. btw first update intent to the latest hihi
+
+**16:22** — done. whats next? i think usually it can take a day or 2 for changes to dmarc etc to take effect in fastmail
+
+**16:31** — what would be the smallest real 'rounds'?
+
+**16:38** — also how do we make sure that: 1- the nightly run schedules the call. 2- after having the call, results come back to the users machine asap and; 3-the users machine performs actiosn based on the decisions made during the call? i dont think we have a good system for that now since we schedule the call. if the call is immediate we can make the cli blocking but what if the call is scheduled? come up with a good system for that.
+
+**16:44** — btw also if the user calsls our phoneumber proactively without any schedule.... how do we act on it asap?
+
+**16:47** — ues build it this wway and push / deploy and get intent + summary up to date. after this, ill finally test
+
+**16:58** — u r steve jobs. transform the landingpage to a beaut & depl9oyyyy
+
+**17:02** — whydiduduplicate the apply/collect/nightly in site/ppulic? explain me

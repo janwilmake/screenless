@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 15 August 2026** — covers sessions 1–2, through the prompt at
-16:14. If the session files carry prompts newer than that, this document is
+**Last updated 15 August 2026** — covers sessions 1–3, through the prompt at
+17:02. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -46,6 +46,7 @@ product, never executed against reality · **not built**.
 | Sent to one confirmed email, bound to the account | built, unrun |
 | A deep dive on how one area works today, from real codebase research | built, unrun |
 | No charts of files or lines changed per PR — visualise schemas, data models, API surfaces instead | built, unrun |
+| The nightly run schedules the call | built — ran once, parked nothing (no session at the time) |
 
 ## Install and loop
 
@@ -59,6 +60,15 @@ product, never executed against reality · **not built**.
 | Setup offers the repo you are standing in, else points at `screenless init` | built |
 | Runs at 03:00, or first thing when the laptop opens | built, unrun |
 | One skill for both surfaces | built |
+
+## The return leg
+
+| Intent | Status |
+|---|---|
+| After the call, results reach the machine as fast as possible | built, unrun — 5-minute collector, ≤5 min awake or after waking |
+| The machine acts on the decisions | built, unrun — `loop/APPLY.md` via the user's own MCPs |
+| A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
+| Nothing lost if the laptop never wakes | built, unrun — the Worker emails the transcript |
 
 ## Money
 
@@ -92,7 +102,9 @@ Things asked for that the product does not yet do.
 2. **The paper has never been delivered.** Resend still shows `screenless.sh`
    as pending, so no edition has ever reached an inbox, and the email
    confirmation flow written today has never executed.
-3. **The nightly loop has never completed a run.** One trial is in flight.
+3. **The return leg has never run.** Collector, manifest, apply skill and
+   transcript email are all written and none has executed. The loop itself has
+   run once and produced a genuinely good brief.
 4. **The deep dive and the new figures are unrendered.** Written into the skill
    after you read the first paper; no edition has used them.
 5. **"Up to 30 minutes of call a day"** is on the pricing page and enforced
@@ -139,6 +151,11 @@ at what you wanted; any of them can be reversed cheaply.
   that endpoint was my inference from it.
 - Parking a brief **held** rather than scheduled when the loop catches up after
   the call time has passed.
+- The five-minute collector interval, the `204`-when-nothing-new protocol, and
+  the decision that merging needs a second gate while comments and labels do
+  not.
+- The landing page rewrite: what to cut, and using the call itself as the proof
+  rather than a description of it.
 
 **Words**
 
