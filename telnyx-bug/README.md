@@ -114,7 +114,7 @@ Each changed in isolation; every one still silent.
 |---|---|
 | Model | `anthropic/claude-haiku-4-5`, `moonshotai/Kimi-K2.6` |
 | Inference path | Telnyx-hosted **and** `external_llm` against our own Anthropic key |
-| Voice | `Telnyx.Ultra.*` (Dutch), `Telnyx.Natural.astra` (English) |
+| Voice | `Telnyx.Ultra.*` (Dutch), `Telnyx.Natural.astra` (English), and `voice_settings` omitted entirely — Telnyx then defaults to `Telnyx.Ultra.f786b574-daa5-4673-aa0c-cbe3e8534c02`, which is the voice on the portal's own `Blank` assistant that works over WebRTC. Still silent. |
 | Language | `nl`, `en` |
 | Endpoint | `/v2/texml/ai_calls/{id}`, `/v2/texml/calls/{id}` |
 | TeXML document | Telnyx's own `/ai/assistants/{id}/texml`, and ours |
@@ -136,6 +136,13 @@ Verified working alongside the failure:
 - account balance positive, destination country whitelisted on the outbound voice profile
 
 ## Notes
+
+The caller's transcription is intermittent. Most runs record the caller's turns
+(`"Hello. Hello."`); some record nothing at all despite a human speaking on an
+answered call — call session `f0617992-98d4-11f1-af1e-02420a1f0a69` ran 18
+seconds and produced zero messages of either role. Whatever fails does not
+appear to fail identically every time, which suggests the assistant session
+sometimes does not attach rather than attaching and staying mute.
 
 There is no error anywhere. The API returns `200 queued`, the call connects,
 media streams bidirectionally at 24 kHz (confirmed by Telnyx support from the
