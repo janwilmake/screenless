@@ -1,5 +1,6 @@
 import * as telnyx from "./telnyx";
 import { session, sign, webhookToken, safeEqual } from "./auth";
+import { scheduleMail, sweepOutbox } from "./mail";
 
 export interface Env {
   CALLS: KVNamespace;
@@ -9,6 +10,8 @@ export interface Env {
   TELNYX_VERIFY_PROFILE_ID: string;
   SESSION_SECRET: string;
   ADMIN_SECRET: string;
+  /** Optional — only needed for `screenless mail`. */
+  RESEND_API_KEY: string;
 
   // vars — set in wrangler.toml
   TELNYX_FROM_NUMBER: string;
@@ -21,11 +24,15 @@ export interface Env {
   ASSISTANT_MODEL: string;
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
+  /** Envelope sender for the nightly edition, e.g. "screenless <press@screenless.sh>". */
+  MAIL_FROM: string;
+  /** Default recipient, so `screenless mail` does not need --to every night. */
+  MAIL_TO: string;
 }
 
 /** Sessions last a week. Re-verify by SMS after that. */
 const SESSION_TTL_SECS = 7 * 24 * 60 * 60;
-/** Call records outlive the call itself so `voxcall call` can be re-run against an id. */
+/** Call records outlive the call itself so `screenless call` can be re-run against an id. */
 const CALL_TTL_SECS = 24 * 60 * 60;
 /** OTP sends allowed per phone number per hour. SMS to NL costs ~$0.09 a pop. */
 const OTP_RATE_LIMIT = 5;
@@ -134,7 +141,7 @@ async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
 
 async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
   const s = await session(req, env.SESSION_SECRET);
-  if (!s) return fail(401, "not authenticated — run `voxcall setup`");
+  if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
   const { prompt, language } = (await req.json().catch(() => ({}))) as {
     prompt?: string;
@@ -145,7 +152,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
 
   // "multi" lets Deepgram Flux follow Dutch/English code-switching mid-sentence,
   // which is how people actually speak in a Dutch business context.
-  const lang = language === "en" || language === "nl" || language === "multi" ? language : "nl";
+  const lang = language === "en" || language === "nl" || language === "multi" ? language : "en";
   if (!(await rateLimit(env, `call:${s.phone}`, 20)))
     return fail(429, "call limit reached for this number, try again in an hour");
 
@@ -160,7 +167,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
       ? "Hi, you're speaking with an AI assistant. "
       : "Hoi, je spreekt met een AI-assistent. ";
 
-  const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `voxcall-${callId}`, {
+  const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-${callId}`, {
     instructions: prompt,
     model: env.ASSISTANT_MODEL,
     voice: env.ASSISTANT_VOICE,
@@ -392,6 +399,21 @@ export default {
       const call = path.match(/^\/calls\/([\w-]+)$/);
       if (method === "GET" && call) return await getCall(call[1], req, env);
 
+      // Parks an edition for delivery at wake-up. Same session auth as calls:
+      // whoever holds the token gets to mail themselves a PDF, nothing more.
+      if (method === "POST" && path === "/mail") {
+        const s = await session(req, env.SESSION_SECRET);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        if (!(await rateLimit(env, `mail:${s.phone}`, 12)))
+          return fail(429, "mail limit reached for this number, try again in an hour");
+
+        const body = await req.json().catch(() => null);
+        const result = await scheduleMail(body, env);
+        return result.ok
+          ? json({ id: result.id, sendAt: result.sendAt })
+          : fail(result.status, result.error);
+      }
+
       const hook = path.match(/^\/webhooks\/([\w-]+)\/(status|conversation)$/);
       if (method === "POST" && hook)
         return await handleWebhook(hook[1], hook[2] as "status" | "conversation", req, env);
@@ -405,5 +427,16 @@ export default {
       console.error("unhandled", err);
       return fail(500, (err as Error).message ?? "internal error");
     }
+  },
+
+  /**
+   * Cron sweep for parked editions. Runs every 5 minutes, which is the
+   * resolution the reader actually perceives — nobody notices a paper that
+   * arrives at 06:32 instead of 06:30.
+   */
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    if (!env.RESEND_API_KEY) return;
+    const { sent, failed } = await sweepOutbox(env);
+    if (sent || failed) console.log(`outbox swept: ${sent} sent, ${failed} failed`);
   },
 };

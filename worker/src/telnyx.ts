@@ -57,9 +57,9 @@ export interface VerifyProfile {
  */
 export function createVerifyProfile(apiKey: string, destinations: string[]) {
   return call<VerifyProfile>(apiKey, "POST", "/verify_profiles", {
-    name: "voxcall",
+    name: "screenless",
     sms: {
-      app_name: "voxcall",
+      app_name: "screenless",
       code_length: 6,
       default_verification_timeout_secs: 300,
       whitelisted_destinations: destinations,
@@ -67,7 +67,7 @@ export function createVerifyProfile(apiKey: string, destinations: string[]) {
     // The API rejects the profile unless `call` carries its own destination
     // allowlist too — it is not inherited from `sms`.
     call: {
-      app_name: "voxcall",
+      app_name: "screenless",
       default_verification_timeout_secs: 300,
       whitelisted_destinations: destinations,
     },

@@ -1,9 +1,9 @@
 {
-  "name": "voxcall",
+  "name": "screenless",
   "version": "0.1.0",
-  "description": "Call yourself with an AI voice agent from the command line, get the transcript back",
+  "description": "Review your agents' overnight pull requests by phone, before you open a laptop",
   "type": "module",
-  "bin": { "voxcall": "./dist/index.js" },
+  "bin": { "screenless": "./dist/index.js" },
   "files": ["dist"],
   "engines": { "node": ">=20" },
   "scripts": {

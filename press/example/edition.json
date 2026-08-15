@@ -1,0 +1,141 @@
+{
+  "_comment": "Reference edition. This file is both the schema contract for the skill and the render test fixture. Every chart type appears at least once.",
+
+  "date": "2026-08-15",
+  "repo": "hyre",
+  "head": "65e805f",
+  "generatedAt": "2026-08-15T03:12:00Z",
+
+  "masthead": {
+    "headline": "Matching moved to the centre of the product this week",
+    "standfirst": "Six of nine merged PRs touched matching or the ATS sync around it. Nothing has been written to the calendar layer in five weeks.",
+    "stats": [
+      { "label": "open PRs", "value": "14", "spark": [9, 11, 10, 13, 12, 14, 14] },
+      { "label": "need you", "value": "6", "spot": true },
+      { "label": "merged, 7d", "value": "9" },
+      { "label": "commits, 7d", "value": "63", "spark": [4, 9, 12, 7, 11, 14, 6] }
+    ]
+  },
+
+  "pages": [
+    {
+      "kind": "map",
+      "title": "What the product is made of",
+      "caption": "Area is file count. The shape of this page is the shape of the codebase — if something looks bigger than it should be, that is the finding.",
+      "charts": [
+        {
+          "type": "treemap",
+          "height": 340,
+          "items": [
+            { "label": "app/routes", "value": 184 },
+            { "label": "app/components", "value": 142 },
+            { "label": "app/lib", "value": 96 },
+            { "label": "prisma", "value": 34 },
+            { "label": "app/services", "value": 61, "spot": true },
+            { "label": "app/hooks", "value": 28 },
+            { "label": "scripts", "value": 19 },
+            { "label": "docs", "value": 23 }
+          ],
+          "caption": "app/services is highlighted because it absorbed most of this week's change despite being a fifth the size of app/routes."
+        }
+      ]
+    },
+    {
+      "kind": "map",
+      "title": "Where the week went",
+      "caption": "Lines added plus removed, last 7 days, lockfiles excluded.",
+      "charts": [
+        {
+          "type": "bar",
+          "items": [
+            { "label": "app/services", "value": 2140, "spot": true, "note": "matching + ATS sync" },
+            { "label": "app/routes", "value": 1180 },
+            { "label": "prisma", "value": 640, "note": "2 migrations" },
+            { "label": "app/components", "value": 410 },
+            { "label": "docs", "value": 120 },
+            { "label": "scripts", "value": 62 }
+          ],
+          "caption": "One area took more change than the next three combined."
+        },
+        {
+          "type": "status",
+          "segments": [
+            { "label": "Todo", "value": 22 },
+            { "label": "In Progress", "value": 7 },
+            { "label": "In Review", "value": 14, "spot": true },
+            { "label": "Done, 7d", "value": 9 }
+          ],
+          "caption": "Ticket flow. Review is the widest band, which is the queue this paper exists to drain."
+        }
+      ]
+    },
+    {
+      "kind": "ticket",
+      "id": "HYR2-441",
+      "status": "In Review",
+      "pr": 441,
+      "title": "Candidate notes stored as a JSONB column",
+      "caption": "Adds free-text notes to the candidate record. The agent chose a JSONB column on candidates rather than a separate table. Nothing queries it yet — it is write-only from the intake form.",
+      "charts": [
+        {
+          "type": "bar",
+          "labelWidth": 150,
+          "items": [
+            { "label": "prisma", "value": 88 },
+            { "label": "app/routes", "value": 61 },
+            { "label": "app/components", "value": 34 }
+          ],
+          "caption": "Lines changed by area in this PR."
+        }
+      ],
+      "decision": "Separate table or leave it in JSONB? Cheap to change now, expensive once anything reads it."
+    },
+    {
+      "kind": "ticket",
+      "id": "HYR2-448",
+      "status": "In Review",
+      "pr": 448,
+      "title": "CSV export for the candidate list",
+      "caption": "Streams the filtered list as CSV. Also changes the default page size from 25 to 100, which is not in the ticket scope and affects every list view in the product.",
+      "charts": [
+        {
+          "type": "bar",
+          "labelWidth": 150,
+          "items": [
+            { "label": "app/routes", "value": 210, "spot": true },
+            { "label": "app/lib", "value": 47 },
+            { "label": "app/components", "value": 12 }
+          ],
+          "caption": "The page-size change lives in app/routes, away from the export code."
+        }
+      ],
+      "decision": "Split the page-size change into its own PR, or accept it here? It is a product-wide default hiding inside an export ticket."
+    },
+    {
+      "kind": "attention",
+      "title": "What is not moving",
+      "caption": "Open pull requests by age. Anything past the seven-day line is marked — not because age is a defect, but because a PR nobody has closed in a week is usually waiting on a decision rather than on work.",
+      "charts": [
+        {
+          "type": "age",
+          "threshold": 7,
+          "items": [
+            { "label": "#412 calendar sync retry", "days": 34 },
+            { "label": "#427 Unipile webhook v2", "days": 19 },
+            { "label": "#433 matching score weights", "days": 11 },
+            { "label": "#441 candidate notes", "days": 4 },
+            { "label": "#448 CSV export", "days": 3 },
+            { "label": "#450 flaky e2e fix", "days": 1 }
+          ],
+          "caption": "Two PRs are older than the tickets that replaced them."
+        }
+      ],
+      "notes": [
+        "app/calendar has had no commits in 5 weeks — the oldest untouched area in the product.",
+        "prisma/migrations gained two migrations this week; neither has a rollback documented.",
+        "docs/ has not moved since the ATS sync rewrite, so the written description of that flow is now wrong.",
+        "Three of the six open review items are scope questions, not correctness questions."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,290 @@
+/**
+ * Print stylesheet for a screenless edition.
+ *
+ * This is the one document in the repo with no dark mode and no responsive
+ * breakpoints, because its target is A4 paper. Every decision below follows
+ * from that: physical units, page-break control, and a duotone palette that
+ * survives a mono laser printer.
+ */
+
+/* ------------------------------------------------------------------ tokens */
+
+:root {
+  --ink: #14110f;
+  --spot: #b4341f;
+  --rule: #c9c2bb;
+  --muted: #6f665e;
+  --paper: #ffffff;
+  --wash: #f6f3ef;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* -------------------------------------------------------------------- page */
+
+@page {
+  size: A4;
+  margin: 15mm 15mm 14mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* Base size is set in points: this document is measured in ink, not pixels. */
+  font-size: 10.5pt;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  line-height: 1.42;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead {
+  break-after: page;
+}
+
+.masthead__rule {
+  height: 3pt;
+  background: var(--ink);
+  margin-bottom: 6pt;
+}
+
+.masthead__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 0.5pt solid var(--rule);
+  padding-bottom: 5pt;
+  margin-bottom: 14pt;
+}
+
+.masthead__name {
+  font-family: var(--sans);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 10pt;
+}
+
+.masthead__meta {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  color: var(--muted);
+}
+
+.masthead__headline {
+  font-size: 30pt;
+  line-height: 1.08;
+  font-weight: 400;
+  margin: 0 0 8pt;
+  letter-spacing: -0.015em;
+  /* Headlines are set tight and large; a paper you glance at needs one
+     obvious entry point per page. */
+  max-width: 22ch;
+}
+
+.masthead__standfirst {
+  font-size: 12pt;
+  color: var(--muted);
+  margin: 0 0 18pt;
+  max-width: 58ch;
+}
+
+/* ------------------------------------------------------------------- stats */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-top: 0.5pt solid var(--rule);
+  border-bottom: 0.5pt solid var(--rule);
+}
+
+.stat {
+  padding: 9pt 10pt 10pt;
+  border-right: 0.5pt solid var(--rule);
+}
+
+.stat:last-child {
+  border-right: 0;
+}
+
+.stat__value {
+  font-family: var(--sans);
+  font-size: 22pt;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.stat--spot .stat__value {
+  color: var(--spot);
+}
+
+.stat__label {
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  margin-top: 4pt;
+}
+
+.stat__spark {
+  margin-top: 6pt;
+  height: 20pt;
+}
+
+/* ------------------------------------------------------------------- pages */
+
+.page {
+  /* One subject per sheet. The whole premise is that you flip pages rather
+     than scroll, so a page that spills is a page that failed. */
+  break-before: page;
+  break-inside: avoid;
+  padding-top: 2pt;
+}
+
+.page__head {
+  display: flex;
+  gap: 5pt;
+  margin-bottom: 7pt;
+}
+
+.tag {
+  font-family: var(--mono);
+  font-size: 8pt;
+  letter-spacing: 0.04em;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 2pt 5pt;
+  border-radius: 2pt;
+}
+
+.tag--muted {
+  background: var(--wash);
+  color: var(--muted);
+}
+
+.page__title {
+  font-size: 20pt;
+  font-weight: 400;
+  line-height: 1.14;
+  margin: 0 0 7pt;
+  max-width: 30ch;
+}
+
+.page__caption {
+  font-size: 11pt;
+  color: var(--muted);
+  margin: 0 0 14pt;
+  max-width: 62ch;
+}
+
+/* ---------------------------------------------------------------- figures */
+
+.figure {
+  margin: 0 0 16pt;
+  break-inside: avoid;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--sans);
+}
+
+figcaption {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  color: var(--muted);
+  margin-top: 5pt;
+  padding-top: 4pt;
+  border-top: 0.5pt solid var(--rule);
+  max-width: 70ch;
+}
+
+.chart-missing {
+  font-family: var(--mono);
+  font-size: 8.5pt;
+  color: var(--spot);
+  padding: 6pt;
+  border: 0.5pt dashed var(--spot);
+}
+
+/* ----------------------------------------------------------- screenshots */
+
+.shot {
+  margin: 0 0 14pt;
+  border: 0.5pt solid var(--rule);
+  background: var(--wash);
+  break-inside: avoid;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Screenshots are evidence, not decoration — never crop them to fit. */
+}
+
+/* -------------------------------------------------------------- decisions */
+
+.decision {
+  margin-top: auto;
+  border-left: 3pt solid var(--spot);
+  background: var(--wash);
+  padding: 9pt 11pt;
+  font-size: 11pt;
+  break-inside: avoid;
+}
+
+.decision__label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--spot);
+  margin-bottom: 3pt;
+}
+
+/* ------------------------------------------------------------------ notes */
+
+.notes {
+  margin: 0;
+  padding-left: 13pt;
+  font-size: 10.5pt;
+  columns: 2;
+  column-gap: 16pt;
+}
+
+.notes li {
+  margin-bottom: 4pt;
+  break-inside: avoid;
+}
+
+/* -------------------------------------------------------------- colophon */
+
+.colophon {
+  break-before: avoid;
+  margin-top: 16pt;
+  padding-top: 5pt;
+  border-top: 0.5pt solid var(--rule);
+  font-family: var(--mono);
+  font-size: 7.5pt;
+  color: var(--muted);
+}

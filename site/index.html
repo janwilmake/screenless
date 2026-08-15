@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>screenless — understand what your agents built last night</title>
+<meta name="description" content="A morning call and a printed paper that tell you what your coding agents built overnight, and take the decisions they are blocked on. For senior engineers running agents at scale.">
+<meta property="og:title" content="screenless">
+<meta property="og:description" content="Understand what your agents built last night without opening a laptop.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://screenless.sh">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
+<style>
+  :root {
+    --ink:#14110f; --spot:#b4341f; --rule:#d6cfc7; --muted:#6f665e;
+    --paper:#fdfcfa; --wash:#f4f0eb;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  /* This page commits to paper. There is no dark mode on purpose — the
+     brand is ink on newsprint, and a dark variant would undo the idea. */
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);font-size:18px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  a{color:var(--ink)}
+  h1,h2,h3{font-weight:400;letter-spacing:-.015em;margin:0}
+  .rule{height:3px;background:var(--ink)}
+  .hair{height:1px;background:var(--rule)}
+
+  /* ---------------------------------------------------------- masthead */
+  .top{display:flex;justify-content:space-between;align-items:baseline;
+       padding:14px 0;border-bottom:1px solid var(--rule);gap:16px;flex-wrap:wrap}
+  .brand{font-family:var(--sans);font-weight:700;letter-spacing:.2em;
+         text-transform:uppercase;font-size:14px}
+  .top nav{font-family:var(--sans);font-size:13px;color:var(--muted);
+           display:flex;gap:20px;flex-wrap:wrap}
+  .top nav a{color:var(--muted);text-decoration:none}
+  .top nav a:hover{color:var(--spot)}
+
+  /* -------------------------------------------------------------- hero */
+  .hero{padding:56px 0 40px;border-bottom:1px solid var(--rule)}
+  .hero h1{font-size:clamp(38px,6.2vw,68px);line-height:1.04;max-width:16ch}
+  .hero .stand{font-size:clamp(18px,2.2vw,23px);color:var(--muted);
+               max-width:56ch;margin:22px 0 0}
+  .hero .who{font-family:var(--sans);font-size:13px;text-transform:uppercase;
+             letter-spacing:.12em;color:var(--spot);margin:0 0 18px;font-weight:700}
+
+  /* ------------------------------------------------------------ layout */
+  section{padding:52px 0;border-bottom:1px solid var(--rule)}
+  .kicker{font-family:var(--sans);font-size:12px;font-weight:700;
+          text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
+          margin:0 0 14px}
+  h2{font-size:clamp(26px,3.6vw,38px);line-height:1.12;max-width:22ch}
+  .lede{font-size:19px;color:var(--muted);max-width:60ch;margin:16px 0 0}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:36px;
+       border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .two > div{padding:26px 28px 30px}
+  .two > div:first-child{border-right:1px solid var(--rule)}
+  .two h3{font-size:25px;margin-bottom:4px}
+  .two .sub{font-family:var(--mono);font-size:12px;color:var(--spot);
+            margin-bottom:14px;letter-spacing:.02em}
+  .two p{margin:0 0 12px;font-size:16.5px}
+  .two ul{margin:14px 0 0;padding-left:18px;font-size:16px;color:var(--muted)}
+  .two li{margin-bottom:7px}
+
+  /* ---------------------------------------------------------- terminal */
+  .term{background:var(--ink);color:#e8e2db;font-family:var(--mono);
+        font-size:13.5px;line-height:1.65;padding:22px 24px;overflow-x:auto;
+        margin-top:34px;border-radius:3px}
+  .term .u{color:#f0b7ab}
+  .term .a{color:#e8e2db}
+  .term .d{color:#8d837a}
+  .term .k{color:#e0705c}
+  .term b{font-weight:700;color:#fff}
+
+  /* ------------------------------------------------------------- paper */
+  .sheet{background:#fff;border:1px solid var(--rule);padding:26px 28px 30px;
+         margin-top:34px;box-shadow:0 1px 0 var(--rule),4px 6px 0 -2px var(--wash)}
+  .sheet .sheet-top{display:flex;justify-content:space-between;
+                    align-items:baseline;border-bottom:1px solid var(--rule);
+                    padding-bottom:8px;margin-bottom:16px}
+  .sheet .sheet-name{font-family:var(--sans);font-weight:700;font-size:11px;
+                     letter-spacing:.2em;text-transform:uppercase}
+  .sheet .sheet-meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .sheet h4{font-size:27px;font-weight:400;margin:0 0 10px;max-width:20ch;
+            letter-spacing:-.015em}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);
+         border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+         margin:18px 0 20px}
+  .stats div{padding:10px 12px;border-right:1px solid var(--rule)}
+  .stats div:last-child{border-right:0}
+  .stats .v{font-family:var(--sans);font-size:24px;font-weight:700;line-height:1}
+  .stats .spot .v{color:var(--spot)}
+  .stats .l{font-family:var(--sans);font-size:10px;text-transform:uppercase;
+            letter-spacing:.1em;color:var(--muted);margin-top:5px}
+  .cap{font-family:var(--sans);font-size:12.5px;color:var(--muted);
+       border-top:1px solid var(--rule);padding-top:8px;margin-top:10px}
+
+  /* ------------------------------------------------------------ instal */
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:34px}
+  .grid3 h3{font-size:19px;margin-bottom:8px}
+  .grid3 p{font-size:16px;color:var(--muted);margin:0}
+  .num{font-family:var(--mono);font-size:12px;color:var(--spot);
+       display:block;margin-bottom:8px}
+
+  /* ------------------------------------------------------------- price */
+  .price{display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap;margin-top:30px}
+  .price .amt{font-family:var(--sans);font-size:64px;font-weight:700;
+              line-height:1;letter-spacing:-.03em}
+  .price .per{font-family:var(--sans);font-size:14px;color:var(--muted);
+              margin-top:8px}
+  .price ul{margin:0;padding-left:18px;font-size:16.5px;flex:1;min-width:260px}
+  .price li{margin-bottom:8px}
+
+  /* --------------------------------------------------------------- cta */
+  .cta{background:var(--ink);color:var(--paper);padding:44px 0;border:0}
+  .cta h2{color:var(--paper);max-width:20ch}
+  .cta p{color:#b9b0a8;max-width:52ch;font-size:18px}
+  .btn{display:inline-block;background:var(--spot);color:#fff;
+       font-family:var(--sans);font-weight:700;font-size:15px;
+       padding:14px 26px;text-decoration:none;margin-top:22px;border-radius:3px}
+  .btn:hover{background:#982a17}
+  .cta .fine{font-family:var(--sans);font-size:13px;color:#8d837a;margin-top:16px}
+
+  footer{padding:30px 0 46px;font-family:var(--sans);font-size:13px;
+         color:var(--muted);display:flex;justify-content:space-between;
+         gap:16px;flex-wrap:wrap}
+  footer a{color:var(--muted)}
+
+  .note{font-family:var(--sans);font-size:13.5px;color:var(--muted);
+        border-left:3px solid var(--spot);padding:10px 14px;
+        background:var(--wash);margin-top:26px;max-width:64ch}
+
+  @media (max-width:760px){
+    body{font-size:17px}
+    .two{grid-template-columns:1fr}
+    .two > div:first-child{border-right:0;border-bottom:1px solid var(--rule)}
+    .grid3{grid-template-columns:1fr;gap:22px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .stats div:nth-child(2){border-right:0}
+    .stats div:nth-child(1),.stats div:nth-child(2){border-bottom:1px solid var(--rule)}
+  }
+</style>
+</head>
+<body>
+
+<div class="rule"></div>
+<div class="wrap">
+  <div class="top">
+    <span class="brand">screenless</span>
+    <nav>
+      <a href="#rounds">the call</a>
+      <a href="#press">the paper</a>
+      <a href="#install">how it installs</a>
+      <a href="#price">price</a>
+      <a href="https://github.com/janwilmake/screenless">source</a>
+    </nav>
+  </div>
+
+  <header class="hero">
+    <p class="who">for senior engineers running coding agents</p>
+    <h1>Understand what your agents built last night.</h1>
+    <p class="stand">
+      Your agents turn tickets into pull requests overnight. Someone still has to
+      make the calls they can't — scope, priority, whether this belongs in the
+      release. That costs an hour at a screen before coffee. It doesn't need a
+      screen.
+    </p>
+  </header>
+
+  <section>
+    <p class="kicker">two surfaces, one idea</p>
+    <h2>A call you can interrupt, and a paper you can print.</h2>
+    <p class="lede">
+      Paper and a phone call are the only two media in this workflow that aren't
+      a screen. One asks you to decide; the other asks nothing at all.
+    </p>
+
+    <div class="two">
+      <div id="rounds">
+        <h3>rounds</h3>
+        <div class="sub">the morning call · 30 min</div>
+        <p>
+          Clinical rounds for your pull requests. It walks the queue case by
+          case, takes your decision on each, and writes it back to the PR.
+        </p>
+        <ul>
+          <li>Interruptible — cut in and ask why</li>
+          <li>Answers become comments, labels, merges, splits</li>
+          <li>Hangs up when the queue is drained</li>
+          <li>Routes anything that genuinely needs your eyes</li>
+        </ul>
+      </div>
+      <div id="press">
+        <h3>press</h3>
+        <div class="sub">the daily paper · 06:00</div>
+        <p>
+          A printable PDF in your inbox when you wake up. Almost all picture,
+          almost no text. Built to be read with coffee, not skimmed on a phone.
+        </p>
+        <ul>
+          <li>One page per ticket in flight</li>
+          <li>Real screenshots of the surfaces they touch</li>
+          <li>A product map — what's growing, what's neglected</li>
+          <li>Scheduled to land at your wake-up time</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">rounds</p>
+    <h2>It asks the question, you answer out loud, it does the work.</h2>
+
+    <div class="term">
+<span class="d">$</span> <b>screenless brief</b>
+
+<span class="d">→ calling +316······· · 14 PRs open, 6 need you</span>
+
+<span class="k">agent</span>  Morning. Six decisions, about nine minutes. First one:
+       HYR2-441 adds a `notes` field to candidates. The agent
+       put it in a JSONB column. Separate table or leave it?
+<span class="u">you</span>    What else reads it?
+<span class="k">agent</span>  Nothing yet. It's write-only from the intake form.
+<span class="u">you</span>    Leave it. Revisit when something queries it.
+<span class="k">agent</span>  Noted, commented on the PR. Next: HYR2-448 changes the
+       default page size from 25 to 100 —
+<span class="u">you</span>    Wait, why is that in a ticket about export?
+<span class="k">agent</span>  It isn't scoped there. Want me to split it out?
+<span class="u">you</span>    Yeah, split it, and hold the export PR until that's gone.
+
+<span class="d">✓ 6 decisions · 8m41s · 4 merged, 1 split, 1 needs your eyes</span>
+    </div>
+
+    <div class="note">
+      That last line is the product. One decision couldn't be made by voice, and
+      it said so instead of pressing you for an answer while you're walking the dog.
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">press</p>
+    <h2>A newspaper about your own product, printed every night.</h2>
+    <p class="lede">
+      Not a changelog. The goal is that reading it makes you understand your
+      product better than you did yesterday — the thing that quietly gets lost
+      when agents write most of the code.
+    </p>
+
+    <div class="sheet" aria-label="Example page from the daily paper">
+      <div class="sheet-top">
+        <span class="sheet-name">screenless</span>
+        <span class="sheet-meta">hyre · 2026-08-15</span>
+      </div>
+      <h4>Matching moved to the centre of the product this week</h4>
+      <div class="stats">
+        <div><div class="v">14</div><div class="l">open PRs</div></div>
+        <div class="spot"><div class="v">6</div><div class="l">need you</div></div>
+        <div><div class="v">9</div><div class="l">merged, 7d</div></div>
+        <div><div class="v">63</div><div class="l">commits, 7d</div></div>
+      </div>
+
+      <svg viewBox="0 0 620 250" width="100%" role="img" aria-label="Treemap of codebase composition">
+        <rect x="0" y="0" width="248" height="250" fill="#2b2521" stroke="#fff" stroke-width="1.5"/>
+        <text x="6" y="16" font-size="11" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">app/routes</text>
+        <text x="6" y="29" font-size="9" fill="#eee" font-family="Helvetica,Arial,sans-serif">184</text>
+        <rect x="248" y="0" width="322" height="142" fill="#5c534b" stroke="#fff" stroke-width="1.5"/>
+        <text x="254" y="16" font-size="11" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">app/components</text>
+        <text x="254" y="29" font-size="9" fill="#eee" font-family="Helvetica,Arial,sans-serif">142</text>
+        <rect x="248" y="142" width="322" height="108" fill="#8d837a" stroke="#fff" stroke-width="1.5"/>
+        <text x="254" y="158" font-size="11" font-weight="600" fill="#14110f" font-family="Helvetica,Arial,sans-serif">app/lib</text>
+        <text x="254" y="171" font-size="9" fill="#3a332e" font-family="Helvetica,Arial,sans-serif">96</text>
+        <rect x="570" y="0" width="50" height="160" fill="#b4341f" stroke="#fff" stroke-width="1.5"/>
+        <text x="575" y="16" font-size="10" font-weight="600" fill="#fff" font-family="Helvetica,Arial,sans-serif">services</text>
+        <rect x="570" y="160" width="50" height="50" fill="#2b2521" stroke="#fff" stroke-width="1.5"/>
+        <rect x="570" y="210" width="50" height="40" fill="#b9b0a8" stroke="#fff" stroke-width="1.5"/>
+      </svg>
+      <div class="cap">
+        app/services is highlighted because it absorbed most of this week's change
+        despite being a fifth the size of app/routes.
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <p class="kicker">how it installs</p>
+    <h2>It runs on your machine, in a nightly loop, through Claude Code.</h2>
+    <p class="lede">
+      That is the whole integration story. There is no OAuth app to approve and
+      no integration matrix to wait for.
+    </p>
+
+    <div class="grid3">
+      <div>
+        <span class="num">01</span>
+        <h3>Your MCPs are the integrations</h3>
+        <p>
+          Linear, GitHub, Slack, your ATS — whatever you've already connected, it
+          can already read. Nothing new to grant.
+        </p>
+      </div>
+      <div>
+        <span class="num">02</span>
+        <h3>Your browser is the camera</h3>
+        <p>
+          The paper's screenshots come from your real app in your real session,
+          already logged in. A hosted service can't do that without credentials
+          you shouldn't hand over.
+        </p>
+      </div>
+      <div>
+        <span class="num">03</span>
+        <h3>Your subscription is the model</h3>
+        <p>
+          It runs on the Claude subscription you already pay for. Nothing is
+          metered per token, and nothing leaves your machine but the call and
+          the email.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="price">
+    <p class="kicker">price</p>
+    <h2>One plan, priced against the hour it gives back.</h2>
+    <div class="price">
+      <div>
+        <div class="amt">$99</div>
+        <div class="per">per month</div>
+      </div>
+      <ul>
+        <li>Up to 30 minutes of call a day — it hangs up early when the queue is short</li>
+        <li>The daily paper, scheduled to your wake-up time</li>
+        <li>Unlimited repositories on one machine</li>
+        <li>Bring your own Claude subscription</li>
+      </ul>
+    </div>
+    <div class="note">
+      Telephony is a real cost, not a rounding error, so the call is sold with a
+      minute ceiling rather than as “unlimited.” We'd rather quote a number that
+      survives contact with a heavy user.
+    </div>
+  </section>
+</div>
+
+<section class="cta">
+  <div class="wrap">
+    <h2>It isn't finished yet.</h2>
+    <p>
+      The telephony works. The paper renders. The part that reads your pull
+      requests and decides what's worth asking about is being built now, and
+      one upstream voice bug is still open. If you run agents overnight and
+      want to try it early, say so.
+    </p>
+    <a class="btn" href="mailto:hello@screenless.sh?subject=screenless%20early%20access&body=How%20many%20PRs%20do%20your%20agents%20open%20in%20a%20night%3F%0A%0ARepo%2Fstack%3A%0AWake-up%20time%3A%0A">Ask for early access</a>
+    <p class="fine">No billing until it does what this page says.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span>screenless — a call and a paper for people whose agents write the code</span>
+    <span><a href="https://github.com/janwilmake/screenless">github</a></span>
+  </footer>
+</div>
+
+</body>
+</html>

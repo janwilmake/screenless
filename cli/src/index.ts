@@ -56,7 +56,7 @@ async function setup(args: string[]): Promise<void> {
     const existing = await config.load();
     const apiUrl = (
       argFlag(args, "--api") ??
-      (await rl.question(`Worker URL ${c.dim(existing?.apiUrl ?? "https://voxcall.you.workers.dev")}: `)) ??
+      (await rl.question(`Worker URL ${c.dim(existing?.apiUrl ?? "https://screenless.you.workers.dev")}: `)) ??
       ""
     ).trim() || existing?.apiUrl;
 
@@ -91,7 +91,7 @@ async function setup(args: string[]): Promise<void> {
 
     console.log(`${c.green("✓")} verified as ${c.bold(result.phone)}`);
     console.log(c.dim(`  saved to ${path} (0600)`));
-    console.log(`\nTry: ${c.cyan('voxcall call "vraag me hoe mijn week was"')}`);
+    console.log(`\nTry: ${c.cyan('screenless call "vraag me hoe mijn week was"')}`);
   } finally {
     rl.close();
   }
@@ -109,13 +109,13 @@ interface CallStatus {
 
 async function call(args: string[]): Promise<void> {
   const cfg = await config.load();
-  if (!cfg) die("not set up yet — run `voxcall setup`");
-  if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `voxcall setup` again");
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `screenless setup` again");
 
   const prompt = args.find((a) => !a.startsWith("--"));
-  if (!prompt) die('usage: voxcall call "your prompt here" [--lang nl|en|multi] [--json]');
+  if (!prompt) die('usage: screenless call "your prompt here" [--lang en|nl|multi] [--json]');
 
-  const language = argFlag(args, "--lang") ?? "nl";
+  const language = argFlag(args, "--lang") ?? "en";
   const asJson = args.includes("--json");
 
   const { callId } = await api<{ callId: string }>(cfg.apiUrl, "/calls", {
@@ -180,13 +180,67 @@ async function call(args: string[]): Promise<void> {
 
 async function whoami(): Promise<void> {
   const cfg = await config.load();
-  if (!cfg) die("not set up yet — run `voxcall setup`");
+  if (!cfg) die("not set up yet — run `screenless setup`");
   const expired = cfg.expiresAt * 1000 < Date.now();
   console.log(`${c.bold(cfg.phone)} ${c.dim(`via ${cfg.apiUrl}`)}`);
   console.log(
     expired
-      ? c.red("session expired — run `voxcall setup`")
+      ? c.red("session expired — run `screenless setup`")
       : c.dim(`session valid until ${new Date(cfg.expiresAt * 1000).toLocaleString()}`),
+  );
+}
+
+/**
+ * Hands a built edition to the Worker to be sent at wake-up.
+ *
+ * The Worker holds it rather than the laptop, because the machine that builds
+ * the paper at 03:00 is usually asleep by the time it should send.
+ */
+async function mail(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `screenless setup` again");
+
+  const file = args.find((a) => !a.startsWith("--"));
+  if (!file) die("usage: screenless mail <file.pdf> [--at HH:MM] [--to you@example.com]");
+
+  const { readFile } = await import("node:fs/promises");
+  const { basename } = await import("node:path");
+
+  let content: Buffer;
+  try {
+    content = await readFile(file);
+  } catch {
+    die(`cannot read ${file}`);
+  }
+
+  const at = argFlag(args, "--at") || "";
+  const to = argFlag(args, "--to") || "";
+  const subject = argFlag(args, "--subject") || `screenless · ${basename(file, ".pdf")}`;
+
+  // The Worker has no idea what timezone the reader wakes up in, so "07:00"
+  // is meaningless without this. Node's offset is minutes *behind* UTC, which
+  // is the opposite sign of what everyone expects — negate it here, once.
+  const offsetMinutes = -new Date().getTimezoneOffset();
+
+  const res = await api<{ id: string; sendAt: string }>(cfg.apiUrl, "/mail", {
+    method: "POST",
+    token: cfg.token,
+    body: {
+      filename: basename(file),
+      contentBase64: content.toString("base64"),
+      subject,
+      at,
+      offsetMinutes,
+      ...(to ? { to } : {}),
+    },
+  });
+
+  const when = new Date(res.sendAt);
+  const size = (content.length / 1024).toFixed(0);
+  console.log(
+    `${c.green("✓")} queued ${c.bold(basename(file))} ${c.dim(`(${size} KB)`)} → ` +
+      `${when.toLocaleString()} ${c.dim(`· ${res.id.slice(0, 8)}`)}`,
   );
 }
 
@@ -196,18 +250,24 @@ async function logout(): Promise<void> {
 }
 
 function usage(): void {
-  console.log(`${c.bold("voxcall")} — call yourself with an AI agent, get the transcript back
+  console.log(`${c.bold("screenless")} — take the decisions your agents are blocked on by phone
 
 ${c.bold("Usage")}
-  voxcall setup [--api <url>] [--voice]   verify your phone number by OTP
-  voxcall call "<prompt>" [options]       call yourself, block, print transcript
-  voxcall whoami                          show the verified number
-  voxcall logout                          discard the local session
+  screenless setup [--api <url>] [--voice]   verify your phone number by OTP
+  screenless call "<prompt>" [options]       call yourself, block, print transcript
+  screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
+  screenless whoami                          show the verified number
+  screenless logout                          discard the local session
 
 ${c.bold("Call options")}
-  --lang nl|en|multi   conversation language (default: nl)
+  --lang en|nl|multi   conversation language (default: en)
                        "multi" follows Dutch/English code-switching
   --json               emit the raw result instead of a formatted transcript
+
+${c.bold("Mail options")}
+  --at HH:MM           next occurrence of that local time (default: now)
+  --to <email>         recipient, if the Worker has no MAIL_TO default
+  --subject <text>     override the subject line
 
 ${c.bold("Setup options")}
   --api <url>          Worker URL, skips the prompt
@@ -231,6 +291,7 @@ const [command, ...rest] = argv.slice(2);
 const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   setup,
   call,
+  mail,
   whoami,
   logout,
   help: usage,

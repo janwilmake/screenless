@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile, rm, chmod } from "node:fs/promises";
 
-const DIR = join(homedir(), ".voxcall");
+const DIR = join(homedir(), ".screenless");
 const FILE = join(DIR, "config.json");
 
 export interface Config {
