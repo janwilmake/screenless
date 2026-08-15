@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  Source for site/src/og.png, the link preview card. Kept out of src/ on
+  purpose: everything in src/ is copied into public/ and served, and this is a
+  build input, not a page.
+
+  Regenerate after changing it:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --hide-scrollbars --window-size=1200,630 \
+      --screenshot=site/src/og.png site/og-source.html
+
+  1200x630 is the size X, Slack, LinkedIn and iMessage all crop least badly.
+  No photograph and no screenshot: the brand is a printed thing, and the card
+  should read as the top of a front page at thumbnail size.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --ink:#14110f; --spot:#b4341f; --rule:#ded7cf; --muted:#6f665e;
+    --paper:#fdfcfa;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{width:1200px;height:630px;background:var(--paper);color:var(--ink);
+       font-family:var(--serif);overflow:hidden;
+       -webkit-font-smoothing:antialiased}
+  .rule{height:9px;background:var(--ink)}
+  .pad{padding:0 72px}
+  .masthead{display:flex;justify-content:space-between;align-items:center;
+            padding:30px 0 26px;border-bottom:1px solid var(--rule);
+            font-family:var(--sans)}
+  .brand{font-weight:700;letter-spacing:.34em;text-transform:uppercase;
+         font-size:23px}
+  .dateline{font-family:var(--mono);font-size:16px;color:var(--muted)}
+  h1{font-size:74px;line-height:1.02;letter-spacing:-.028em;font-weight:400;
+     margin-top:46px;max-width:19ch;text-wrap:balance}
+  .stand{font-size:26px;color:var(--muted);margin-top:26px;max-width:42ch;
+         line-height:1.36}
+  /* The command, because it is the whole call to action and it fits. */
+  .cmd{position:absolute;left:72px;bottom:60px;background:var(--ink);
+       color:var(--paper);font-family:var(--mono);font-size:20px;
+       padding:15px 22px}
+  .cmd .p{color:#8d837a}
+  .spot{position:absolute;right:72px;bottom:60px;font-family:var(--sans);
+        font-size:17px;font-weight:700;letter-spacing:.14em;
+        text-transform:uppercase;color:var(--spot)}
+</style>
+</head>
+<body>
+  <div class="rule"></div>
+  <div class="pad">
+    <div class="masthead">
+      <span class="brand">screenless</span>
+      <span class="dateline">a morning call · a nightly paper</span>
+    </div>
+    <h1>Your agents wrote the code. You still make the calls.</h1>
+    <p class="stand">
+      Thirty-five pull requests overnight. Five actually need you — and you
+      take those five on the phone.
+    </p>
+  </div>
+  <div class="cmd"><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</div>
+  <div class="spot">the paper is free</div>
+</body>
+</html>
