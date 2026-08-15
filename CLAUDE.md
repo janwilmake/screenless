@@ -105,7 +105,8 @@ agents open pull requests overnight. Five parts:
 - `worker/` — Cloudflare Worker: telephony, phone verification, Stripe billing,
   and the parked briefs the morning call is placed from.
 - `cli/` — the `screenless` CLI, published as a tarball the installer fetches.
-- `site/` — the landing page and `install`, served as static assets.
+- `site/` — `src/` is hand-written (pages, installer); `public/` is generated
+  in full by `build.sh` and gitignored. Ship with `npm run deploy` in `site/`.
 - `press/` — the PDF toolkit: `collect.mjs` for deterministic facts, the chart
   library, the print stylesheet, the renderer.
 - `loop/` — the single nightly skill that builds the paper *and* the call brief
@@ -132,6 +133,10 @@ copy that implies the call changed something, you have broken the model.
   name in the comment block at the bottom of that file.
 - Billing is off when `STRIPE_SECRET_KEY` is unset, so `wrangler dev` and any
   pre-Stripe deploy stay usable. Keep it that way.
+- Never edit `site/public/`. It is assembled from `site/src/`, `loop/` and
+  `cli/dist/`, and rebuilt from empty on every deploy, so an edit there is
+  work you will lose. This is why it is gitignored rather than merely
+  documented — a rule with an exception is a rule nobody checks.
 - The CLI has no dependencies, and should stay that way — it is distributed as
   two plain `.js` files in a tarball, and every dependency added is a thing the
   installer has to fetch.

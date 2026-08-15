@@ -92,6 +92,15 @@ Delivery is the Worker's job rather than a messaging MCP's because a reader
 cannot be assumed to have Slack or a mail MCP connected, and a second surface
 that only works for people with the right integration is a second product.
 
+## Publishing a change to these files
+
+`SKILL.md`, `APPLY.md`, `nightly.sh` and `collect.sh` are downloaded by the
+installer over HTTP, so a change here is not live until the site is rebuilt:
+
+```bash
+cd site && npm run deploy
+```
+
 ## Linux and elsewhere
 
 `nightly.sh` is portable; only the launchd job is macOS. A systemd timer with

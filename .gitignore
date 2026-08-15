@@ -5,3 +5,6 @@ dist/
 .admin-secret
 *.log
 .DS_Store
+
+# Generated in full by site/build.sh — never edit, never commit.
+site/public/

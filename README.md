@@ -342,9 +342,17 @@ Either way you'll get an SMS with a code (`--voice` gets you a phone call
 instead). Enter it, start the trial, and you're done — the session lasts a week
 and lands in `~/.screenless/config.json` at mode 0600.
 
-Publishing a new CLI build to the installer is `npm run bundle` in `cli/`, which
-writes `site/public/screenless.tar.gz`, followed by `npx wrangler deploy` in
-`site/`.
+Publishing anything — a CLI change, a page edit, a change to the loop skills —
+is one command:
+
+```bash
+cd site && npm run deploy
+```
+
+`site/public/` is generated in full by `site/build.sh` and gitignored. Edit
+`site/src/` for the pages and installer, `loop/` for the skills and runners,
+`cli/src/` for the CLI; never edit `site/public/`, because the next build
+deletes it.
 
 ## Usage
 
