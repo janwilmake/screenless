@@ -1,0 +1,32 @@
+name = "voxcall"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+[vars]
+# The Telnyx number the call comes *from*. Must be a number you own.
+TELNYX_FROM_NUMBER = "+31000000000"
+
+# LLM driving the conversation. Telnyx hosts several; Haiku is fast and cheap,
+# which matters because LLM time-to-first-token is the largest single slice of
+# per-turn latency.
+ASSISTANT_MODEL = "anthropic/claude-haiku-4-5"
+
+# Voice id, format Telnyx.<model>.<voice>. The default below is ENGLISH —
+# pick a Dutch-capable voice before using this for real. See README.
+ASSISTANT_VOICE = "Telnyx.KokoroTTS.af_heart"
+
+# Countries whose numbers may be verified and dialled. Doubles as a spend guard.
+# Use "*" to disable the check (not recommended).
+ALLOWED_DESTINATIONS = "NL"
+
+# Stores call records and OTP rate-limit counters.
+# Create with: wrangler kv namespace create CALLS
+[[kv_namespaces]]
+binding = "CALLS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets (never put these here — use `wrangler secret put NAME`):
+#   TELNYX_API_KEY
+#   TELNYX_VERIFY_PROFILE_ID
+#   SESSION_SECRET
+#   ADMIN_SECRET

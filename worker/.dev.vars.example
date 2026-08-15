@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit the real file.
+TELNYX_API_KEY=KEY01234...
+TELNYX_VERIFY_PROFILE_ID=00000000-0000-0000-0000-000000000000
+SESSION_SECRET=generate-with-openssl-rand-base64-32
+ADMIN_SECRET=generate-with-openssl-rand-base64-32
