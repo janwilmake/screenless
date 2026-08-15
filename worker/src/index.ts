@@ -2,7 +2,7 @@ import * as telnyx from "./telnyx";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
 import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
-import { session, sign, webhookToken, safeEqual, revokeSessions, tokenVersion } from "./auth";
+import { session, sign, webhookToken, safeEqual, revokeSessions } from "./auth";
 import { scheduleMail, sweepOutbox, sendEmailCode, sendTranscript, isEmail } from "./mail";
 
 export interface Env {
@@ -286,9 +286,10 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
   // deliberately, so we do not leak whether the number had a pending code.
   if (!ok) return fail(401, "code rejected or expired");
 
-  const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECS;
-  const v = await tokenVersion(env.CALLS, phone);
-  return json({ token: await sign({ phone, exp, v }, env.SESSION_SECRET), phone, expiresAt: exp });
+  // Deliberately reads nothing: see the note on SessionPayload.iat.
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + SESSION_TTL_SECS;
+  return json({ token: await sign({ phone, exp, iat }, env.SESSION_SECRET), phone, expiresAt: exp });
 }
 
 /* ------------------------------------------------------------------- calls */
@@ -441,6 +442,7 @@ async function startCall(
       // property that keeps the PoC from being a dialer.
       to: phone,
       assistantId: assistant.id,
+      texmlUrl: `${origin}/texml/assistant?id=${assistant.id}`,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
       conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
     });

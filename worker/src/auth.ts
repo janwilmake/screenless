@@ -14,14 +14,22 @@ export interface SessionPayload {
   /** Expiry, seconds since epoch. */
   exp: number;
   /**
-   * Token generation for this number.
+   * Issued at, seconds since epoch.
    *
-   * A stateless token cannot be withdrawn, and `screenless logout` promised
-   * exactly that. Sessions now last a year, so "wait for it to expire" is not
-   * an answer to a leaked token. Logging out bumps the stored generation and
-   * every token minted before it stops verifying.
+   * Revocation compares this against a stored "revoked before" timestamp, and
+   * that direction matters. The first attempt stored a generation counter and
+   * read it when minting — which broke, because KV reads are cached per edge
+   * location for up to a minute. A mint could read a stale counter, stamp the
+   * token with the old generation, and the very next request could hit a
+   * location that had converged: a brand-new token, born invalid.
+   *
+   * Minting reads nothing now. A token issued after a logout always carries a
+   * later timestamp than the logout, whatever any cache believes. The residual
+   * staleness moves to the checking side, where it is merely a revoked token
+   * surviving up to a minute — bounded, and far better than locking out a
+   * valid one.
    */
-  v?: number;
+  iat?: number;
 }
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -80,18 +88,18 @@ export async function verify(
   }
 }
 
-/** The generation counter for a number. Absent means zero. */
-export async function tokenVersion(kv: KVNamespace, phone: string): Promise<number> {
-  const raw = await kv.get(`tv:${phone}`);
+/** Tokens issued before this instant are void. Absent means nothing revoked. */
+export async function revokedBefore(kv: KVNamespace, phone: string): Promise<number> {
+  const raw = await kv.get(`revoked:${phone}`);
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Invalidates every token minted for this number so far. */
+/** Invalidates every token issued for this number up to now. */
 export async function revokeSessions(kv: KVNamespace, phone: string): Promise<number> {
-  const next = (await tokenVersion(kv, phone)) + 1;
-  await kv.put(`tv:${phone}`, String(next));
-  return next;
+  const at = Math.floor(Date.now() / 1000);
+  await kv.put(`revoked:${phone}`, String(at));
+  return at;
 }
 
 /**
@@ -112,7 +120,8 @@ export async function session(
   const payload = await verify(header.slice(7), secret);
   if (!payload || !kv) return payload;
 
-  return (payload.v ?? 0) >= (await tokenVersion(kv, payload.phone)) ? payload : null;
+  // A token with no `iat` predates this scheme, so any revocation voids it.
+  return (payload.iat ?? 0) >= (await revokedBefore(kv, payload.phone)) ? payload : null;
 }
 
 /**

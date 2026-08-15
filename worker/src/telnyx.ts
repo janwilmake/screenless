@@ -208,8 +208,25 @@ export interface AiCallOptions {
   assistantId: string;
   statusCallback: string;
   conversationCallback: string;
+  /** Our own TeXML document, which connects the leg to the assistant. */
+  texmlUrl: string;
 }
 
+/**
+ * Places the call, driving it from TeXML we serve ourselves.
+ *
+ * Not `/texml/ai_calls`. That endpoint connects the call and then sits in
+ * silence — the caller hears nothing, not even the assistant's greeting, and
+ * the conversation records the human's "hello" against zero assistant turns.
+ * It was diagnosed on day one and the workaround built the same afternoon;
+ * this function then went on using the broken endpoint anyway, which is why
+ * every call since has been silent.
+ *
+ * `/texml/calls` fetches `Url` and executes what it finds. We point it at our
+ * own `/texml/assistant`, which returns the `<Connect><AIAssistant>` document
+ * Telnyx would have served itself — the difference being that this route
+ * actually runs it.
+ */
 export function initiateAiCall(
   apiKey: string,
   connectionId: string,
@@ -218,19 +235,17 @@ export function initiateAiCall(
   return call<{ sid?: string; call_sid?: string }>(
     apiKey,
     "POST",
-    `/texml/ai_calls/${connectionId}`,
+    `/texml/calls/${connectionId}`,
     {
       From: o.from,
       To: o.to,
-      AIAssistantId: o.assistantId,
+      Url: o.texmlUrl,
       StatusCallback: o.statusCallback,
       // Space-separated string, not an array — Telnyx rejects a JSON array here
       // with 10026 "must be of type 'string'", unlike the TwiML convention of
       // repeating the parameter.
       StatusCallbackEvent: "initiated ringing answered completed",
       StatusCallbackMethod: "POST",
-      ConversationCallback: o.conversationCallback,
-      ConversationCallbackMethod: "POST",
     },
   );
 }
