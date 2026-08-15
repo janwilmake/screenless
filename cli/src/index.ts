@@ -296,6 +296,11 @@ async function setup(args: string[]): Promise<void> {
     });
     console.log(`${c.green("✓")} ${chosen.label}\n`);
 
+    // The paper is the free half and works without a subscription, so this is
+    // asked before the trial rather than after it.
+    await confirmEmail(base, result.token, rl);
+
+
     const subscribed = await ensureSubscription(base, result.token);
     if (!subscribed) return;
 
@@ -341,6 +346,52 @@ async function setup(args: string[]): Promise<void> {
   }
 }
 
+/**
+ * Confirms the address the paper is delivered to.
+ *
+ * The recipient is bound to the account rather than passed per send, so the
+ * free surface cannot be used to point our sending domain at someone else's
+ * inbox. That means it has to be proven once, here.
+ */
+async function confirmEmail(
+  base: string,
+  token: string,
+  rl: { question: (q: string) => Promise<string> },
+): Promise<boolean> {
+  const address = (await rl.question("Email for the daily paper: ")).trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address)) {
+    console.log(`${c.red("✗")} that is not a valid address`);
+    return false;
+  }
+
+  await api(base, "/email/start", { method: "POST", body: { email: address }, token });
+  console.log(`${c.green("✓")} code sent to ${c.bold(address)}`);
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const code = (await rl.question("Enter the code from that email: ")).trim();
+    try {
+      await api(base, "/email/verify", { method: "POST", body: { code }, token });
+      console.log(`${c.green("✓")} ${address} confirmed`);
+      return true;
+    } catch {
+      // api() exits on failure, so this only runs if that ever changes.
+      console.log(c.dim("  not right — try again"));
+    }
+  }
+  return false;
+}
+
+async function email(): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const rl = createInterface({ input: stdin, output: stdout });
+  try {
+    await confirmEmail(cfg.apiUrl, cfg.token, rl);
+  } finally {
+    rl.close();
+  }
+}
+
 /* -------------------------------------------------------------- test call */
 
 /**
@@ -378,6 +429,8 @@ async function test(args: string[]): Promise<void> {
 /* ---------------------------------------------------------------- settings */
 
 interface Settings {
+  email: string;
+  emailVerifiedAt: number;
   callAt: string;
   timezone: string;
   callEnabled: boolean;
@@ -722,8 +775,15 @@ async function init(args: string[]): Promise<void> {
 }
 
 async function logout(): Promise<void> {
+  const cfg = await config.load();
+
+  // Revoke first: deleting the local file only hides the token, it does not
+  // withdraw it, and these sessions last a year.
+  if (cfg) {
+    await api(cfg.apiUrl, "/auth/logout", { method: "POST", token: cfg.token }).catch(() => {});
+  }
   await config.clear();
-  console.log(`${c.green("✓")} signed out, ${c.dim(config.configPath)} removed`);
+  console.log(`${c.green("✓")} signed out — token revoked, ${c.dim(config.configPath)} removed`);
 }
 
 function usage(): void {
@@ -737,6 +797,7 @@ ${c.bold("Usage")}
   screenless settings [--at HH:MM]           when the morning call goes out
   screenless init [path]                     configure a repo for the nightly loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
+  screenless email                           confirm where the paper is sent
   screenless whoami                          show the verified number
   screenless billing [--manage]              trial status, or Stripe's portal
   screenless logout                          discard the local session
@@ -769,7 +830,6 @@ ${c.bold("What the call does not do")}
 
 ${c.bold("Mail options")}
   --at HH:MM           next occurrence of that local time (default: now)
-  --to <email>         recipient, if the Worker has no MAIL_TO default
   --subject <text>     override the subject line
 
 ${c.bold("Setup options")}
@@ -802,6 +862,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   mail,
   whoami,
   billing,
+  email,
   logout,
   help: usage,
 };

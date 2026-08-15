@@ -262,6 +262,18 @@ export async function findConversationByAssistant(
   return res.data?.[0]?.id ?? null;
 }
 
+/**
+ * Deletes a conversation, and with it the stored transcript.
+ *
+ * The privacy policy promises transcripts are gone in 24 hours. Expiring our
+ * own KV record does not achieve that while Telnyx still holds the
+ * conversation, so the transcript is copied to KV first and the original is
+ * deleted here.
+ */
+export function deleteConversation(apiKey: string, conversationId: string) {
+  return call<unknown>(apiKey, "DELETE", `/ai/conversations/${conversationId}`);
+}
+
 export async function getTranscript(
   apiKey: string,
   conversationId: string,

@@ -23,13 +23,16 @@
 
 ## Small
 
+- [ ] The SMS ceilings log when tripped, but nothing pages anyone
+
 - [ ] 30 min/day is sold on the pricing page; code counts 20 calls/hr and no minutes at all
 - [ ] No alerting when the cron sweep throws
 - [ ] No local `screenless` session on this machine — installer has never been run here
 
 ## Done
 
-Install one-liner · Stripe trial paywall (live-tested) · call scheduling ·
+MIT licence · recipient bound to a confirmed address · global SMS ceilings ·
+revocable sessions · transcripts deleted at Telnyx · install one-liner · Stripe trial paywall (live-tested) · call scheduling ·
 machine timezone · inbound answering · worldwide dialling with a fraud
 blocklist · 10 languages · year-long sessions · terms + privacy with acceptance
 at setup · free paper / paid call · intent record.

@@ -546,3 +546,7 @@ press/                  the nightly paper — built, see press/README.md
 rounds/                 the morning call — planned, see rounds/README.md
 site/index.html         the landing page (screenless.sh)
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -2,8 +2,8 @@ import * as telnyx from "./telnyx";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
 import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
-import { session, sign, webhookToken, safeEqual } from "./auth";
-import { scheduleMail, sweepOutbox } from "./mail";
+import { session, sign, webhookToken, safeEqual, revokeSessions, tokenVersion } from "./auth";
+import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
 
 export interface Env {
   CALLS: KVNamespace;
@@ -61,12 +61,36 @@ export interface Env {
 const SESSION_TTL_SECS = 365 * 24 * 60 * 60;
 /** Call records outlive the call itself so `screenless call` can be re-run against an id. */
 const CALL_TTL_SECS = 24 * 60 * 60;
-/** OTP sends allowed per phone number per hour. SMS to NL costs ~$0.09 a pop. */
+/** OTP sends allowed per phone number per hour. An SMS costs up to ~$0.09. */
 const OTP_RATE_LIMIT = 5;
+/**
+ * OTP sends allowed across *all* numbers per hour.
+ *
+ * The per-number limit does nothing against the attack that actually happens:
+ * one script, ten thousand different numbers, ten thousand messages on our
+ * balance. That is SMS pumping, and now that destinations are worldwide it is
+ * the largest unbounded cost in the system. A real signup burst will never see
+ * this ceiling; a pump hits it in seconds.
+ */
+const OTP_GLOBAL_HOURLY = 60;
+/** And a daily backstop, so a slow pump cannot run all night under the hourly cap. */
+const OTP_GLOBAL_DAILY = 300;
+
+interface TranscriptLine {
+  role: string;
+  text: string;
+  at?: string;
+}
 
 interface CallRecord {
   phone: string;
   assistantId: string;
+  /**
+   * Copied off Telnyx once the call ends, so the conversation there can be
+   * deleted. Expires with the record, which is what makes the 24-hour
+   * retention promise on the privacy page true rather than aspirational.
+   */
+  transcript?: TranscriptLine[];
   /** The app Telnyx auto-provisioned for this assistant; deleted alongside it. */
   texmlAppId?: string;
   status: "initiated" | "ringing" | "answered" | "completed" | "failed";
@@ -154,11 +178,11 @@ function destinationAllowed(phone: string, allowed: string): boolean {
   return list.some((c) => prefixes[c] && phone.startsWith(prefixes[c]));
 }
 
-async function rateLimit(env: Env, key: string, limit: number): Promise<boolean> {
+async function rateLimit(env: Env, key: string, limit: number, ttl = 3600): Promise<boolean> {
   const k = `rl:${key}`;
   const current = parseInt((await env.CALLS.get(k)) ?? "0", 10);
   if (current >= limit) return false;
-  await env.CALLS.put(k, String(current + 1), { expirationTtl: 3600 });
+  await env.CALLS.put(k, String(current + 1), { expirationTtl: ttl });
   return true;
 }
 
@@ -226,6 +250,17 @@ async function authStart(req: Request, env: Env): Promise<Response> {
   if (!(await rateLimit(env, `otp:${phone}`, OTP_RATE_LIMIT)))
     return fail(429, "too many verification attempts for this number, try again in an hour");
 
+  // Deliberately checked after the per-number limit, so a single retrying user
+  // burns their own budget before touching the shared one.
+  if (!(await rateLimit(env, "otp:global", OTP_GLOBAL_HOURLY))) {
+    console.error("global OTP hourly ceiling hit — possible SMS pumping");
+    return fail(429, "verification is temporarily rate limited, try again shortly");
+  }
+  if (!(await rateLimit(env, `otp:daily:${new Date().toISOString().slice(0, 10)}`, OTP_GLOBAL_DAILY, 86400))) {
+    console.error("global OTP daily ceiling hit — possible SMS pumping");
+    return fail(429, "verification is temporarily rate limited, try again tomorrow");
+  }
+
   const send = channel === "call" ? telnyx.triggerCallVerification : telnyx.triggerSmsVerification;
   await send(env.TELNYX_API_KEY, phone, env.TELNYX_VERIFY_PROFILE_ID);
 
@@ -252,7 +287,8 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
   if (!ok) return fail(401, "code rejected or expired");
 
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECS;
-  return json({ token: await sign({ phone, exp }, env.SESSION_SECRET), phone, expiresAt: exp });
+  const v = await tokenVersion(env.CALLS, phone);
+  return json({ token: await sign({ phone, exp, v }, env.SESSION_SECRET), phone, expiresAt: exp });
 }
 
 /* ------------------------------------------------------------------- calls */
@@ -266,6 +302,35 @@ async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
   await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
   if (record.texmlAppId) {
     await telnyx.deleteTexmlApplication(env.TELNYX_API_KEY, record.texmlAppId).catch(() => {});
+  }
+}
+
+/**
+ * Copies the transcript into our own record, then deletes it at Telnyx.
+ *
+ * Order matters and is the whole point: read, store, delete. Deleting first
+ * would honour the retention promise by destroying the thing the caller came
+ * for. Best-effort throughout — a transcript we failed to copy is worth more
+ * than a call that errors after the fact.
+ */
+async function captureTranscript(env: Env, callId: string, record: CallRecord): Promise<void> {
+  try {
+    const conversationId =
+      record.conversationId ??
+      (await telnyx.findConversationByAssistant(env.TELNYX_API_KEY, record.assistantId)) ??
+      undefined;
+    if (!conversationId) return;
+
+    const lines = await telnyx.getTranscript(env.TELNYX_API_KEY, conversationId);
+    record.transcript = lines
+      .filter((m) => m.text && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({ role: m.role, text: m.text ?? "", at: m.sent_at ?? m.created_at }));
+    record.conversationId = conversationId;
+    await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+
+    await telnyx.deleteConversation(env.TELNYX_API_KEY, conversationId).catch(() => {});
+  } catch (err) {
+    console.error("transcript capture failed", callId, (err as Error).message);
   }
 }
 
@@ -368,7 +433,7 @@ async function startCall(
 }
 
 async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET);
+  const s = await session(req, env.SESSION_SECRET, env.CALLS);
   if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
   const unpaid = await requireSubscription(env, s.phone);
@@ -492,7 +557,7 @@ async function answerInbound(req: Request, env: Env): Promise<Response> {
 }
 
 async function getCall(callId: string, req: Request, env: Env): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET);
+  const s = await session(req, env.SESSION_SECRET, env.CALLS);
   if (!s) return fail(401, "not authenticated");
 
   const raw = await env.CALLS.get(`call:${callId}`);
@@ -503,28 +568,14 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
   const done = record.status === "completed" || record.status === "failed";
   if (!done) return json({ callId, status: record.status, done: false });
 
-  // The conversation id normally arrives via the conversation webhook. If that
-  // callback was lost, fall back to resolving it from the assistant id.
-  let conversationId = record.conversationId;
-  if (!conversationId) {
-    conversationId =
-      (await telnyx.findConversationByAssistant(env.TELNYX_API_KEY, record.assistantId)) ??
-      undefined;
-  }
-  if (!conversationId) {
-    return json({ callId, status: record.status, done: true, transcript: [] });
-  }
-
-  const transcript = await telnyx.getTranscript(env.TELNYX_API_KEY, conversationId);
-
+  // Served from our own copy: the Telnyx conversation was deleted when the call
+  // ended, so this record is the only transcript that still exists.
   return json({
     callId,
     status: record.status,
     done: true,
     durationSecs: record.endedAt ? Math.round((record.endedAt - record.createdAt) / 1000) : null,
-    transcript: transcript
-      .filter((m) => m.text && (m.role === "user" || m.role === "assistant"))
-      .map((m) => ({ role: m.role, text: m.text, at: m.sent_at ?? m.created_at })),
+    transcript: record.transcript ?? [],
   });
 }
 
@@ -589,6 +640,7 @@ async function handleWebhook(
   // Once the call is done and we have the transcript handle, the per-call
   // assistant has served its purpose.
   if (record.status === "completed" || record.status === "failed") {
+    if (record.status === "completed") await captureTranscript(env, callId, record);
     await cleanupAssistant(env, record);
   }
 
@@ -714,7 +766,7 @@ export default {
       /* --------------------------------------------------------- settings */
 
       if (path === "/settings" && (method === "GET" || method === "POST")) {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
         if (method === "POST") {
@@ -730,7 +782,7 @@ export default {
       // What is queued, and when it will ring. The loop reads this to decide
       // whether it still has time to park tonight's brief.
       if (method === "GET" && path === "/brief") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         const brief = await schedule.loadBrief(env, s.phone);
         return json(
@@ -748,7 +800,7 @@ export default {
       }
 
       if (method === "DELETE" && path === "/brief") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         await schedule.clearBrief(env, s.phone);
         return json({ cleared: true });
@@ -758,11 +810,66 @@ export default {
       // call is the only handle the loop ever gets — it was asleep when the
       // call id was minted.
       if (method === "GET" && path === "/calls/latest") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated");
         const latest = await env.CALLS.get(`last:${s.phone}`);
         if (!latest) return fail(404, "no calls yet");
         return await getCall(latest, req, env);
+      }
+
+      /* ------------------------------------------------------------ email */
+
+      // Confirming an address is what makes the free paper safe to offer: the
+      // recipient is bound to the account, so nobody can point our verified
+      // sending domain at a stranger's inbox.
+      if (method === "POST" && path === "/email/start") {
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        if (!env.RESEND_API_KEY) return fail(503, "mail is not configured on this Worker");
+
+        const { email } = (await req.json().catch(() => ({}))) as { email?: string };
+        if (typeof email !== "string" || !isEmail(email)) return fail(400, "a valid email is required");
+        if (!(await rateLimit(env, `email:${s.phone}`, 5)))
+          return fail(429, "too many confirmation emails, try again in an hour");
+
+        const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
+        // Keyed by phone, not by address, so a code cannot be redeemed against
+        // an address other than the one it was sent to.
+        await env.CALLS.put(`emailcode:${s.phone}`, JSON.stringify({ email, code }), {
+          expirationTtl: 900,
+        });
+        await sendEmailCode(env, email, code);
+        return json({ sent: true, email });
+      }
+
+      if (method === "POST" && path === "/email/verify") {
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+
+        const { code } = (await req.json().catch(() => ({}))) as { code?: string };
+        const raw = await env.CALLS.get(`emailcode:${s.phone}`);
+        if (!raw) return fail(410, "no pending confirmation — start again");
+
+        const pending = JSON.parse(raw) as { email: string; code: string };
+        if (typeof code !== "string" || !safeEqual(code.trim(), pending.code))
+          return fail(401, "that code is not right");
+
+        const result = await schedule.updateSettings(env, s.phone, {
+          email: pending.email,
+          emailVerifiedAt: Date.now(),
+        });
+        if (!result.ok) return fail(400, result.error);
+        await env.CALLS.delete(`emailcode:${s.phone}`);
+        return json({ verified: true, email: pending.email });
+      }
+
+      // Withdraws every token minted for this number. The CLI deleting its own
+      // config file is housekeeping, not revocation.
+      if (method === "POST" && path === "/auth/logout") {
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        if (!s) return json({ revoked: true });
+        await revokeSessions(env.CALLS, s.phone);
+        return json({ revoked: true });
       }
 
       /* ---------------------------------------------------------- billing */
@@ -774,7 +881,7 @@ export default {
         return await billing.handleWebhook(req, env);
 
       if (method === "GET" && path === "/billing/status") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         return json(await billing.status(env, s.phone));
       }
@@ -782,7 +889,7 @@ export default {
       // Safe to call repeatedly: an already-subscribed caller gets their
       // status back instead of a second Checkout Session.
       if (method === "POST" && path === "/billing/checkout") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         if (!billing.billingEnabled(env)) return fail(503, "billing is not configured");
 
@@ -795,7 +902,7 @@ export default {
 
       // Changing the card, or cancelling, without us holding either.
       if (method === "POST" && path === "/billing/portal") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         const url = await billing.createPortal(env, s.phone);
         return url ? json({ url }) : fail(404, "no subscription to manage");
@@ -807,7 +914,7 @@ export default {
       // Parks an edition for delivery at wake-up. Same session auth as calls:
       // whoever holds the token gets to mail themselves a PDF, nothing more.
       if (method === "POST" && path === "/mail") {
-        const s = await session(req, env.SESSION_SECRET);
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         // Deliberately not behind the paywall. The paper is the free surface:
         // it is what someone can have working tonight, and it is what earns
@@ -816,8 +923,12 @@ export default {
         if (!(await rateLimit(env, `mail:${s.phone}`, 12)))
           return fail(429, "mail limit reached for this number, try again in an hour");
 
+        const settings = await schedule.loadSettings(env, s.phone);
+        if (!settings.emailVerifiedAt || !settings.email)
+          return fail(412, "no confirmed email — run `screenless email`");
+
         const body = await req.json().catch(() => null);
-        const result = await scheduleMail(body, env);
+        const result = await scheduleMail(body, env, settings.email);
         return result.ok
           ? json({ id: result.id, sendAt: result.sendAt })
           : fail(result.status, result.error);

@@ -43,6 +43,16 @@ export interface Settings {
   language: string;
   /** When the terms were accepted, ms since epoch. Zero means never. */
   termsAcceptedAt: number;
+  /**
+   * The one address the edition may be sent to.
+   *
+   * Bound to the account and confirmed by a code, because the paper is free:
+   * an unauthenticated `to` on a free endpoint is an open relay wearing our
+   * own verified sending domain.
+   */
+  email: string;
+  /** When the address was confirmed. Zero means unverified — nothing sends. */
+  emailVerifiedAt: number;
   updatedAt: number;
 }
 
@@ -82,6 +92,8 @@ export async function loadSettings(env: Env, phone: string): Promise<Settings> {
     callEnabled: true,
     language: DEFAULT_LANGUAGE,
     termsAcceptedAt: 0,
+    email: "",
+    emailVerifiedAt: 0,
     updatedAt: 0,
   };
 }
@@ -92,6 +104,8 @@ export interface SettingsPatch {
   callEnabled?: unknown;
   language?: unknown;
   acceptTerms?: unknown;
+  email?: unknown;
+  emailVerifiedAt?: unknown;
 }
 
 /**
@@ -125,6 +139,15 @@ export async function updateSettings(
     if (!isSupportedLanguage(patch.language))
       return { ok: false, error: "unsupported language" };
     next.language = patch.language as string;
+  }
+
+  // Set together by /email/verify and nowhere else, so an address can never be
+  // marked confirmed without a code having been redeemed for it.
+  if (patch.email !== undefined && patch.emailVerifiedAt !== undefined) {
+    if (typeof patch.email !== "string" || !patch.email.includes("@"))
+      return { ok: false, error: "invalid email" };
+    next.email = patch.email;
+    next.emailVerifiedAt = Number(patch.emailVerifiedAt) || Date.now();
   }
 
   // Write-once and never cleared: acceptance is a record of something that

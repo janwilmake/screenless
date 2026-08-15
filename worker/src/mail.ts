@@ -65,15 +65,48 @@ export function resolveSendAt(at: string, offsetMinutes: number, now = Date.now(
 }
 
 /** POST /mail — park an edition for later delivery. */
+export const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
+
+/**
+ * Sends a confirmation code, to prove the person asking for the paper actually
+ * reads the inbox it would go to.
+ */
+export async function sendEmailCode(env: Env, to: string, code: string): Promise<void> {
+  if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || "screenless <press@screenless.sh>",
+      to: [to],
+      subject: `${code} is your screenless code`,
+      text:
+        `Your confirmation code is ${code}.\n\n` +
+        "Type it into the terminal to have the nightly paper delivered here.\n" +
+        "If you did not ask for this, ignore it — nothing will be sent.\n",
+    }),
+  });
+
+  if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
+}
+
 export async function scheduleMail(
   body: unknown,
   env: Env,
+  recipient: string,
 ): Promise<{ ok: true; id: string; sendAt: string } | { ok: false; status: number; error: string }> {
   const b = (body ?? {}) as Record<string, unknown>;
 
-  const to = typeof b.to === "string" && b.to ? b.to : env.MAIL_TO;
-  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to))
-    return { ok: false, status: 400, error: "a valid `to` address is required (or set MAIL_TO)" };
+  // The caller does not choose the recipient. `to` is whatever address this
+  // account confirmed at setup — see the note on Settings.email. A body-chosen
+  // recipient on a free endpoint is how a sending domain gets blacklisted.
+  const to = recipient;
+  if (!to || !isEmail(to))
+    return { ok: false, status: 412, error: "no confirmed email — run `screenless email`" };
 
   if (typeof b.contentBase64 !== "string" || !b.contentBase64)
     return { ok: false, status: 400, error: "contentBase64 is required" };

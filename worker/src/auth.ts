@@ -13,6 +13,15 @@ export interface SessionPayload {
   phone: string;
   /** Expiry, seconds since epoch. */
   exp: number;
+  /**
+   * Token generation for this number.
+   *
+   * A stateless token cannot be withdrawn, and `screenless logout` promised
+   * exactly that. Sessions now last a year, so "wait for it to expire" is not
+   * an answer to a leaked token. Logging out bumps the stored generation and
+   * every token minted before it stops verifying.
+   */
+  v?: number;
 }
 
 function b64urlEncode(bytes: Uint8Array): string {
@@ -71,14 +80,39 @@ export async function verify(
   }
 }
 
-/** Extracts and validates the session from an Authorization: Bearer header. */
+/** The generation counter for a number. Absent means zero. */
+export async function tokenVersion(kv: KVNamespace, phone: string): Promise<number> {
+  const raw = await kv.get(`tv:${phone}`);
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Invalidates every token minted for this number so far. */
+export async function revokeSessions(kv: KVNamespace, phone: string): Promise<number> {
+  const next = (await tokenVersion(kv, phone)) + 1;
+  await kv.put(`tv:${phone}`, String(next));
+  return next;
+}
+
+/**
+ * Extracts and validates the session from an Authorization: Bearer header.
+ *
+ * The KV read is the price of revocable tokens. It is one read against a key
+ * that is almost never written, so it is cached at the edge and costs
+ * essentially nothing — and without it `logout` is a lie.
+ */
 export async function session(
   req: Request,
   secret: string,
+  kv?: KVNamespace,
 ): Promise<SessionPayload | null> {
   const header = req.headers.get("Authorization");
   if (!header?.startsWith("Bearer ")) return null;
-  return verify(header.slice(7), secret);
+
+  const payload = await verify(header.slice(7), secret);
+  if (!payload || !kv) return payload;
+
+  return (payload.v ?? 0) >= (await tokenVersion(kv, payload.phone)) ? payload : null;
 }
 
 /**
