@@ -6,8 +6,26 @@
  * bottleneck. Telnyx has hosted voices in far more languages, but a voice
  * without transcription gives you an assistant that talks and cannot listen.
  *
- * Each entry names a `Telnyx.Ultra` voice, which runs on Telnyx's own GPUs:
- * no third-party key to hold, and no extra network hop mid-call.
+ * Voices are chosen on measured latency, and are deliberately *not* Telnyx-hosted
+ * one. Telnyx's own TTS renders nothing on a PSTN call — the model replies, the
+ * text is logged as an assistant turn, and no audio is ever produced. Telnyx
+ * support confirmed it from their side: on a day of failed calls there were
+ * "only 2 TTS records, neither associated with a call session". Every
+ * Telnyx-hosted voice we tried was silent, including the default they pick when
+ * `voice_settings` is omitted; the first third-party voice tried worked
+ * immediately. See telnyx-bug/ for the reproduction.
+ *
+ * Latency was measured against /v2/text-to-speech/speech, three runs per voice,
+ * one sentence. English is a clear win for AWS: Joanna-Neural ~300ms against
+ * Azure Ava's ~525ms, saved on every turn. Dutch is a coin flip — Azure Fenna
+ * ~396ms and AWS Laura-Neural ~418ms sit inside run-to-run noise — so Fenna
+ * stays, having held a real conversation on the first call that worked.
+ * AWS Polly's non-neural voices (Lotte, Ruben) are ~100ms faster still and
+ * audibly worse; not worth it when the voice is the whole product.
+ *
+ * Caveat: this measures time to render a complete clip, not time to first
+ * audio in a streaming call, which is what a caller actually waits through.
+ * Treat it as a proxy and re-measure if a language ever feels sluggish.
  */
 
 export interface Language {
@@ -35,61 +53,61 @@ export const LANGUAGES: Language[] = [
   {
     code: "en",
     label: "English",
-    voice: "Telnyx.Ultra.00967b2f-88a6-4a31-8153-110a92134b9f",
+    voice: "AWS.Polly.Joanna-Neural",
     greeting: "Hi, you're speaking with an AI assistant. ",
   },
   {
     code: "nl",
     label: "Nederlands",
-    voice: "Telnyx.Ultra.0eb213fe-4658-45bc-9442-33a48b24b133",
+    voice: "Azure.nl-NL-FennaNeural",
     greeting: "Hoi, je spreekt met een AI-assistent. ",
   },
   {
     code: "fr",
     label: "Français",
-    voice: "Telnyx.Ultra.0418348a-0ca2-4e90-9986-800fb8b3bbc0",
+    voice: "Azure.fr-FR-DeniseNeural",
     greeting: "Bonjour, vous parlez avec un assistant IA. ",
   },
   {
     code: "de",
     label: "Deutsch",
-    voice: "Telnyx.Ultra.0b66a153-548f-4f2c-b734-09a13b0bd163",
+    voice: "Azure.de-DE-KatjaNeural",
     greeting: "Hallo, Sie sprechen mit einem KI-Assistenten. ",
   },
   {
     code: "hi",
     label: "हिन्दी (Hindi)",
-    voice: "Telnyx.Ultra.098fb15d-2597-4186-8b74-25340050b6e7",
+    voice: "Azure.hi-IN-AnanyaNeural",
     greeting: "नमस्ते, आप एक AI सहायक से बात कर रहे हैं। ",
   },
   {
     code: "it",
     label: "Italiano",
-    voice: "Telnyx.Ultra.029c3c7a-b6d9-44f0-814b-200d849830ff",
+    voice: "Azure.it-IT-ElsaNeural",
     greeting: "Ciao, stai parlando con un assistente IA. ",
   },
   {
     code: "ja",
     label: "日本語 (Japanese)",
-    voice: "Telnyx.Ultra.177df681-25b1-48c2-bb47-03ca5fa27f0a",
+    voice: "Azure.ja-JP-NanamiNeural",
     greeting: "こんにちは、AIアシスタントが対応しています。",
   },
   {
     code: "pt",
     label: "Português",
-    voice: "Telnyx.Ultra.07b6f895-78b9-4921-8e10-8a21c99c2e8a",
+    voice: "Azure.pt-BR-FranciscaNeural",
     greeting: "Olá, você está falando com um assistente de IA. ",
   },
   {
     code: "ru",
     label: "Русский (Russian)",
-    voice: "Telnyx.Ultra.064b17af-d36b-4bfb-b003-be07dba1b649",
+    voice: "Azure.ru-RU-SvetlanaNeural",
     greeting: "Здравствуйте, вы разговариваете с ИИ-ассистентом. ",
   },
   {
     code: "es",
     label: "Español",
-    voice: "Telnyx.Ultra.02aeee94-c02b-456e-be7a-659672acf82d",
+    voice: "Azure.es-ES-ElviraNeural",
     greeting: "Hola, está hablando con un asistente de IA. ",
   },
 ];

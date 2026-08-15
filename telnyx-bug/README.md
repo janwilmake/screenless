@@ -1,4 +1,24 @@
-# Telnyx AI Assistant: no audio on PSTN calls
+# Telnyx-hosted TTS renders no audio on PSTN calls
+
+**Resolved 2026-08-15.** The fault is Telnyx's own TTS, not AI Assistants.
+Every Telnyx-hosted voice — `Telnyx.Ultra.*`, `Telnyx.Natural.*`, and the
+default Telnyx picks when `voice_settings` is omitted — produces no audio on a
+PSTN call. The model replies, the reply is logged as an assistant turn, and
+nothing is ever rendered. Switching to any third-party voice
+(`AWS.Polly.*`, `Azure.*`) fixes it immediately and completely.
+
+Telnyx support saw the same thing from their side: on a day of failed calls
+there were *"only 2 TTS records for today, neither associated with a call
+session"*, while *"LLM inference is working — responses are being generated."*
+
+The reproduction below stands; it is what isolated the fault. Read
+`voice_settings` as the variable that mattered — every voice tried before the
+fix was Telnyx-hosted, which is why nothing else changed the outcome.
+
+---
+
+## Original report
+
 
 An AI Assistant connected to an outbound PSTN call never speaks. The call
 connects, media flows, speech-to-text transcribes the caller — and the
