@@ -36,11 +36,23 @@ fi
 
 say "applying decisions from $call_id"
 
-# The agent is given the call id rather than the transcript itself: it should
-# fetch the transcript, find the matching decision manifest, and act. Passing
-# the text here would make this script the thing that decides what "the second
-# one" referred to, which is precisely the judgement it is unqualified to make.
-if claude -p "A screenless call just finished. Apply its decisions: run 'screenless transcript --json', find the matching decisions manifest in ~/screenless/press/, and follow loop/APPLY.md." \
+# Start in a registered project rather than $HOME: the agent needs a repo to
+# act on, and Claude Code resolves tools and MCPs relative to where it runs.
+# The manifest names its own repo, so this is a sensible default rather than
+# the answer — a machine with several projects still routes by manifest.
+project="$(node -e '
+  const fs = require("fs");
+  try {
+    const list = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    if (Array.isArray(list) && list[0]) console.log(list[0]);
+  } catch { /* no registry yet */ }
+' "$STATE_DIR/projects.json" 2>/dev/null || true)"
+[ -n "$project" ] && [ -d "$project" ] && cd "$project"
+
+# Referred to by skill name, not by a path. Anyone who installed with the
+# one-liner has the skill at ~/.claude/skills/screenless/APPLY.md and no
+# checkout of this repo at all, so "follow loop/APPLY.md" pointed at nothing.
+if claude -p "A screenless call just finished. Use the screenless-apply skill: read the transcript with 'screenless transcript --json', find the decisions manifest the brief was written with, and apply what was decided." \
     --permission-mode acceptEdits \
     >>"$log" 2>&1; then
   # Marked only on success, so a failed run is retried rather than written off.
