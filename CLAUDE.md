@@ -20,6 +20,20 @@ prompts verbatim. This is not optional and not an end-of-session chore.
 3. **On any correction.** If the user tells you something you built is wrong,
    that prompt is the most valuable line in the file. Record it with the
    correction intact.
+4. **Resolve it into [`intent/SUMMARY.md`](intent/SUMMARY.md)** at the end of
+   the session — and immediately whenever an instruction *reverses* an earlier
+   one, rather than waiting. Sessions end by running out of context or by the
+   terminal closing, so "at the end" is a thing you often do not get to do; a
+   reversal recorded late is a summary that quietly disagrees with the code.
+
+   SUMMARY.md keeps the winning version of each instruction, notes what it
+   replaced, and marks every line **built**, **built but never run**, or **not
+   built**. Keep the middle value honest — most of a young product is written
+   and unexercised, and a summary that flattens that distinction is worse than
+   none. Update its "Last updated" line to name the newest prompt it covers,
+   and keep the two standing sections current: *Missing intent* for what was
+   asked and is not there, *Assumptions* for what you decided without being
+   asked.
 
 **How to write it:**
 
@@ -56,11 +70,12 @@ The rule is not "click anything". It is:
 Do not trigger `alert()`/`confirm()` dialogs — they freeze the extension. Screenshot
 before and after anything non-obvious.
 
-**Signing in.** The account is `wijnand@hyre.io` via Google SSO — the same
-identity for Resend, Telnyx, Cloudflare and Stripe. If a dashboard shows a
-login wall, click through "Continue with Google" and pick that account; the
-Chrome profile usually has a live Google session, so this is a click, not a
-credential.
+**Signing in.** `wijnand@hyre.io` via Google SSO is the identity for **Resend
+and Telnyx**. It is *not* a Cloudflare account — Cloudflare is a separate login
+under `jan@wilmake.com`, and the authenticated `wrangler` CLI is the way in
+there, not the dashboard. If a dashboard shows a login wall, click through
+"Continue with Google" and pick that account; the Chrome profile usually has a
+live Google session, so this is a click, not a credential.
 
 Stop and hand back the moment it asks for anything more: a typed password, a
 2FA code, a recovery prompt, or a new OAuth consent screen granting a
@@ -85,7 +100,7 @@ each message should explain why the change was wanted, not just what moved.
 ## What this repo is
 
 A morning phone call and a nightly printed paper for engineers whose coding
-agents open pull requests overnight. Four parts:
+agents open pull requests overnight. Five parts:
 
 - `worker/` — Cloudflare Worker: telephony, phone verification, Stripe billing,
   and the parked briefs the morning call is placed from.

@@ -1,5 +1,9 @@
 # Intent, resolved
 
+**Last updated 15 August 2026** — covers sessions 1–2, through the prompt at
+16:14. If the session files carry prompts newer than that, this document is
+behind them and they win.
+
 Every instruction given across both sessions, collapsed to its final form —
 where an instruction was later replaced, only the replacement is listed, with
 the superseded version noted so the reversal is not lost. Then checked against
