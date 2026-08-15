@@ -10,6 +10,7 @@
 
 import type { Env } from "./index";
 import { isValidTimezone, parseClock, nextOccurrence } from "./time";
+import { DEFAULT_LANGUAGE, isSupportedLanguage } from "./languages";
 
 /** When the call goes out if the user never says otherwise. */
 const DEFAULT_CALL_AT = "08:00";
@@ -34,6 +35,14 @@ export interface Settings {
   timezone: string;
   /** False parks briefs without ever dialling — for pausing without cancelling. */
   callEnabled: boolean;
+  /**
+   * Language the call is held in, account-wide. Chosen once at setup rather
+   * than passed per call, because it is a property of the person, not of the
+   * night's work.
+   */
+  language: string;
+  /** When the terms were accepted, ms since epoch. Zero means never. */
+  termsAcceptedAt: number;
   updatedAt: number;
 }
 
@@ -71,6 +80,8 @@ export async function loadSettings(env: Env, phone: string): Promise<Settings> {
     callAt: DEFAULT_CALL_AT,
     timezone: "UTC",
     callEnabled: true,
+    language: DEFAULT_LANGUAGE,
+    termsAcceptedAt: 0,
     updatedAt: 0,
   };
 }
@@ -79,6 +90,8 @@ export interface SettingsPatch {
   callAt?: unknown;
   timezone?: unknown;
   callEnabled?: unknown;
+  language?: unknown;
+  acceptTerms?: unknown;
 }
 
 /**
@@ -107,6 +120,17 @@ export async function updateSettings(
       };
     next.timezone = patch.timezone;
   }
+
+  if (patch.language !== undefined) {
+    if (!isSupportedLanguage(patch.language))
+      return { ok: false, error: "unsupported language" };
+    next.language = patch.language as string;
+  }
+
+  // Write-once and never cleared: acceptance is a record of something that
+  // happened, not a toggle. Re-accepting refreshes the timestamp; nothing
+  // un-accepts.
+  if (patch.acceptTerms === true) next.termsAcceptedAt = Date.now();
 
   if (patch.callEnabled !== undefined) {
     if (typeof patch.callEnabled !== "boolean")

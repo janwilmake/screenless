@@ -28,6 +28,7 @@ function machineTimezone(): string | null {
 
 /** The hosted API. Self-hosting is a supported detour, not the default path. */
 const HOSTED_API = "https://api.screenless.sh";
+const SITE = "https://screenless.sh";
 
 /* ------------------------------------------------------------------ output */
 
@@ -267,6 +268,34 @@ async function setup(args: string[]): Promise<void> {
     // The subscription is checked here, while the user is already in a setup
     // frame of mind, rather than at the first call — where a paywall would
     // land as a failure instead of a step.
+    // Terms before anything is charged or dialled. Refusing is a valid answer
+    // and leaves the verified session in place, so nothing is lost by saying
+    // no and coming back.
+    console.log("");
+    console.log(`  Terms:   ${c.cyan(`${SITE}/terms`)}`);
+    console.log(`  Privacy: ${c.cyan(`${SITE}/privacy`)}`);
+    const accepted = (await rl.question(`Accept? ${c.dim("y/N")}: `)).trim().toLowerCase();
+    if (accepted !== "y" && accepted !== "yes") {
+      console.log(`${c.red("✗")} not accepted — nothing else will run. Re-run setup when you're ready.`);
+      return;
+    }
+
+    // Language before the call is ever placed, because it decides the voice as
+    // well as the transcription.
+    const catalogue = await api<Settings>(base, "/settings", { token: result.token });
+    const langs = catalogue.languages ?? [{ code: "en", label: "English" }];
+    console.log(`\n${c.bold("Language for the call")} ${c.dim("(1 = English)")}`);
+    for (const [i, l] of langs.entries()) console.log(`  ${String(i + 1).padStart(2)}. ${l.label}`);
+    const picked = (await rl.question(`Choose ${c.dim("[1]")}: `)).trim();
+    const chosen = langs[(Number(picked) || 1) - 1] ?? langs[0];
+
+    await api<Settings>(base, "/settings", {
+      method: "POST",
+      body: { acceptTerms: true, language: chosen.code },
+      token: result.token,
+    });
+    console.log(`${c.green("✓")} ${chosen.label}\n`);
+
     const subscribed = await ensureSubscription(base, result.token);
     if (!subscribed) return;
 
@@ -332,6 +361,9 @@ interface Settings {
   callAt: string;
   timezone: string;
   callEnabled: boolean;
+  language: string;
+  termsAcceptedAt: number;
+  languages?: Array<{ code: string; label: string }>;
   /** Next actual ring, ms since epoch. */
   nextCallAt: number;
   /** The number to ring back on, to take the call early or late. */
@@ -349,6 +381,8 @@ function showSettings(s: Settings): void {
   console.log(
     `${c.bold("next call")}   ${s.callEnabled ? `${when.toLocaleString()} ${c.dim(`(${away})`)}` : c.red("paused")}`,
   );
+  const lang = s.languages?.find((l) => l.code === s.language);
+  console.log(`${c.bold("language")}    ${lang?.label ?? s.language}`);
   console.log(`${c.bold("ring back")}   ${s.inboundNumber} ${c.dim("— take the call early or late")}`);
 }
 
@@ -630,8 +664,9 @@ ${c.bold("Call options")}
   --at [HH:MM]         park the brief instead of dialling now. Bare --at uses
                        your configured call time
   --hold               park it with no time at all — it waits until you ring in
-  --lang en|nl|multi   conversation language (default: en)
-                       "multi" follows Dutch/English code-switching
+  --lang <code>        override the account language for this call. One of
+                       en nl fr de hi it ja pt ru es, or "multi" to follow
+                       code-switching mid-sentence
   --json               emit the raw result instead of a formatted transcript
 
 ${c.bold("Settings options")}

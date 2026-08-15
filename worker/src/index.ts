@@ -1,6 +1,7 @@
 import * as telnyx from "./telnyx";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
+import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
 import { session, sign, webhookToken, safeEqual } from "./auth";
 import { scheduleMail, sweepOutbox } from "./mail";
 
@@ -31,6 +32,10 @@ export interface Env {
    */
   TELNYX_ANCHORSITE: string;
   ASSISTANT_MODEL: string;
+  /**
+   * Optional override. Normally empty: the voice follows the caller's chosen
+   * language, and pinning one here gives every language the same accent.
+   */
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
   /** Recurring price the trial converts to. Falls back to $99/month if unset. */
@@ -45,8 +50,15 @@ export interface Env {
   MAIL_TO: string;
 }
 
-/** Sessions last a week. Re-verify by SMS after that. */
-const SESSION_TTL_SECS = 7 * 24 * 60 * 60;
+/**
+ * Sessions last a year.
+ *
+ * A week was wrong twice over: it expired on exactly the day the trial
+ * converted, and it made a background loop re-verify by SMS every Monday. The
+ * token is bound to a verified number and can only ever dial that number, so a
+ * long life costs little — and `screenless logout` ends it immediately.
+ */
+const SESSION_TTL_SECS = 365 * 24 * 60 * 60;
 /** Call records outlive the call itself so `screenless call` can be re-run against an id. */
 const CALL_TTL_SECS = 24 * 60 * 60;
 /** OTP sends allowed per phone number per hour. SMS to NL costs ~$0.09 a pop. */
@@ -92,14 +104,53 @@ function normalizeCallerId(raw: string): string {
 }
 
 /**
- * Country allowlist, checked against the dial prefix. This is a cost control as
- * much as a policy one — it is the difference between a compromised token
- * costing you a few euros and costing you a few thousand.
+ * Dialling codes that are blocked regardless of the allowlist.
+ *
+ * This is a fraud control, not a policy one. SMS pumping works by driving
+ * verification traffic at ranges where the carrier shares revenue with the
+ * fraudster, so the expensive destinations and the abused ones are the same
+ * list. Satellite ranges are here because a single message can cost more than
+ * a month of subscription.
+ *
+ * Everything else on earth is fine: an OTP to a normal mobile is cents, and
+ * refusing the world to save them is how you end up with a product only Dutch
+ * people can buy.
+ */
+const BLOCKED_PREFIXES = [
+  "+881", "+882", "+883", // satellite and international networks
+  "+870",                  // Inmarsat
+  "+808",                  // shared-cost international
+  "+979",                  // international premium rate
+  "+888",                  // OCHA
+  // Ranges with a long history of SMS-pumping fraud and high termination fees.
+  "+252", "+253", "+257", "+265", "+269", "+290", "+291",
+  "+297", "+298", "+299", "+373", "+375",
+  "+509", "+590", "+592", "+594", "+596", "+597", "+599",
+  "+670", "+672", "+673", "+674", "+675", "+676", "+677",
+  "+678", "+679", "+680", "+681", "+682", "+683", "+685",
+  "+686", "+687", "+688", "+689", "+690", "+691", "+692",
+  "+850", "+963", "+964", "+967", "+98",
+];
+
+/**
+ * Whether a number may be verified and dialled.
+ *
+ * `ALLOWED_DESTINATIONS` is "*" for worldwide, or a comma-separated list of
+ * ISO country codes to narrow it. The block list applies either way — it is a
+ * spend guard, and a spend guard you can switch off in config is decoration.
  */
 function destinationAllowed(phone: string, allowed: string): boolean {
-  const prefixes: Record<string, string> = { NL: "+31", BE: "+32", DE: "+49", GB: "+44", US: "+1" };
+  if (BLOCKED_PREFIXES.some((p) => phone.startsWith(p))) return false;
+
   const list = allowed.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
-  if (list.includes("*")) return true;
+  if (!list.length || list.includes("*")) return true;
+
+  const prefixes: Record<string, string> = {
+    NL: "+31", BE: "+32", DE: "+49", GB: "+44", US: "+1", CA: "+1",
+    FR: "+33", ES: "+34", IT: "+39", PT: "+351", IE: "+353", DK: "+45",
+    SE: "+46", NO: "+47", PL: "+48", CH: "+41", AT: "+43", AU: "+61",
+    NZ: "+64", SG: "+65", JP: "+81", IN: "+91", BR: "+55", ZA: "+27",
+  };
   return list.some((c) => prefixes[c] && phone.startsWith(prefixes[c]));
 }
 
@@ -121,6 +172,9 @@ function withNextCall(settings: schedule.Settings, env: Env) {
     ...settings,
     nextCallAt: schedule.nextCallTime(settings),
     inboundNumber: env.TELNYX_FROM_NUMBER,
+    // Sent so the CLI never hard-codes a language list that can drift from
+    // what the Worker will actually accept.
+    languages: LANGUAGES.map((l) => ({ code: l.code, label: l.label })),
   };
 }
 
@@ -215,21 +269,9 @@ async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
   }
 }
 
-type Lang = "en" | "nl" | "multi";
+type Lang = string;
 
-/** "multi" lets Deepgram Flux follow Dutch/English code-switching mid-sentence. */
-const asLang = (v: unknown): Lang =>
-  v === "en" || v === "nl" || v === "multi" ? v : "en";
-
-/**
- * EU AI Act Article 50 requires the caller be told they are talking to an AI.
- * Hard-coded as the assistant's greeting rather than left to the system
- * prompt, because a prompt instruction is something the model can skip.
- */
-const greetingFor = (lang: Lang): string =>
-  lang === "nl"
-    ? "Hoi, je spreekt met een AI-assistent. "
-    : "Hi, you're speaking with an AI assistant. ";
+const asLang = (v: unknown): Lang => (isSupportedLanguage(v) ? v : DEFAULT_LANGUAGE);
 
 /**
  * Everything the assistant is told, from the brief the loop wrote.
@@ -274,9 +316,9 @@ async function startCall(
   const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-${callId}`, {
     instructions: instructionsFor(prompt),
     model: env.ASSISTANT_MODEL,
-    voice: env.ASSISTANT_VOICE,
+    voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
     language: lang,
-    greeting: greetingFor(lang),
+    greeting: languageOf(lang).greeting,
   });
 
   // Calls MUST go through the assistant's own auto-created TeXML app: its
@@ -341,7 +383,8 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   if (typeof prompt !== "string" || !prompt.trim()) return fail(400, "prompt is required");
   if (prompt.length > 4000) return fail(400, "prompt too long (max 4000 chars)");
 
-  const lang = asLang(language);
+  const settings = await schedule.loadSettings(env, s.phone);
+  const lang = language === undefined ? asLang(settings.language) : asLang(language);
 
   // Parked rather than placed: the loop finishes at 03:00 and the call is
   // wanted at 07:00, so the Worker holds the brief in between. It is also what
@@ -352,7 +395,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     return json({
       parked: true,
       dueAt: parked.brief.dueAt,
-      callAt: (await schedule.loadSettings(env, s.phone)).callAt,
+      callAt: settings.callAt,
       inboundNumber: env.TELNYX_FROM_NUMBER,
     });
   }
@@ -421,9 +464,9 @@ async function answerInbound(req: Request, env: Env): Promise<Response> {
   const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-in-${Date.now()}`, {
     instructions: instructionsFor(brief.prompt),
     model: env.ASSISTANT_MODEL,
-    voice: env.ASSISTANT_VOICE,
+    voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
     language: lang,
-    greeting: greetingFor(lang),
+    greeting: languageOf(lang).greeting,
   });
 
   const callId = crypto.randomUUID();
@@ -766,8 +809,10 @@ export default {
       if (method === "POST" && path === "/mail") {
         const s = await session(req, env.SESSION_SECRET);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        const unpaid = await requireSubscription(env, s.phone);
-        if (unpaid) return unpaid;
+        // Deliberately not behind the paywall. The paper is the free surface:
+        // it is what someone can have working tonight, and it is what earns
+        // the right to sell them the call. The rate limit is the only guard it
+        // needs, because a PDF costs a fraction of a phone call.
         if (!(await rateLimit(env, `mail:${s.phone}`, 12)))
           return fail(429, "mail limit reached for this number, try again in an hour");
 

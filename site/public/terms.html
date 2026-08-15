@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>screenless — terms</title>
+<meta name="description" content="Terms of service for screenless.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
+<style>
+  :root {
+    --ink:#14110f; --spot:#b4341f; --rule:#d6cfc7; --muted:#6f665e;
+    --paper:#fdfcfa; --wash:#f4f0eb;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);font-size:17px;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  .rule{height:3px;background:var(--ink)}
+  .wrap{max-width:660px;margin:0 auto;padding:0 24px}
+  .top{display:flex;justify-content:space-between;align-items:baseline;
+    padding:14px 0;border-bottom:1px solid var(--rule);
+    font-family:var(--sans);font-size:13px}
+  .brand{font-weight:700;letter-spacing:.2em;text-transform:uppercase;font-size:14px;
+    text-decoration:none;color:var(--ink)}
+  .top a{color:var(--muted);text-decoration:none;margin-left:18px}
+  .top a:hover{color:var(--spot)}
+  main{padding:44px 0 64px}
+  h1{font-weight:400;letter-spacing:-.015em;margin:0 0 6px;font-size:clamp(30px,4.6vw,40px)}
+  .upd{font-family:var(--sans);font-size:12px;text-transform:uppercase;
+    letter-spacing:.12em;color:var(--muted);margin:0 0 30px}
+  h2{font-weight:400;font-size:21px;margin:34px 0 8px;letter-spacing:-.01em}
+  p,li{color:#3b3531}
+  ul{padding-left:20px} li{margin-bottom:6px}
+  code{font-family:var(--mono);font-size:.85em;background:var(--wash);padding:2px 5px}
+  a{color:var(--ink)}
+  .lede{font-size:19px;color:var(--muted)}
+  footer{border-top:1px solid var(--rule);padding:18px 0;font-family:var(--sans);
+    font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="rule"></div>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="/">screenless</a>
+    <span><a href="/terms">terms</a><a href="/privacy">privacy</a><a href="/">home</a></span>
+  </div>
+  <main>
+
+    <h1>Terms of service</h1>
+    <p class="upd">Last updated 15 August 2026</p>
+
+    <p class="lede">
+      Plain terms for an early product. If something here reads as though it is
+      hiding something, tell us and we will rewrite it.
+    </p>
+
+    <h2>What screenless is</h2>
+    <p>
+      screenless places a scheduled phone call to a number you have verified, and
+      mails you a PDF built on your own machine. The service is operated by
+      <b>W</b>, a sole proprietorship registered in the Netherlands.
+    </p>
+
+    <h2>It is early, and sold as such</h2>
+    <p>
+      Parts of what the marketing describes are still being built. You are
+      buying access to something in progress, at a price locked for as long as
+      you stay subscribed. If that is not what you want, do not subscribe.
+    </p>
+
+    <h2>Your account is your phone number</h2>
+    <p>
+      There is no password. Whoever controls the number controls the account, and
+      the service will only ever dial the number that was verified. Keep the
+      session token in <code>~/.screenless/config.json</code> to yourself;
+      <code>screenless logout</code> ends the session.
+    </p>
+
+    <h2>The paper is free; the call is paid</h2>
+    <p>
+      Scheduling the nightly edition costs nothing. The call is $99 per month
+      after a 7-day free trial. Your card is collected at signup and first
+      charged at the end of the trial. Cancel any time with
+      <code>screenless billing --manage</code>; cancelling before day eight
+      costs nothing, and cancelling later ends the subscription at the end of
+      the paid period. Payments are handled by Stripe — we never see your card.
+    </p>
+
+    <h2>Fair use</h2>
+    <p>
+      The call is intended for one person reviewing their own work. Rate limits
+      apply, and we may suspend an account that is placing calls automatically at
+      a volume the subscription does not cover. We will contact you before doing
+      so unless the cost is running away.
+    </p>
+
+    <h2>What you must not do</h2>
+    <ul>
+      <li>Use it to call anyone but yourself. It is built so it cannot, and
+        attempting to work around that ends the account.</li>
+      <li>Put unlawful content, or another person's personal data, in a brief.</li>
+      <li>Resell the calls.</li>
+    </ul>
+
+    <h2>No warranty, limited liability</h2>
+    <p>
+      The service is provided as is. Calls depend on telephone networks and on
+      third parties, and will sometimes fail. We are not liable for a decision
+      you made, or did not make, because a call did not arrive. Our total
+      liability is capped at what you paid in the previous three months.
+    </p>
+
+    <h2>Ending it</h2>
+    <p>
+      Cancel whenever you like. We may end an account for a breach of these
+      terms, or discontinue the service with 30 days' notice and a pro-rata
+      refund.
+    </p>
+
+    <h2>Law</h2>
+    <p>
+      Dutch law applies; disputes go to the courts of Amsterdam. Nothing here
+      removes rights you have as a consumer under mandatory law.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      If these terms change in a way that matters, we will say so by email
+      before it takes effect.
+    </p>
+  </main>
+  <footer>screenless — a call and a paper for people whose agents write the code · <a href="mailto:hello@screenless.sh">hello@screenless.sh</a></footer>
+</div>
+</body>
+</html>

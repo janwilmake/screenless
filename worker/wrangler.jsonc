@@ -35,25 +35,14 @@
     // slice of per-turn latency.
     "ASSISTANT_MODEL": "anthropic/claude-haiku-4-5",
 
-    // MISMATCH — READ BEFORE DEPLOYING.
-    // This is a *Dutch* voice ("Sanne - Clear Companion"), left over from when
-    // this was a Dutch-first tool. The default conversation language is now
-    // "en", so as configured you get a Dutch voice reading English: audible,
-    // but wrong.
-    //
-    // Pick an English voice before shipping to anyone:
-    //   cd worker && npm run voices en
-    //
-    // No English id is hard-coded here because voice ids are account-visible
-    // and unverified ids fail at call time rather than at deploy time. Prefer
-    // a `hosted: true` voice (Telnyx.Ultra.*, Resemble.Pro.*) — it runs on
-    // Telnyx's own GPUs, so it needs no third-party key and avoids a network
-    // hop mid-call.
-    "ASSISTANT_VOICE": "Telnyx.Ultra.0eb213fe-4658-45bc-9442-33a48b24b133",
+    // Normally empty: the voice follows the caller's chosen language, from the
+    // table in src/languages.ts. Set this only to force one voice everywhere.
+    "ASSISTANT_VOICE": "",
 
-    // Countries whose numbers may be verified and dialled. Doubles as a spend
-    // guard. Use "*" to disable the check (not recommended).
-    "ALLOWED_DESTINATIONS": "NL",
+    // Worldwide. The real spend guard is BLOCKED_PREFIXES in src/index.ts,
+    // which blocks satellite and SMS-pumping ranges regardless of this value.
+    // Narrow to a comma-separated list of ISO codes ("NL,BE,DE") to restrict.
+    "ALLOWED_DESTINATIONS": "*",
 
     // Envelope sender for the nightly edition. The domain must be verified in
     // Resend before anything sends, or every mail 403s at sweep time — which is
