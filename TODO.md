@@ -3,13 +3,24 @@
 ## Blocks a real launch
 
 - [ ] **`rounds` doesn't exist.** PR ingestion, triage, agenda. `loop/SKILL.md` describes it and has never run.
-- [ ] **Telnyx silent-call bug** — no status since 15 Aug 09:32. If unfixed, nothing works.
+- [ ] **Telnyx silent-call bug** — still live, with Telnyx support. What is now known:
+      the transcript of a completed call contains the human's turn and **zero
+      assistant turns**, not even the greeting Telnyx speaks on answer. Ruled
+      out: the model, the voice, the language, and the endpoint — switching
+      from `/texml/ai_calls` to `/texml/calls` with our own TeXML changed
+      nothing. The assistant is created successfully and returns a TeXML app
+      id, so it exists; it simply never runs.
+      Next diagnostic, if support stalls: place a call at `/texml/say`, which
+      speaks fixed text with no assistant involved. Speech there isolates the
+      fault to the assistant; silence there moves it to the audio path.
 - [ ] **Stripe is test mode.** Live product + price + webhook, then swap 3 values.
 
 ## Never run end to end
 
 - [ ] Cron placing a parked brief
 - [ ] A real inbound call to +1 641 215 3640
+- [x] ~~An outbound call end to end~~ — placed, answered, transcript captured,
+      stored, emailed to the Inbox. Only the assistant's audio is missing.
 - [x] ~~The nightly loop, once, against hyre~~ — ran, produced an 8-page edition; parked nothing (no session at the time)
 - [ ] A Resend send — domain still `Pending`, DNS is live and correct
 
@@ -24,6 +35,9 @@
 ## Small
 
 - [ ] The SMS ceilings log when tripped, but nothing pages anyone
+- [ ] `captureTranscript` deletes the Telnyx conversation, which is also the
+      evidence for debugging a silent call. Consider keeping it when a call
+      produced zero assistant turns
 
 - [ ] 30 min/day is sold on the pricing page; code counts 20 calls/hr and no minutes at all
 - [ ] No alerting when the cron sweep throws
