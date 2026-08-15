@@ -1,8 +1,13 @@
 # rounds — the morning call
 
 Clinical rounds for your pull requests. A scheduled call that walks the queue
-case by case, takes your decision on each, and writes it back — then hangs up
-as soon as the queue is drained.
+case by case and takes your decision on each, then hangs up as soon as the
+queue is drained.
+
+The call itself changes nothing. It has no tools and no credentials — it
+collects decisions and ends. The loop on the user's own machine reads the
+transcript afterwards and is what merges, comments and closes. See the
+architectural rule in [../CLAUDE.md](../CLAUDE.md).
 
 ## Status
 
@@ -37,8 +42,11 @@ MCP servers and your repo access rather than needing integrations of its own.
 3. **Route what cannot be answered by voice.** "Separate table or JSONB?" is a
    call question. "Does this migration look right?" is not. Saying so is a
    feature, not a failure — it is what makes the rest of the call trustworthy.
-4. **Write back.** "Do the second one" has to become a real PR comment, label,
-   merge, split, or follow-up ticket. Without this the call is just a podcast.
+4. **Hand off cleanly.** "Do the second one" has to survive as a decision the
+   loop can act on without guessing — a specific PR, a specific action. The
+   call does not apply it; it produces a transcript unambiguous enough that the
+   agent reading it afterwards cannot get it wrong. Without that, the call is
+   just a podcast.
 
 ## The two design rules worth keeping
 

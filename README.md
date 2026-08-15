@@ -29,32 +29,40 @@ workflow that are not a screen.
 ### the call
 
 ```
-$ screenless brief
+03:12  $ screenless call "$(claude -p 'brief me on tonight's PRs')" --at
+       ✓ parked — calling +31612345678 at 08:00 · 14 PRs open, 6 need you
 
-→ calling +31612345678 · 14 PRs open, 6 need you
-
+08:00
 agent  Morning. Six decisions, about nine minutes. First one:
        HYR2-441 adds a `notes` field to candidates. The agent
        put it in a JSONB column. Separate table or leave it?
 you    What else reads it?
 agent  Nothing yet. It's write-only from the intake form.
 you    Leave it. Revisit when something queries it.
-agent  Noted, commented on the PR. Next: HYR2-448 changes the
-       default page size from 25 to 100 —
+agent  Got it — JSONB stays, revisit on first read. Next:
+       HYR2-448 changes the default page size from 25 to 100 —
 you    Wait, why is that in a ticket about export?
-agent  It isn't scoped there. Want me to split it out?
-you    Yeah, split it, and hold the export PR until that's gone.
+agent  It isn't scoped there. Split it out, or leave it?
+you    Split it, and hold the export PR until that's gone.
 ...
 
-✓ 6 decisions · 8m41s · 4 merged, 1 split, 1 needs your eyes
+✓ 6 decisions · 8m41s · nothing changed yet
+
+08:09  $ screenless transcript --json | claude -p "apply these decisions"
+       ✓ 4 merged · 1 split · 1 comment · 1 left for your eyes
 ```
 
-That last line is the point. One decision could not be made by voice, and the
-product said so instead of pressing you for an answer on a phone call.
+Note where the work happens. The voice on the phone has no tools and no
+credentials — it collects decisions and hangs up. Your own loop applies them
+afterwards, with the access you already gave it.
+
+And one decision could not be made by voice: the call said so instead of
+pressing you for an answer while you are walking the dog.
 
 ### the paper
 
-A single daily PDF, mailed at 06:00, built to be printed and read with coffee:
+A single daily PDF, mailed to land at wake-up, built to be printed and read
+with coffee:
 
 - **One page per ticket in flight**, mostly picture: what surface it touches,
   a screenshot of that surface as it looks today, and what will look different
@@ -69,6 +77,15 @@ own product better than you did yesterday — which is the thing that gets quiet
 lost when agents write most of the code.
 
 ## How it installs
+
+```bash
+curl -fsSL https://screenless.sh/install | bash
+```
+
+One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH, and
+goes straight into `screenless setup` — phone verification by SMS, then a 7-day
+free trial ($99/month after, card up front). Node 20+ required and never
+installed for you.
 
 Both surfaces run as a **background loop on your own machine, driven by Claude
 Code**. That is the whole integration story:
@@ -250,18 +267,84 @@ npx wrangler secret put TELNYX_VERIFY_PROFILE_ID
 npx wrangler deploy
 ```
 
-### 4. Install the CLI
+### 4. Stripe: the paywall
+
+Billing stays inert while `STRIPE_SECRET_KEY` is unset, so skip this section
+entirely if you are running your own Worker for yourself — every verified number
+is then entitled.
+
+```bash
+stripe products create --name="screenless"
+stripe prices create --product=<product id> --unit-amount=9900 \
+  --currency=usd -d "recurring[interval]=month"
+
+stripe webhook_endpoints create \
+  --url="https://api.screenless.sh/stripe/webhook" \
+  --enabled-events=checkout.session.completed \
+  --enabled-events=customer.subscription.created \
+  --enabled-events=customer.subscription.updated \
+  --enabled-events=customer.subscription.deleted \
+  --enabled-events=customer.subscription.trial_will_end
+```
+
+Put the price id in `wrangler.jsonc` as `STRIPE_PRICE_ID`, then:
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY      # sk_test_… or sk_live_…
+npx wrangler secret put STRIPE_WEBHOOK_SECRET  # whsec_… from the command above
+npx wrangler deploy
+```
+
+The trial is 7 days with the card taken up front, and a number that has held a
+subscription before does not get a second one. Going live is those three values
+swapped for their live-mode equivalents — there is no code path that differs.
+
+### 5. Inbound: let people ring back
+
+So a declined morning call can be taken later, the number has to answer. Ask the
+Worker for its signed voice URL:
+
+```bash
+curl https://api.screenless.sh/admin/inbound-url -H "X-Admin-Secret: <ADMIN_SECRET>"
+```
+
+In the Telnyx portal, set that as the Voice URL (POST) of a TeXML application
+and assign `TELNYX_FROM_NUMBER` to it. Whoever rings in gets the brief already
+parked for their number — the same conversation the 07:00 call would have been.
+
+### 6. Install the CLI
+
+```bash
+curl -fsSL https://screenless.sh/install | bash
+```
+
+That fetches the CLI into `~/.screenless`, puts a launcher on your PATH, and
+drops straight into `screenless setup`. It needs Node 20+ and will not install
+it for you.
+
+The call goes out at 08:00 in **your machine's timezone**, which is read from
+the machine itself on every settings call — there is no timezone to configure,
+and moving country corrects the schedule on its own.
+
+Setup asks `Self-hosted Worker? y/N` first. Answering no — the default — points
+at `https://api.screenless.sh`. Answering yes prompts for your own Worker URL,
+and `--api <url>` skips the question entirely.
+
+Working on the CLI itself:
 
 ```bash
 cd ../cli
 npm install && npm run build && npm link
-
 screenless setup --api https://api.screenless.sh
 ```
 
-You'll get an SMS with a code (`--voice` gets you a phone call instead). Enter
-it, and you're done — the session lasts a week and lands in
-`~/.screenless/config.json` at mode 0600.
+Either way you'll get an SMS with a code (`--voice` gets you a phone call
+instead). Enter it, start the trial, and you're done — the session lasts a week
+and lands in `~/.screenless/config.json` at mode 0600.
+
+Publishing a new CLI build to the installer is `npm run bundle` in `cli/`, which
+writes `site/public/screenless.tar.gz`, followed by `npx wrangler deploy` in
+`site/`.
 
 ## Usage
 
@@ -272,12 +355,41 @@ screenless call "..." --lang nl      # Dutch
 screenless call "..." --lang multi   # Dutch/English code-switching
 screenless call "..." --json         # raw result, for piping
 
-screenless mail <file.pdf> --at 06:30    # park an edition for wake-up
-screenless mail <file.pdf> --to you@example.com --subject "..."
+screenless call "..." --at           # park it for your configured call time
+screenless call "..." --at 06:30     # park it for a specific local time
+screenless call "..." --hold         # park with no time — waits until you ring in
+
+screenless transcript                # what was decided on the last call
+screenless transcript --wait --json  # block until it ends, then emit JSON
+
+screenless settings                       # call time, timezone, ring-back number
+screenless settings --at 08:00            # when the morning call goes out (default 08:00)
+screenless settings --pause               # stop the scheduled call
+
+screenless billing            # trial status
+screenless billing --manage   # Stripe's portal: change card, cancel
 
 screenless whoami
 screenless logout
 ```
+
+### The nightly shape
+
+The loop on your machine writes the brief and parks it; the Worker dials at your
+time; the loop reads back what you decided and is the thing that acts on it.
+
+```bash
+# 03:00, when your agents are done
+screenless call "$(claude -p 'brief me on tonight's PRs')" --at
+
+# 07:09, after the call
+screenless transcript --json | claude -p "apply these decisions"
+```
+
+The assistant on the phone has no tools and takes no action — it collects
+decisions and hangs up. Everything that merges, comments or closes runs on your
+machine, with the access you already gave it. Decline the call and ring the
+number back whenever suits: same brief, same conversation.
 
 `mail` hands the PDF to the Worker, which parks it in KV and sends it on a
 five-minute cron sweep once it comes due. The Worker holds it rather than your

@@ -51,6 +51,26 @@
   .hero .who{font-family:var(--sans);font-size:13px;text-transform:uppercase;
              letter-spacing:.12em;color:var(--spot);margin:0 0 18px;font-weight:700}
 
+  /* --------------------------------------------------- the install command */
+  /* The one thing on this page anyone is meant to do. Ink block on newsprint,
+     so it reads as a stamp rather than as another paragraph. */
+  .cmd{display:flex;align-items:center;gap:14px;margin:30px 0 0;max-width:64ch;
+       background:var(--ink);padding:15px 18px;flex-wrap:wrap}
+  .cmd code{font-family:var(--mono);font-size:15px;color:var(--paper);
+            flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
+  /* The prompt is scenery — dimmed so nobody copies the dollar sign. */
+  .cmd code .p{color:#8d837a;user-select:none}
+  .cmd button{font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;
+              text-transform:uppercase;letter-spacing:.1em;background:transparent;
+              color:var(--paper);border:1px solid rgba(253,252,250,.4);padding:7px 12px}
+  .cmd button:hover{border-color:var(--paper);background:rgba(253,252,250,.08)}
+  .cmd-note{font-family:var(--sans);font-size:13px;color:var(--muted);margin:12px 0 0}
+  .cmd-note b{color:var(--ink);font-weight:700}
+  .cta .cmd{background:var(--paper);margin-left:auto;margin-right:auto;text-align:left}
+  .cta .cmd code{color:var(--ink)}
+  .cta .cmd button{color:var(--ink);border-color:rgba(20,17,15,.4)}
+  .cta .cmd button:hover{border-color:var(--ink);background:rgba(20,17,15,.06)}
+
   /* ------------------------------------------------------------ layout */
   section{padding:52px 0;border-bottom:1px solid var(--rule)}
   .kicker{font-family:var(--sans);font-size:12px;font-weight:700;
@@ -173,6 +193,16 @@
       release. That costs an hour at a screen before coffee. It doesn't need a
       screen.
     </p>
+
+    <div class="cmd">
+      <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
+      <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
+    </div>
+    <p class="cmd-note">
+      macOS or Linux, Node 20+. Installs the CLI, verifies your number by SMS,
+      and starts a <b>7-day free trial</b>. Then $99/month. Cancel from the
+      terminal.
+    </p>
   </header>
 
   <section>
@@ -189,11 +219,12 @@
         <div class="sub">the morning call · 30 min</div>
         <p>
           Clinical rounds for your pull requests. It walks the queue case by
-          case, takes your decision on each, and writes it back to the PR.
+          case and takes your decision on each. It changes nothing itself —
+          your own agent applies the decisions once you've hung up.
         </p>
         <ul>
           <li>Interruptible — cut in and ask why</li>
-          <li>Answers become comments, labels, merges, splits</li>
+          <li>Decline it and ring back — same brief, same conversation</li>
           <li>Hangs up when the queue is drained</li>
           <li>Routes anything that genuinely needs your eyes</li>
         </ul>
@@ -217,31 +248,37 @@
 
   <section>
     <p class="kicker">rounds</p>
-    <h2>It asks the question, you answer out loud, it does the work.</h2>
+    <h2>It asks the questions. Your own agent does the work.</h2>
 
     <div class="term">
-<span class="d">$</span> <b>screenless brief</b>
+<span class="d">03:12</span> <b>screenless call "$(claude -p 'brief me on tonight's PRs')" --at</b>
+<span class="d">✓ parked — calling +316······· at 07:00 · 14 PRs open, 6 need you</span>
 
-<span class="d">→ calling +316······· · 14 PRs open, 6 need you</span>
-
+<span class="d">07:00</span>
 <span class="k">agent</span>  Morning. Six decisions, about nine minutes. First one:
        HYR2-441 adds a `notes` field to candidates. The agent
        put it in a JSONB column. Separate table or leave it?
 <span class="u">you</span>    What else reads it?
 <span class="k">agent</span>  Nothing yet. It's write-only from the intake form.
 <span class="u">you</span>    Leave it. Revisit when something queries it.
-<span class="k">agent</span>  Noted, commented on the PR. Next: HYR2-448 changes the
-       default page size from 25 to 100 —
+<span class="k">agent</span>  Got it — JSONB stays, revisit on first read. Next:
+       HYR2-448 changes the default page size from 25 to 100 —
 <span class="u">you</span>    Wait, why is that in a ticket about export?
-<span class="k">agent</span>  It isn't scoped there. Want me to split it out?
-<span class="u">you</span>    Yeah, split it, and hold the export PR until that's gone.
+<span class="k">agent</span>  It isn't scoped there. Split it out, or leave it?
+<span class="u">you</span>    Split it, and hold the export PR until that's gone.
 
-<span class="d">✓ 6 decisions · 8m41s · 4 merged, 1 split, 1 needs your eyes</span>
+<span class="d">✓ 6 decisions · 8m41s · nothing changed yet</span>
+
+<span class="d">07:09</span> <b>screenless transcript --json | claude -p "apply these"</b>
+<span class="d">✓ 4 merged · 1 split · 1 comment · 1 left for your eyes</span>
     </div>
 
     <div class="note">
-      That last line is the product. One decision couldn't be made by voice, and
-      it said so instead of pressing you for an answer while you're walking the dog.
+      Note where the work happens. The voice on the phone has no tools and no
+      credentials — it collects decisions and hangs up. Your loop, on your
+      machine, is what merges and comments, with the access you already gave it.
+      And one decision couldn't be made by voice: it said so, instead of
+      pressing you for an answer while you're walking the dog.
     </div>
   </section>
 
@@ -297,6 +334,26 @@
       no integration matrix to wait for.
     </p>
 
+    <div class="cmd">
+      <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
+      <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
+    </div>
+    <p class="cmd-note">
+      One command, and it finishes the job: the CLI lands in
+      <code>~/.screenless</code>, then it asks for your number, texts you a
+      code, and opens Stripe for the trial. Nothing is installed system-wide and
+      nothing touches your Node setup — if Node 20+ isn't there, it says so and
+      stops. Read it first if you'd rather:
+      <a href="/install">screenless.sh/install</a>.
+    </p>
+    <p class="cmd-note">
+      It calls at <b>08:00</b> by default; <code>screenless settings --at 09:30</code>
+      moves it. Your timezone is read from the machine you install on, so there
+      is nothing to configure and travelling fixes itself. Decline the call and
+      ring the number back whenever suits — it picks up the same brief,
+      mid-morning or on the train.
+    </p>
+
     <div class="grid3">
       <div>
         <span class="num">01</span>
@@ -333,9 +390,10 @@
     <div class="price">
       <div>
         <div class="amt">$99</div>
-        <div class="per">per month</div>
+        <div class="per">per month, after 7 free days</div>
       </div>
       <ul>
+        <li>7-day free trial — card up front, cancel in the terminal before day 8</li>
         <li>Up to 30 minutes of call a day — it hangs up early when the queue is short</li>
         <li>The daily paper, scheduled to your wake-up time</li>
         <li>Unlimited repositories on one machine</li>
@@ -352,15 +410,23 @@
 
 <section class="cta">
   <div class="wrap">
-    <h2>It isn't finished yet.</h2>
+    <h2>Take tomorrow's call.</h2>
     <p>
-      The telephony works. The paper renders. The part that reads your pull
-      requests and decides what's worth asking about is being built now, and
-      one upstream voice bug is still open. If you run agents overnight and
-      want to try it early, say so.
+      One command installs it, verifies your number, and asks when you want to
+      be called. Seven days free.
     </p>
-    <a class="btn" href="mailto:hello@screenless.sh?subject=screenless%20early%20access&body=How%20many%20PRs%20do%20your%20agents%20open%20in%20a%20night%3F%0A%0ARepo%2Fstack%3A%0AWake-up%20time%3A%0A">Ask for early access</a>
-    <p class="fine">No billing until it does what this page says.</p>
+
+    <div class="cmd">
+      <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
+      <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
+    </div>
+
+    <p class="fine">
+      Early, and we'd rather say so: the telephony works, the paper renders, and
+      the part that reads your pull requests is being built now. The trial is
+      seven days precisely so you can find that out before you pay for it —
+      <code>screenless billing --manage</code> cancels in one click.
+    </p>
   </div>
 </section>
 
@@ -370,6 +436,22 @@
     <span><a href="https://github.com/janwilmake/screenless">github</a></span>
   </footer>
 </div>
+
+<script>
+  // The only script on the page. Copy-to-clipboard for the install command,
+  // because the alternative is a triple-click that also grabs the prompt.
+  document.querySelectorAll("button[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var restore = function () { btn.textContent = "copy"; };
+      navigator.clipboard.writeText(btn.dataset.copy).then(
+        function () { btn.textContent = "copied"; setTimeout(restore, 1600); },
+        // Insecure context, or permission refused. Say so rather than lie with
+        // a "copied" that didn't.
+        function () { btn.textContent = "select it"; setTimeout(restore, 1600); }
+      );
+    });
+  });
+</script>
 
 </body>
 </html>
