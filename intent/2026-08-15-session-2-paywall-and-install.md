@@ -19,6 +19,14 @@ loop on the user's machine, and the landing page had been claiming otherwise.
 instructions handed back (see CLAUDE.md), and `setup` asks "self-hosted? y/N"
 rather than making everyone type a Worker URL nobody but Jan has.
 
+**The question that exposed a design flaw:** "is the loop installed with the 1
+command?" It was not — `curl | bash` installed a CLI that could place calls and
+park PDFs, and nothing that could write either. Worse, the skill could not
+simply be moved: it mixed invariant instructions with a hardcoded project
+table, so global meant one file serving one repo and per-repo meant no
+one-command install. The fix was to split it three ways by lifetime — skill
+global, `.screenless.json` per repo, registry per machine.
+
 **Caught by testing, not review:** `application/x-www-form-urlencoded` decodes
 `+` as a space, so an inbound `From=+31612345678` sent with a literal plus
 arrived as ` 31612345678` and every inbound call would have been answered with
@@ -82,3 +90,11 @@ poked with both encodings before trusting it.
 **15:06** — i also want a plan for gtm. knowing what u know, pls make a plan in GTM.md and gimme some options via multiperchoice questions before u write it so u can have my prefrence
 
 **15:08** — *(answering the GTM questions)* Beachhead: leverage the X audience (solo devs, eng leaders, SF) **and** the Dutch market first — LinkedIn is lots of Dutch devs, based in Amsterdam, attends AI Builders and Hackadam. Motion: all four. Pricing: free paper, $99 for the call. Positioning: design-partner framing.
+
+**15:12** — lets try the nightly loop now in a new terminal. use multiclaude so it has fresh context and does it against hyre
+
+**15:14** — is the loop installed with the 1 command? does it only work for claude?
+
+**15:18** — put expanding to other coding agents in the backlog in todo.md for now, lets ensure the instlalation also installs it into claude. but the question is: where to install the skill/loop? globally on the pc, or in the repo? i guess global is fine? wdyt?
+
+**15:24** — great. ill share the agents output later. for now, pls push ur work and intent
