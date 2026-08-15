@@ -56,7 +56,9 @@ product, never executed against reality · **not built**.
 |---|---|
 | One command, bun-style: `curl -fsSL https://screenless.sh/install \| bash` | built |
 | The landing page's job is to action developers into that command | built |
-| The landing page should argue the problem, not assume it — who it is for, the wow moment, the objections | built, undeployed — rewritten in session 5, screenless.sh still serves the old page |
+| The landing page should argue the problem, not assume it — who it is for, the wow moment, the objections | **built and live** — rewritten and deployed in session 5 |
+| The page should be findable and quotable: link preview, structured data, canonicals, sitemap, `llms.txt` | **built and live** |
+| robots.txt allows everything, `ai-train` included — being quoted by an assistant is acquisition | built and live — replaces Cloudflare's managed file |
 | Setup verifies the phone, then takes payment if unpaid | built |
 | Worker URL defaults to ours; self-hosted is a `y/N` question | built |
 | The installer also installs the loop into Claude, globally | built |

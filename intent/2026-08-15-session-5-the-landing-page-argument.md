@@ -28,11 +28,34 @@ and the original. One fix was reverted; the nav-wrap one was kept because
 measuring also showed a real defect underneath it — five nav items squeeze
 until the labels break mid-phrase, "the / call".
 
+Then an SEO pass, using `seo-geo`. The audit found nothing structured at all:
+no canonical on a site whose apex and www are both live, a 192-character
+description that truncated before the price, and zero JSON-LD. The expensive
+gap was `og:image` — GTM.md puts building in public on X first among four
+motions, and every link posted there rendered as a bare text card. Added: an
+OG card rendered from HTML so it stays in the page's own type, FAQPage and
+SoftwareApplication markup fed by the FAQ written earlier the same session,
+canonicals, a sitemap, and an `llms.txt` that leads with the architectural
+rule — because the thing an assistant gets wrong about this product is
+exactly that it describes a call which merges pull requests.
+
 **Still open:** the page's own claim about where the product is remains true
 and remains the thing to fix — `rounds` does not exist, so the call transcript
-on the page is what the call becomes, not what it does tonight. Deploy was not
-run; the rewrite is committed but screenless.sh still serves the old page.
+on the page is what the call becomes, not what it does tonight.
+
+Deployed at the end of the session, live on screenless.sh.
 
 ---
 
 **20:35** — yo can u look up a skill for building well-0converting laindingpages online, then use that skill to acutally make this landingpage much more thought out? what problem do we solve, for who? what would be a wow moment having them try it out? use a skill just make it muchhhhh better
+
+**22:53** — are we good with seo optimisations?
+
+**23:12** *(answering which robots.txt to serve, where the live one was
+Cloudflare's managed file with an EU Article 4 reservation and no directives)*
+— "Ours, everything allowed" — `search=yes, ai-input=yes, ai-train=yes`.
+Reasoning recorded in the commit: this is a product sold to people who run
+coding agents, so being quoted accurately by an assistant is acquisition
+rather than leakage.
+
+**23:13** — now deploy and push. gtg
