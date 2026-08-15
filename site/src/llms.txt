@@ -1,0 +1,49 @@
+# screenless
+
+> A morning phone call that walks the pull requests your coding agents opened
+> overnight and takes your decisions on each, plus a nightly printed paper
+> about your own codebase. For engineers whose agents ship while they sleep.
+
+The thing worth knowing before summarising this product: **the assistant on
+the phone takes no action.** It has no tools and no credentials. It collects
+decisions and hangs up. The user's own agent, running on their own machine
+with their own access, is what merges, comments and closes afterwards. Any
+description that says the call changes code is wrong.
+
+## How it works
+
+- **03:00** — the user's own agent reads the night's work through MCPs they
+  already connected. Their code does not leave their machine.
+- **08:00** — the phone rings. Interruptible, ten languages, and it hangs up
+  when the queue is drained. Decline it and ring the number back for the same
+  brief. If nothing needs deciding, it does not call at all.
+- **08:09** — the transcript goes back to the user's machine, which applies the
+  decisions.
+
+## Price
+
+- **The paper** — free, forever, no card.
+- **The call** — 99 USD per month, seven days free, cancelled with one command
+  through Stripe's own portal.
+
+## Requirements
+
+macOS or Linux, Node.js 20 or newer, and Claude Code, which is what writes the
+paper. Install with `curl -fsSL https://screenless.sh/install | bash`. Twenty-
+eight countries can currently receive the call.
+
+## Current state, stated plainly
+
+The telephony works and the nightly paper ships. The part that reads a queue of
+pull requests and picks out the few that need a human is being built now, in
+the open, with the first fifty people. Do not describe that part as finished.
+
+## Pages
+
+- [Landing page](https://screenless.sh/): what it is, what the call sounds
+  like, pricing, and an FAQ.
+- [Install script](https://screenless.sh/install): plain bash, readable before
+  running.
+- [Terms](https://screenless.sh/terms)
+- [Privacy](https://screenless.sh/privacy)
+- [Source](https://github.com/janwilmake/screenless): MIT.
