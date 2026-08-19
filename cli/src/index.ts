@@ -484,10 +484,17 @@ async function unappliedCall(): Promise<CallStatus | null> {
   } catch {
     return null;
   }
-  if (!res.ok) return null;
+  // 204 is the Worker's "nothing newer than what you applied" — the usual
+  // answer, with no body to parse.
+  if (res.status === 204 || !res.ok) return null;
 
-  const call = (await res.json()) as CallStatus;
-  if (!call.done || call.callId === state.applied) return null;
+  let call: CallStatus;
+  try {
+    call = (await res.json()) as CallStatus;
+  } catch {
+    return null;
+  }
+  if (!call?.done || call.callId === state.applied) return null;
   return call;
 }
 
