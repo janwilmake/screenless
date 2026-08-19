@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 19 August 2026** — covers sessions 1–6, through the 19:3x
-prompts in session 6. If the session files carry prompts newer than that, this document is
+**Last updated 19 August 2026** — covers sessions 1–6, through the 20:3x
+prompt in session 6 ("no dont call me tomorrow"). If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -25,6 +25,9 @@ product, never executed against reality · **not built**.
 
 | Intent | Status |
 |---|---|
+| Three items per call, never more; each a dossier — context first, confirmed, then the one question; the assistant answers from the brief and says when it cannot *(was: three to six decisions, two sentences each)* | **built and proven** — the 22:10 call on 19 Aug |
+| Hang up on voicemail rather than brief it | **built and proven** — async AMD, hung up in 5 s |
+| No transcript email; the loop mails what was decided and applied *(was: transcript mailed after every call)* | built and run once |
 | CLI: `call "<prompt>"` blocks and returns the transcript | built |
 | Auth by phone number + OTP, no passwords, no Google SSO *(was: Google SSO)* | built |
 | Only ever dials the number that was verified | built |
@@ -34,8 +37,8 @@ product, never executed against reality · **not built**.
 | Voices chosen on measured latency, English and Dutch first | built — AWS Polly Joanna-Neural ~300ms, Azure Fenna ~396ms |
 | Call time configurable, default 08:00 *(was: 07:00)* | built |
 | Timezone always from the machine, not configurable at all *(was: guessed from dialling code and editable; briefly a searchable picker)* | built |
-| Decline the call and ring the number back for the same brief | built, unrun |
-| Language chosen at setup, English default, Dutch second, ten total, stored per account | built, unrun |
+| Decline the call and ring the number back for the same brief | **built and proven** — 19 Aug, a 14-minute ring-in; its end was never reported until the inbound status callback was added the same night |
+| Language chosen at setup, English default, Dutch second, ten total, stored per account | **built and proven** — Dutch calls on 19 Aug, once the CLI stopped defaulting to `en` |
 | A way to trigger a demo call immediately | built — `screenless test` |
 | 28 countries, with a fraud blocklist and a 0.25 USD/min rate cap *(was: worldwide; before that NL only)* | built — config, code and carrier profile reconciled |
 | Sessions last a year | built |
@@ -74,7 +77,7 @@ product, never executed against reality · **not built**.
 | Intent | Status |
 |---|---|
 | After the call, results reach the machine as fast as possible | **built and proven** — the waiter woke within a minute of the call ending |
-| Nothing lost if the laptop never wakes | **built and proven** — the transcript email arrived in the Inbox |
+| Nothing lost if the laptop never wakes | built — the Worker keeps the transcript 24 h; the transcript email that proved this in session 2 was removed at the user's request in session 6 |
 | The machine acts on the decisions | **built and proven** — 19 Aug: comments on #792 and #791 from the transcript, merges withheld |
 | A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
 
@@ -119,6 +122,12 @@ Things asked for that the product does not yet do.
    from +31 85 083 5195 since session 6, and it can be rung back.
 7. **Stripe is in test mode**, so no one can actually pay.
 8. **Multi-repo** is supported by the registry and untested.
+11. **The portal step for ring-ins is manual.** The Call progress events URL
+   on the inbound TeXML app was set by hand on 19 Aug; a self-hosted Worker
+   needs the same click (`/admin/inbound-url` hands out the URL).
+12. **A leftover assistant TeXML app** (`ai-assistant-a3451229…`) sits on the
+   Telnyx account from a call whose cleanup never ran; harmless, worth
+   deleting.
 9. **Parking has only been done by writing KV directly**, which skips the
    session and subscription checks the CLI goes through. The cron placing a
    parked brief is the last untested link in the chain.
