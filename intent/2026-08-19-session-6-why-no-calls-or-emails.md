@@ -102,3 +102,6 @@ expected output.
 - 19:5x — `oh also send me a test email btw, i wanna see how it looks.`
 - 19:5x — `btw i got an email with the transcript, i didnt like that, we shouldnt send that at all. I'd rather have an email sent by you after the transcript comes in here that summarizes what was decided`
   *(reverses session 2's "nothing lost if the laptop never wakes" transcript mail: the Worker must not mail the transcript; the loop mails a summary of what was decided and applied, after it has applied it)*
+- 20:0x — `oh yes, it was voicemail cuz its in focus mode. call again` → `im not getting a call?` → `nope i got nothing. ur shell seems stuck on the voicemail maybe?`
+- 20:1x — `the agent submitted a voicemail. we should probably ensure the agent hangs up if it notices voicemail`
+  *(built: async answering-machine detection on the outbound TeXML call, an `/amd` webhook that hangs up on a machine verdict, re-parks the brief held and tags the record `voicemail`; the probe ignores such calls. Proven: the next call hit voicemail and was hung up in five seconds, nothing said)*

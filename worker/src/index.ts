@@ -94,6 +94,9 @@ interface CallRecord {
   /** The app Telnyx auto-provisioned for this assistant; deleted alongside it. */
   texmlAppId?: string;
   status: "initiated" | "ringing" | "answered" | "completed" | "failed";
+  /** Answered by a machine. The call was hung up, the brief re-parked held,
+   *  and nothing here is a conversation worth collecting. */
+  voicemail?: boolean;
   conversationId?: string;
   createdAt: number;
   endedAt?: number;
@@ -459,6 +462,7 @@ async function startCall(
       assistantId: assistant.id,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
       conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
+      amdCallback: `${origin}/webhooks/${callId}/amd?t=${wToken}`,
     });
   } catch (err) {
     await cleanupAssistant(env, record);
@@ -622,6 +626,7 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
     callId,
     status: record.status,
     done: true,
+    ...(record.voicemail ? { voicemail: true } : {}),
     durationSecs: record.endedAt ? Math.round((record.endedAt - record.createdAt) / 1000) : null,
     transcript: record.transcript ?? [],
   });
@@ -629,9 +634,20 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
 
 /* ---------------------------------------------------------------- webhooks */
 
+/** Puts a brief back on the shelf, held, after a call that did not reach a person. */
+async function reparkHeld(env: Env, phone: string, callId: string): Promise<void> {
+  const brief = await schedule.loadBrief(env, phone);
+  if (brief && brief.callId === callId) {
+    brief.status = "parked";
+    brief.dueAt = null;
+    brief.attempts += 1;
+    await schedule.saveBrief(env, phone, brief);
+  }
+}
+
 async function handleWebhook(
   callId: string,
-  kind: "status" | "conversation",
+  kind: "status" | "conversation" | "amd",
   req: Request,
   env: Env,
 ): Promise<Response> {
@@ -653,6 +669,34 @@ async function handleWebhook(
     payload = Object.fromEntries(new URLSearchParams(body));
   }
 
+  if (kind === "amd") {
+    // machine_start | machine_end_beep | machine_end_silence | machine_end_other
+    // | fax mean nobody is listening. human, unknown and not_sure all mean
+    // carry on: a wrong hang-up on a real person costs more than a briefing
+    // read to a machine.
+    const answeredBy = String(payload.AnsweredBy ?? payload.answered_by ?? "").toLowerCase();
+    if ((answeredBy.startsWith("machine") || answeredBy === "fax") && !record.voicemail) {
+      record.voicemail = true;
+      record.status = "failed";
+      record.endedAt = Date.now();
+      await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+      await reparkHeld(env, record.phone, callId);
+      const accountSid = String(payload.AccountSid ?? "");
+      const callSid = String(payload.CallSid ?? "");
+      if (accountSid && callSid) {
+        await telnyx
+          .hangupTexmlCall(env.TELNYX_API_KEY, accountSid, callSid)
+          .catch((err) => console.error("voicemail hangup failed", callId, (err as Error).message));
+      }
+      await cleanupAssistant(env, record);
+    }
+    return json({ ok: true });
+  }
+
+  // A call already judged voicemail is over as far as we are concerned; the
+  // status callbacks that follow the hang-up must not revive it as completed.
+  if (record.voicemail) return json({ ok: true });
+
   if (kind === "status") {
     const status = String(payload.CallStatus ?? payload.call_status ?? "").toLowerCase();
     if (status === "completed") {
@@ -665,13 +709,7 @@ async function handleWebhook(
       // Declining the call is a legitimate answer to "now?", not a lost brief.
       // It goes back on the shelf held rather than rescheduled: we do not ring
       // someone who just pressed decline, we wait for them to ring us.
-      const brief = await schedule.loadBrief(env, record.phone);
-      if (brief && brief.callId === callId) {
-        brief.status = "parked";
-        brief.dueAt = null;
-        brief.attempts += 1;
-        await schedule.saveBrief(env, record.phone, brief);
-      }
+      await reparkHeld(env, record.phone, callId);
     } else if (status === "in-progress" || status === "answered") {
       record.status = "answered";
     } else if (status === "ringing") {
@@ -997,9 +1035,9 @@ export default {
           : fail(result.status, result.error);
       }
 
-      const hook = path.match(/^\/webhooks\/([\w-]+)\/(status|conversation)$/);
+      const hook = path.match(/^\/webhooks\/([\w-]+)\/(status|conversation|amd)$/);
       if (method === "POST" && hook)
-        return await handleWebhook(hook[1], hook[2] as "status" | "conversation", req, env);
+        return await handleWebhook(hook[1], hook[2] as "status" | "conversation" | "amd", req, env);
 
       return fail(404, "not found");
     } catch (err) {

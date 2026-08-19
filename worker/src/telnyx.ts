@@ -208,6 +208,8 @@ export interface AiCallOptions {
   assistantId: string;
   statusCallback: string;
   conversationCallback: string;
+  /** Where Telnyx posts the answering-machine verdict, a few seconds in. */
+  amdCallback: string;
 }
 
 /**
@@ -249,8 +251,30 @@ export function initiateAiCall(
       // repeating the parameter.
       StatusCallbackEvent: "initiated ringing answered completed",
       StatusCallbackMethod: "POST",
+      // Answering-machine detection, asynchronous: the assistant starts the
+      // moment the call is answered and the verdict arrives on its own
+      // callback a few seconds later. Synchronous detection would hold the
+      // greeting back until Telnyx had decided, which a human hears as three
+      // seconds of silence after "hello" — the worst possible opening. On a
+      // machine verdict the Worker hangs up and re-parks the brief held; a
+      // phone in Focus mode otherwise gets the whole briefing read into its
+      // voicemail, which is what happened on the first evening.
+      MachineDetection: "Enable",
+      AsyncAmd: "true",
+      AsyncAmdStatusCallback: o.amdCallback,
+      AsyncAmdStatusCallbackMethod: "POST",
     },
   );
+}
+
+/**
+ * Ends a live TeXML call. The account and call sids come straight off the
+ * callback that told us it was a machine, so nothing has to be stored.
+ */
+export function hangupTexmlCall(apiKey: string, accountSid: string, callSid: string) {
+  return call(apiKey, "POST", `/texml/Accounts/${accountSid}/Calls/${callSid}`, {
+    Status: "completed",
+  });
 }
 
 /* ----------------------------------------------------------- conversations */

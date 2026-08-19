@@ -495,6 +495,9 @@ async function unappliedCall(): Promise<CallStatus | null> {
     return null;
   }
   if (!call?.done || call.callId === state.applied) return null;
+  // A voicemail is not a conversation: nothing was decided, nothing to apply,
+  // and the brief is back on the shelf held.
+  if (call.voicemail) return null;
   return call;
 }
 
@@ -759,6 +762,8 @@ interface CallStatus {
   callId: string;
   status: string;
   done: boolean;
+  /** Answered by a machine; the Worker hung up and re-parked the brief held. */
+  voicemail?: boolean;
   durationSecs?: number | null;
   transcript?: Array<{ role: string; text: string; at?: string }>;
 }
@@ -856,6 +861,10 @@ async function call(args: string[]): Promise<void> {
     return;
   }
 
+  if (result.voicemail) {
+    console.log(`\n${c.red("✗")} voicemail answered — hung up, nothing said; the brief is parked held, ring in when it suits`);
+    exit(1);
+  }
   if (result.status === "failed") {
     console.log(`\n${c.red("✗")} call did not connect (no answer, busy, or failed)`);
     exit(1);
