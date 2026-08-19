@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 15 August 2026** — covers sessions 1–5, through the prompt at
-20:35 in session 5. If the session files carry prompts newer than that, this document is
+**Last updated 19 August 2026** — covers sessions 1–6, through the prompt at
+19:15 in session 6. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -63,14 +63,16 @@ product, never executed against reality · **not built**.
 | Worker URL defaults to ours; self-hosted is a `y/N` question | built |
 | The installer also installs the loop into Claude, globally | built |
 | Setup offers the repo you are standing in, else points at `screenless init` | built |
-| Runs at 03:00, or first thing when the laptop opens | built, unrun |
-| One skill for both surfaces | built |
+| The loop is armed inside a Claude Code session, like the orchestrator: `screenless wait` blocks until 03:00 or a finished call, `/loop 1h` heartbeat; no scheduler, no `claude -p` *(was: launchd at 03:00 plus a 5-minute collector, both running `claude -p`; four nights, nothing produced)* | built — armed once; first real wake due 20 Aug 03:00 |
+| Runs at 03:00, or first thing when the laptop opens | built, unrun — the waiter's `sleep` resumes on wake and stamps before building |
+| The installer ships `press/` beside the skill, and removes the launchd jobs an older install left | built and run on one machine |
+| One skill for both surfaces, plus the return leg | built |
 
 ## The return leg
 
 | Intent | Status |
 |---|---|
-| After the call, results reach the machine as fast as possible | built, unrun — 5-minute collector, ≤5 min awake or after waking |
+| After the call, results reach the machine as fast as possible | built, unrun — the armed waiter probes every minute; ≤1 min awake or after waking |
 | Nothing lost if the laptop never wakes | **built and proven** — the transcript email arrived in the Inbox |
 | The machine acts on the decisions | built, unrun — `loop/APPLY.md` via the user's own MCPs |
 | A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
@@ -104,8 +106,11 @@ Things asked for that the product does not yet do.
    triage, agenda building, the "this needs your eyes" router. Session 1's
    entire premise. What exists is `screenless call "<prompt>"`, the primitive
    underneath it. Everything else in this document is packaging.
-2. **The return leg has never run.** Collector, manifest and apply skill are
+2. **The return leg has never run.** Gate, manifest and apply skill are
    written and unexecuted, because there has been no call worth applying.
+3. **The site is not redeployed** after session 6: `wrangler` is not
+   authenticated on this machine. Until it is, `curl | bash` still installs
+   the launchd runners.
 4. **The deep dive and the new figures are unrendered.** Written into the skill
    after you read the first paper; no edition has used them.
 5. **"Up to 30 minutes of call a day"** is on the pricing page and enforced
@@ -179,5 +184,10 @@ at what you wanted; any of them can be reversed cheaply.
   the call as merging and commenting.
 - Removed the country-code timezone guess entirely once the machine timezone
   made it redundant.
-- Deleted the checked-in launchd plist in favour of generating it.
+- Deleted the checked-in launchd plist in favour of generating it; then, in
+  session 6, deleted the generated one too — the whole scheduler — once it was
+  clear it could never have worked from outside a session.
+- Put the waiter in the CLI as `screenless wait` rather than a second
+  downloaded bash script, and made it stamp the night on handoff rather than
+  leaving that to the model.
 - Genericised the settings example in the skill, which carried real Hyre values.
