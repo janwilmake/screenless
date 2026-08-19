@@ -762,25 +762,41 @@ async function call(args: string[]): Promise<void> {
   const prompt = args.find((a) => !a.startsWith("--"));
   if (!prompt) die('usage: screenless call "your prompt here" [--at HH:MM] [--lang en|nl|multi]');
 
-  const language = argFlag(args, "--lang") ?? "en";
+  // No default: unset means the account's language, which the Worker holds.
+  // Defaulting to "en" here silently overrode a Dutch account on every call
+  // the loop parked, because the loop never passes --lang.
+  const language = argFlag(args, "--lang");
   const asJson = args.includes("--json");
   const at = argFlag(args, "--at");
   const hold = args.includes("--hold");
   // --at without a value means "my configured call time", which is the flag
   // the nightly loop actually wants: it knows when it finished, not when the
-  // person it is briefing wakes up.
+  // person it is briefing wakes up. It is sent as "" — present, empty — and
+  // the Worker tests for presence.
   const scheduled = at !== undefined || hold;
 
   if (scheduled) {
-    const parked = await api<{ dueAt: number | null; callAt: string; inboundNumber: string }>(
-      cfg.apiUrl,
-      "/calls",
-      { method: "POST", body: { prompt, language, at: at || undefined, hold }, token: cfg.token },
-    );
+    const parked = await api<{
+      parked?: boolean;
+      dueAt: number | null;
+      callAt: string;
+      inboundNumber: string;
+      callId?: string;
+    }>(cfg.apiUrl, "/calls", {
+      method: "POST",
+      body: { prompt, ...(language === undefined ? {} : { language }), at, hold },
+      token: cfg.token,
+    });
 
     if (asJson) {
       console.log(JSON.stringify(parked, null, 2));
       return;
+    }
+
+    // Say exactly what the Worker did. A response with a callId is a call in
+    // progress, not a parked brief, and must never be reported as parked.
+    if (!parked.parked) {
+      die(`the Worker placed the call now (${parked.callId ?? "no id"}) instead of parking it — update the Worker`);
     }
 
     console.log(
@@ -796,7 +812,7 @@ async function call(args: string[]): Promise<void> {
 
   const { callId } = await api<{ callId: string }>(cfg.apiUrl, "/calls", {
     method: "POST",
-    body: { prompt, language },
+    body: { prompt, ...(language === undefined ? {} : { language }) },
     token: cfg.token,
   });
 

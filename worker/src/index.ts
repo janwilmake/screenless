@@ -488,7 +488,11 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   // Parked rather than placed: the loop finishes at 03:00 and the call is
   // wanted at 07:00, so the Worker holds the brief in between. It is also what
   // the user reaches if they ring in before then.
-  if (at || hold) {
+  //
+  // `at` is checked for presence, not truth: a bare `--at` arrives as "" and
+  // means "my configured call time". Testing it for truth sent that case down
+  // the dial-now path — the one thing a 03:00 loop must never do.
+  if (at !== undefined || hold) {
     const parked = await schedule.parkBrief(env, s.phone, { prompt, language: lang, at, hold });
     if (!parked.ok) return fail(400, parked.error);
     return json({
