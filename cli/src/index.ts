@@ -938,32 +938,51 @@ async function whoami(): Promise<void> {
 }
 
 /**
- * Hands a built edition to the Worker to be sent at wake-up.
+ * Hands something to the Worker to be emailed — the paper, or the loop's
+ * report of what it applied after a call.
  *
  * The Worker holds it rather than the laptop, because the machine that builds
- * the paper at 03:00 is usually asleep by the time it should send.
+ * the paper at 03:00 is usually asleep by the time it should send. The report
+ * goes the same way so it cannot fail differently: one outbox, one sender, one
+ * confirmed address.
+ *
+ *   screenless mail edition.pdf --at 07:45          the paper, at wake-up
+ *   screenless mail --body report.md --subject "…"  a text mail, now
  */
 async function mail(args: string[]): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
   if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `screenless setup` again");
 
-  const file = args.find((a) => !a.startsWith("--"));
-  if (!file) die("usage: screenless mail <file.pdf> [--at HH:MM] [--to you@example.com]");
+  const file = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1]?.startsWith("--")));
+  const bodyFile = argFlag(args, "--body");
+  const inlineText = argFlag(args, "--text");
+  if (!file && !bodyFile && !inlineText)
+    die("usage: screenless mail <file.pdf> [--at HH:MM]  |  screenless mail --body <file.md> [--subject <text>]");
 
   const { readFile } = await import("node:fs/promises");
   const { basename } = await import("node:path");
 
-  let content: Buffer;
-  try {
-    content = await readFile(file);
-  } catch {
-    die(`cannot read ${file}`);
+  let content: Buffer | null = null;
+  if (file) {
+    try {
+      content = await readFile(file);
+    } catch {
+      die(`cannot read ${file}`);
+    }
+  }
+  let text = inlineText ?? "";
+  if (bodyFile) {
+    try {
+      text = await readFile(bodyFile, "utf8");
+    } catch {
+      die(`cannot read ${bodyFile}`);
+    }
   }
 
   const at = argFlag(args, "--at") || "";
-  const to = argFlag(args, "--to") || "";
-  const subject = argFlag(args, "--subject") || `screenless · ${basename(file, ".pdf")}`;
+  const subject =
+    argFlag(args, "--subject") || (file ? `screenless · ${basename(file, ".pdf")}` : "screenless · what you decided");
 
   // The Worker has no idea what timezone the reader wakes up in, so "07:00"
   // is meaningless without this. Node's offset is minutes *behind* UTC, which
@@ -974,21 +993,17 @@ async function mail(args: string[]): Promise<void> {
     method: "POST",
     token: cfg.token,
     body: {
-      filename: basename(file),
-      contentBase64: content.toString("base64"),
+      ...(content && file ? { filename: basename(file), contentBase64: content.toString("base64") } : {}),
+      ...(text ? { text } : {}),
       subject,
       at,
       offsetMinutes,
-      ...(to ? { to } : {}),
     },
   });
 
   const when = new Date(res.sendAt);
-  const size = (content.length / 1024).toFixed(0);
-  console.log(
-    `${c.green("✓")} queued ${c.bold(basename(file))} ${c.dim(`(${size} KB)`)} → ` +
-      `${when.toLocaleString()} ${c.dim(`· ${res.id.slice(0, 8)}`)}`,
-  );
+  const what = file ? `${c.bold(basename(file))} ${c.dim(`(${((content?.length ?? 0) / 1024).toFixed(0)} KB)`)}` : c.bold(subject);
+  console.log(`${c.green("✓")} queued ${what} → ${when.toLocaleString()} ${c.dim(`· ${res.id.slice(0, 8)}`)}`);
 }
 
 /**
@@ -1077,6 +1092,7 @@ ${c.bold("Usage")}
   screenless settings [--at HH:MM]           when the morning call goes out
   screenless init [path]                     configure a repo for the loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
+  screenless mail --body <file.md>           mail a text report (what was applied)
   screenless email                           confirm where the paper is sent
   screenless whoami                          show the verified number
   screenless billing [--manage]              trial status, or Stripe's portal
@@ -1119,6 +1135,8 @@ ${c.bold("Wait options")}
 ${c.bold("Mail options")}
   --at HH:MM           next occurrence of that local time (default: now)
   --subject <text>     override the subject line
+  --body <file>        send this text as the mail body instead of a PDF
+  --text "<string>"    same, inline
 
 ${c.bold("Setup options")}
   --api <url>          your own Worker, skipping the self-hosted prompt

@@ -25,8 +25,11 @@ export interface OutboxItem {
   to: string;
   subject: string;
   filename: string;
-  /** Base64 PDF. Stored as-is so the sweep can hand it straight to the API. */
+  /** Base64 PDF. Stored as-is so the sweep can hand it straight to the API.
+   *  Empty for a text-only mail — the loop's report of what it applied. */
   contentBase64: string;
+  /** Plain-text body. Set for a report; the paper uses the fixed note below. */
+  text?: string;
   sendAt: number;
   createdAt: number;
 }
@@ -94,35 +97,6 @@ export async function sendEmailCode(env: Env, to: string, code: string): Promise
   if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
 }
 
-/**
- * Sends a finished call's transcript, so a decision survives a laptop that
- * never wakes before the 24-hour retention window closes.
- */
-export async function sendTranscript(
-  env: Env,
-  to: string,
-  callId: string,
-  body: string,
-): Promise<void> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: env.MAIL_FROM || "screenless <hello@screenless.sh>",
-      to: [to],
-      subject: "What you decided on this morning's call",
-      text:
-        `${body}\n\n---\n` +
-        "Your agent applies these automatically the next time your machine is awake.\n" +
-        `To apply them by hand: screenless apply --call ${callId}\n`,
-    }),
-  });
-  if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
-}
-
 export async function scheduleMail(
   body: unknown,
   env: Env,
@@ -137,12 +111,17 @@ export async function scheduleMail(
   if (!to || !isEmail(to))
     return { ok: false, status: 412, error: "no confirmed email — run `screenless email`" };
 
-  if (typeof b.contentBase64 !== "string" || !b.contentBase64)
-    return { ok: false, status: 400, error: "contentBase64 is required" };
+  // Either an attachment (the paper) or a text body (the loop's report after
+  // a call); a mail with neither has nothing to say.
+  const contentBase64 = typeof b.contentBase64 === "string" ? b.contentBase64 : "";
+  const text = typeof b.text === "string" ? b.text : "";
+  if (!contentBase64 && !text.trim())
+    return { ok: false, status: 400, error: "contentBase64 or text is required" };
 
   // base64 is 4 chars per 3 bytes; check before decoding anything.
-  if ((b.contentBase64.length * 3) / 4 > MAX_BYTES)
+  if ((contentBase64.length * 3) / 4 > MAX_BYTES)
     return { ok: false, status: 413, error: `attachment exceeds ${MAX_BYTES / 1024 / 1024}MB` };
+  if (text.length > 64 * 1024) return { ok: false, status: 413, error: "text exceeds 64KB" };
 
   const at = typeof b.at === "string" ? b.at : "";
   const offset = Number.isFinite(b.offsetMinutes) ? Number(b.offsetMinutes) : 0;
@@ -154,7 +133,8 @@ export async function scheduleMail(
     to,
     subject: typeof b.subject === "string" && b.subject ? b.subject : "screenless",
     filename: typeof b.filename === "string" && b.filename ? b.filename : "edition.pdf",
-    contentBase64: b.contentBase64,
+    contentBase64,
+    ...(text.trim() ? { text } : {}),
     sendAt,
     createdAt: Math.floor(Date.now() / 1000),
   };
@@ -218,10 +198,13 @@ async function send(item: OutboxItem, env: Env): Promise<void> {
       to: [item.to],
       subject: item.subject,
       text:
+        item.text ??
         "Tonight's edition is attached.\n\n" +
-        "Print it, or don't — but don't answer it. Anything that needs a decision " +
-        "is on the call.\n",
-      attachments: [{ filename: item.filename, content: item.contentBase64 }],
+          "Print it, or don't — but don't answer it. Anything that needs a decision " +
+          "is on the call.\n",
+      ...(item.contentBase64
+        ? { attachments: [{ filename: item.filename, content: item.contentBase64 }] }
+        : {}),
     }),
   });
 

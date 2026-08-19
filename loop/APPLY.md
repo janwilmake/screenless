@@ -107,6 +107,21 @@ part they see:
 - anything said on the call that the manifest never asked about
 - anything that failed, with the error
 
+**Mail it.** Write that report to a file and send it through the Worker, the
+same way the paper goes:
+
+```bash
+screenless mail --body <outDir>/<date>.report.md \
+  --subject "screenless · what you decided · <date>"
+```
+
+This is the one email a call produces. The Worker deliberately does not mail
+the transcript — the first person to receive one said a transcript in the
+inbox is the screen the product exists to remove. What they want is what was
+*done* with what they said: decided → applied → here is the link. Keep it to
+the four lists above, quote their words where a decision was theirs, and say
+plainly what needs their eyes.
+
 Then `screenless applied <callId>`, so the next probe does not hand you the
 same call again — and only then, so an apply that failed is retried rather
 than written off.
