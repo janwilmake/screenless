@@ -29,7 +29,11 @@ workflow that are not a screen.
 ### the call
 
 ```
-03:12  $ screenless call "$(claude -p 'brief me on tonight's PRs')" --at
+22:40  claude> /screenless start
+       waiting for work — probe every 60s
+
+03:00  --- woke after 4h20m ---  NIGHTLY ~/code/your-repo
+       $ screenless call "<brief>" --at
        ✓ parked — calling +31612345678 at 08:00 · 14 PRs open, 6 need you
 
 08:00
@@ -48,7 +52,8 @@ you    Split it, and hold the export PR until that's gone.
 
 ✓ 6 decisions · 8m41s · nothing changed yet
 
-08:09  $ screenless transcript --json | claude -p "apply these decisions"
+08:09  --- woke after 5h9m ---  APPLY 5ef8e342
+       $ screenless transcript --json
        ✓ 4 merged · 1 split · 1 comment · 1 left for your eyes
 ```
 
@@ -87,8 +92,25 @@ goes straight into `screenless setup` — phone verification by SMS, then a 7-da
 free trial ($99/month after, card up front). Node 20+ required and never
 installed for you.
 
-Both surfaces run as a **background loop on your own machine, driven by Claude
-Code**. That is the whole integration story:
+Both surfaces are built by a **loop armed inside a Claude Code session on your
+own machine**:
+
+```
+/screenless start      # in Claude Code, in a repo you ran `screenless init` in
+```
+
+It runs one tick, then blocks in pure shell — `screenless wait`, probing every
+minute, no model, no tokens — until there is something to do: 03:00 (or the
+first minute after the laptop wakes), or a finished call whose decisions nobody
+has applied. The exit wakes the agent, which builds the paper and the brief, or
+applies what you decided on the phone, with the permissions, MCPs and browser
+the session already has. Leave the window open; `/screenless stop` ends it.
+
+It is deliberately a session and not a scheduler. The first version was two
+launchd jobs running `claude -p`; they could not read a repo under `~/Desktop`,
+could not approve a tool call, and fired every night for four nights without
+shipping a page. The orchestrator already runs as an armed session for the same
+reason, and this is the same contract. That is the whole integration story:
 
 - **Your MCP servers are the integrations.** Linear, GitHub, Slack, your ATS —
   whatever you have already connected, it can already read. There is no OAuth
@@ -100,7 +122,7 @@ Code**. That is the whole integration story:
 - **Your Claude subscription is the LLM.** Nothing is metered per token by us.
 - **Nothing leaves your machine** except the phone call and the email.
 
-This is the same reason `orchestrate-linear` runs locally: the agents need your
+This is the same reason `linear-orchestrator` runs locally: the agents need your
 repo, your dev server, and your browser. screenless sits on the same substrate
 and inherits the same access.
 
@@ -120,8 +142,8 @@ diff, the "this one needs your eyes" router, and writeback to the PR.
 "<prompt>"`, the primitive it will sit on.
 
 **Built and working (the paper):** the chart library, the fact collector, the
-PDF renderer, the print stylesheet, the nightly loop in `press/SKILL.md`, and
-scheduled delivery via `screenless mail`. `press/example/edition.json` renders to
+PDF renderer, the print stylesheet, the loop in `loop/SKILL.md` with its
+`screenless wait` gate, and scheduled delivery via `screenless mail`. `press/example/edition.json` renders to
 a six-page PDF today. It has not yet run unattended against a real repo for a
 week, which is the only test that counts.
 
@@ -350,7 +372,7 @@ cd site && npm run deploy
 ```
 
 `site/public/` is generated in full by `site/build.sh` and gitignored. Edit
-`site/src/` for the pages and installer, `loop/` for the skills and runners,
+`site/src/` for the pages and installer, `loop/` for the skills, `press/` for the toolkit,
 `cli/src/` for the CLI; never edit `site/public/`, because the next build
 deletes it.
 
@@ -385,13 +407,18 @@ screenless logout
 
 The loop on your machine writes the brief and parks it; the Worker dials at your
 time; the loop reads back what you decided and is the thing that acts on it.
+`screenless wait` is the gate the armed session blocks on; the agent does the
+rest in-session, but the primitives are plain commands:
 
 ```bash
-# 03:00, when your agents are done
-screenless call "$(claude -p 'brief me on tonight's PRs')" --at
+screenless wait                    # blocks; prints NIGHTLY <repo> or APPLY <id>
 
-# 07:09, after the call
-screenless transcript --json | claude -p "apply these decisions"
+# 03:00, when your agents are done — the agent builds the brief, then:
+screenless call "<brief>" --at     # parked for your call time
+
+# 08:09, after the call — the agent reads it and acts:
+screenless transcript --json
+screenless applied <callId>
 ```
 
 The assistant on the phone has no tools and takes no action — it collects

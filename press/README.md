@@ -21,7 +21,7 @@ thing to finish first.
 
 | Path | What it is |
 | --- | --- |
-| `../loop/SKILL.md` | The nightly loop. Claude Code follows this; it is the product. |
+| `../loop/SKILL.md` | The loop. Claude Code follows this, armed in a session; it is the product. |
 | `bin/collect.mjs` | Deterministic facts from `git` and `gh`. Makes no judgements. |
 | `bin/render.mjs` | `edition.json` → HTML → PDF via headless Chrome. |
 | `lib/charts.mjs` | Dependency-free SVG charts, built for paper. |
