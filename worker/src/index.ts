@@ -97,6 +97,9 @@ interface CallRecord {
   /** Answered by a machine. The call was hung up, the brief re-parked held,
    *  and nothing here is a conversation worth collecting. */
   voicemail?: boolean;
+  /** The user rang in. Its end is reported by the TeXML application's status
+   *  callback, not per call — see finishInbound. */
+  inbound?: boolean;
   conversationId?: string;
   createdAt: number;
   endedAt?: number;
@@ -592,6 +595,7 @@ async function answerInbound(req: Request, env: Env): Promise<Response> {
     assistantId: assistant.id,
     texmlAppId: assistant.telephony_settings?.default_texml_app_id,
     status: "answered",
+    inbound: true,
     createdAt: Date.now(),
   };
   await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
@@ -606,6 +610,82 @@ async function answerInbound(req: Request, env: Env): Promise<Response> {
     `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><AIAssistant id="${assistant.id}"></AIAssistant></Connect></Response>`,
     { headers: { "Content-Type": "application/xml" } },
   );
+}
+
+/**
+ * Closes a ring-in.
+ *
+ * An outbound call carries its own status callback, minted per call. A
+ * ring-in cannot: Telnyx fetches the inbound TeXML before we know anything,
+ * so the end of the call arrives on the TeXML *application's* status callback
+ * — one URL for every inbound call — and is matched back to the record by the
+ * caller's number. The first ring-in ever taken sat at "answered" forever for
+ * want of this, and the loop, which only wakes on a finished call, never knew
+ * it had happened.
+ */
+async function finishInbound(env: Env, phone: string, why: string, force = false): Promise<string | null> {
+  const callId = await env.CALLS.get(`last:${phone}`);
+  if (!callId) return null;
+  const raw = await env.CALLS.get(`call:${callId}`);
+  if (!raw) return null;
+  const record = JSON.parse(raw) as CallRecord;
+  if (record.status === "completed" || record.status === "failed") return null;
+  // Only a ring-in is closed from the application-level callback or the
+  // sweep; an outbound call has its own per-call status callback. The admin
+  // path may force it, for records that predate the flag.
+  if (!record.inbound && !force) return null;
+
+  record.status = "completed";
+  record.endedAt = Date.now();
+  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await captureTranscript(env, callId, record);
+  await cleanupAssistant(env, record);
+  console.log("inbound call finished", callId, why);
+  return callId;
+}
+
+async function inboundStatus(req: Request, env: Env): Promise<Response> {
+  const provided = new URL(req.url).searchParams.get("t") ?? "";
+  const expected = await webhookToken("inbound", env.SESSION_SECRET);
+  if (!safeEqual(provided, expected)) return fail(403, "bad webhook token");
+
+  const body = await req.text();
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    payload = Object.fromEntries(new URLSearchParams(body));
+  }
+  const status = String(payload.CallStatus ?? payload.call_status ?? "").toLowerCase();
+  if (!["completed", "failed", "busy", "no-answer", "canceled"].includes(status)) return json({ ok: true });
+  const from = normalizeCallerId(String(payload.From ?? payload.from ?? ""));
+  if (!isE164(from)) return json({ ok: true });
+  await finishInbound(env, from, `status ${status}`);
+  return json({ ok: true });
+}
+
+/**
+ * Safety net for a ring-in whose end never reached us — a Worker whose TeXML
+ * application has no status callback configured, or a callback that was
+ * dropped. Nobody talks to the assistant for an hour; past that, the call is
+ * over whatever Telnyx told us.
+ */
+async function sweepStaleInbound(env: Env): Promise<number> {
+  let n = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.CALLS.list({ prefix: "call:", cursor, limit: 200 });
+    cursor = page.list_complete ? undefined : page.cursor;
+    for (const key of page.keys) {
+      const raw = await env.CALLS.get(key.name);
+      if (!raw) continue;
+      const record = JSON.parse(raw) as CallRecord;
+      if (!record.inbound || record.status !== "answered") continue;
+      if (Date.now() - record.createdAt < 60 * 60 * 1000) continue;
+      if (await finishInbound(env, record.phone, "stale sweep")) n += 1;
+    }
+  } while (cursor);
+  return n;
 }
 
 async function getCall(callId: string, req: Request, env: Env): Promise<Response> {
@@ -765,9 +845,11 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
   return json({
     number: env.TELNYX_FROM_NUMBER,
     voiceUrl: `${origin}/texml/inbound?t=${token}`,
+    statusCallbackUrl: `${origin}/webhooks/inbound/status?t=${token}`,
     next:
       "Telnyx portal → Voice → TeXML Applications → (new or existing) → set the " +
-      "Voice URL above and POST, then assign this number to that application.",
+      "Voice URL above and POST, set the Status Callback URL above and POST, " +
+      "then assign this number to that application.",
   });
 }
 
@@ -1035,6 +1117,17 @@ export default {
           : fail(result.status, result.error);
       }
 
+      if (method === "POST" && path === "/webhooks/inbound/status") return await inboundStatus(req, env);
+
+      // Ops: close a ring-in by hand when its end never arrived.
+      const fin = path.match(/^\/admin\/inbound\/(\+\d+)\/finish$/);
+      if (method === "POST" && fin) {
+        const secret = req.headers.get("X-Admin-Secret") ?? "";
+        if (!env.ADMIN_SECRET || !safeEqual(secret, env.ADMIN_SECRET)) return fail(403, "forbidden");
+        const id = await finishInbound(env, fin[1], "admin", true);
+        return json({ finished: id });
+      }
+
       const hook = path.match(/^\/webhooks\/([\w-]+)\/(status|conversation|amd)$/);
       if (method === "POST" && hook)
         return await handleWebhook(hook[1], hook[2] as "status" | "conversation" | "amd", req, env);
@@ -1065,6 +1158,8 @@ export default {
       if (sent || failed) console.log(`outbox swept: ${sent} sent, ${failed} failed`);
     }
     await sweepBriefs(env);
+    const stale = await sweepStaleInbound(env).catch(() => 0);
+    if (stale) console.log(`closed ${stale} stale inbound call(s)`);
   },
 };
 
