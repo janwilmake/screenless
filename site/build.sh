@@ -8,7 +8,8 @@
 # you and losing an afternoon's work was remembering which was which.
 #
 #   site/src/   pages and the installer, hand-written
-#   loop/       the skills and runners the installer downloads
+#   loop/       the skills the installer downloads
+#   press/      the collector and renderer the skill calls, shipped as a tarball
 #   cli/dist/   the CLI, shipped as a tarball
 #
 #   ./build.sh          assemble
@@ -30,7 +31,12 @@ cp "$here"/src/* "$out"/
 # Downloaded by the installer over HTTP, so they have to exist as real files in
 # the served directory — there is no build step on Cloudflare's side.
 cp "$root"/loop/SKILL.md "$root"/loop/APPLY.md "$out"/
-cp "$root"/loop/nightly.sh "$root"/loop/collect.sh "$out"/
+
+# The skill calls press/bin/*.mjs by absolute path under ~/.claude/skills/
+# screenless/, so the toolkit ships with it. The example edition rides along:
+# the skill tells the model to read it before writing its first one.
+COPYFILE_DISABLE=1 tar -czf "$out/press.tar.gz" \
+  -C "$root/press" bin lib templates example README.md
 
 npm --prefix "$root/cli" run build --silent
 COPYFILE_DISABLE=1 tar -czf "$out/screenless.tar.gz" \

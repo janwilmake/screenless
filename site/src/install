@@ -4,10 +4,11 @@
 #
 #   curl -fsSL https://screenless.sh/install | bash
 #
-# Drops the CLI in ~/.screenless, puts a launcher on PATH, and — when there is
-# a terminal to talk to — goes straight into `screenless setup`, which verifies
-# your phone number and starts the trial. One command, from nothing to a
-# working install.
+# Drops the CLI in ~/.screenless, puts a launcher on PATH, installs the loop
+# skill for Claude Code, and — when there is a terminal to talk to — goes
+# straight into `screenless setup`, which verifies your phone number and starts
+# the trial. One command, from nothing to a working install; the loop itself is
+# armed afterwards, from a Claude Code session, with `/screenless start`.
 #
 # Deliberately does not install Node. A tool that silently mutates your
 # toolchain is a tool you cannot reason about later; if Node is missing we say
@@ -20,10 +21,6 @@ readonly INSTALL_DIR="${SCREENLESS_INSTALL_DIR:-$HOME/.screenless}"
 readonly LIB_DIR="$INSTALL_DIR/lib"
 readonly BIN_DIR="$INSTALL_DIR/bin"
 readonly SKILL_DIR="${SCREENLESS_SKILL_DIR:-$HOME/.claude/skills/screenless}"
-readonly AGENT_LABEL="com.screenless.nightly"
-readonly AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
-readonly COLLECT_LABEL="com.screenless.collect"
-readonly COLLECT_PLIST="$HOME/Library/LaunchAgents/$COLLECT_LABEL.plist"
 readonly MIN_NODE=20
 
 # Colour only when a terminal is actually watching. Piped into a log, the
@@ -88,9 +85,8 @@ fetch "$BASE_URL/screenless.tar.gz" "$tmp/screenless.tar.gz" \
 # working CLI rather than fail the whole run.
 mkdir -p "$tmp/skill"
 fetch "$BASE_URL/SKILL.md" "$tmp/skill/SKILL.md" 2>/dev/null || rm -f "$tmp/skill/SKILL.md"
-fetch "$BASE_URL/nightly.sh" "$tmp/nightly.sh" 2>/dev/null || rm -f "$tmp/nightly.sh"
-fetch "$BASE_URL/collect.sh" "$tmp/collect.sh" 2>/dev/null || rm -f "$tmp/collect.sh"
 fetch "$BASE_URL/APPLY.md" "$tmp/skill/APPLY.md" 2>/dev/null || rm -f "$tmp/skill/APPLY.md"
+fetch "$BASE_URL/press.tar.gz" "$tmp/press.tar.gz" 2>/dev/null || rm -f "$tmp/press.tar.gz"
 
 # Only lib/ is replaced. The config file next to it holds a session token and
 # a verified phone number, and reinstalling is not a reason to lose either.
@@ -120,110 +116,38 @@ if [ -f "$tmp/skill/SKILL.md" ]; then
   mkdir -p "$SKILL_DIR"
   cp "$tmp/skill/SKILL.md" "$SKILL_DIR/SKILL.md"
   [ -f "$tmp/skill/APPLY.md" ] && cp "$tmp/skill/APPLY.md" "$SKILL_DIR/APPLY.md"
+  # The collector and renderer the skill calls. Installed beside it, at a path
+  # the skill can spell out, because a skill that says `press/bin/collect.mjs`
+  # relative to nothing was the reason the first papers never rendered.
+  if [ -f "$tmp/press.tar.gz" ]; then
+    mkdir -p "$SKILL_DIR/press"
+    tar -xzf "$tmp/press.tar.gz" -C "$SKILL_DIR/press" || rm -rf "$SKILL_DIR/press"
+  fi
   if [ "$have_claude" -eq 1 ]; then
-    ok "nightly loop skill installed for Claude Code"
+    ok "loop skill installed for Claude Code ${dim}— arm it with /screenless start${reset}"
   else
     say "  ${dim}nightly loop skill installed, but Claude Code was not found.${reset}"
     say "  ${dim}The paper and the call brief are written by it: https://claude.com/claude-code${reset}"
   fi
 fi
 
-# ------------------------------------------------------------ nightly job
+# ------------------------------------------------------- old scheduler
 
-# The runner is installed next to the CLI, not run from a checkout: the launchd
-# job must survive the repo being moved, renamed or deleted, and a scheduled
-# task that depends on someone's Desktop layout is a task that silently stops.
-for runner in nightly collect; do
-  if [ -f "$tmp/$runner.sh" ]; then
-    cp "$tmp/$runner.sh" "$BIN_DIR/$runner.sh"
-    chmod +x "$BIN_DIR/$runner.sh"
+# Before 20 August the installer scheduled two launchd jobs that ran `claude -p`
+# outside any session. They could not read a repo under ~/Desktop (macOS
+# denies that to anything launchd starts), could not approve a tool call, and
+# had no MCPs, so they fired every night and produced nothing. The loop now
+# runs inside a Claude Code session, armed with `/screenless start`; anything
+# the old installer left behind is removed so it cannot keep firing.
+for label in com.screenless.nightly com.screenless.collect; do
+  plist="$HOME/Library/LaunchAgents/$label.plist"
+  if [ -f "$plist" ]; then
+    command -v launchctl >/dev/null 2>&1 && launchctl unload "$plist" >/dev/null 2>&1 || true
+    rm -f "$plist"
+    say "  ${dim}removed the old launchd job $label${reset}"
   fi
 done
-
-install_agent() {
-  [ "$(uname -s)" = "Darwin" ] || return 1
-  [ -f "$BIN_DIR/nightly.sh" ] || return 1
-  command -v launchctl >/dev/null 2>&1 || return 1
-
-  mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR/logs"
-
-  # StartCalendarInterval, not an interval timer: launchd re-runs a calendar job
-  # it missed because the machine was asleep, as soon as it wakes. That is the
-  # "03:00, or first thing when the laptop opens" behaviour, for free.
-  #
-  # PATH is spelled out because a launchd job inherits none of a login shell.
-  cat > "$AGENT_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$AGENT_LABEL</string>
-  <key>ProgramArguments</key><array><string>$BIN_DIR/nightly.sh</string></array>
-  <key>StartCalendarInterval</key><dict>
-    <key>Hour</key><integer>3</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
-  <key>RunAtLoad</key><false/>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$BIN_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
-  </dict>
-  <key>StandardOutPath</key><string>$INSTALL_DIR/logs/launchd.out.log</string>
-  <key>StandardErrorPath</key><string>$INSTALL_DIR/logs/launchd.err.log</string>
-</dict>
-</plist>
-PLIST
-
-  # Reload rather than load, so reinstalling picks up a changed path.
-  launchctl unload "$AGENT_PLIST" >/dev/null 2>&1 || true
-  launchctl load "$AGENT_PLIST" >/dev/null 2>&1 || return 1
-  return 0
-}
-
-# The return leg. StartInterval rather than a calendar time, because a call can
-# finish at any hour — scheduled at 08:00, or rung back at two in the
-# afternoon. launchd runs a missed interval job on wake, so a call taken while
-# the laptop was shut is applied minutes after it opens.
-install_collector() {
-  [ "$(uname -s)" = "Darwin" ] || return 1
-  [ -f "$BIN_DIR/collect.sh" ] || return 1
-  command -v launchctl >/dev/null 2>&1 || return 1
-
-  mkdir -p "$HOME/Library/LaunchAgents" "$INSTALL_DIR/logs"
-  cat > "$COLLECT_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$COLLECT_LABEL</string>
-  <key>ProgramArguments</key><array><string>$BIN_DIR/collect.sh</string></array>
-  <key>StartInterval</key><integer>300</integer>
-  <key>RunAtLoad</key><true/>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$BIN_DIR:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
-  </dict>
-  <key>StandardOutPath</key><string>$INSTALL_DIR/logs/collect.out.log</string>
-  <key>StandardErrorPath</key><string>$INSTALL_DIR/logs/collect.err.log</string>
-</dict>
-</plist>
-PLIST
-
-  launchctl unload "$COLLECT_PLIST" >/dev/null 2>&1 || true
-  launchctl load "$COLLECT_PLIST" >/dev/null 2>&1 || return 1
-  return 0
-}
-
-if [ "${SCREENLESS_NO_AGENT:-}" = "1" ]; then
-  say "  ${dim}skipping the nightly job (SCREENLESS_NO_AGENT=1)${reset}"
-elif install_agent; then
-  ok "nightly run scheduled for 03:00 ${dim}(and on wake, if the laptop was shut)${reset}"
-  if install_collector; then
-    ok "watching for finished calls ${dim}(every 5 min — applies what you decided)${reset}"
-  fi
-elif [ "$(uname -s)" = "Darwin" ]; then
-  say "  ${dim}could not schedule the nightly run — see loop/README.md${reset}"
-else
-  say "  ${dim}on Linux, schedule $BIN_DIR/nightly.sh with a systemd timer (Persistent=true)${reset}"
-fi
+rm -f "$BIN_DIR/nightly.sh" "$BIN_DIR/collect.sh"
 
 # --------------------------------------------------------------------- PATH
 
@@ -261,7 +185,8 @@ fi
 if [ "${SCREENLESS_NO_SETUP:-}" = "1" ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then
   say ""
   say "Next: ${bold}screenless setup${reset} ${dim}— verify your number${reset}"
-  say "Then: ${bold}screenless init${reset} ${dim}— point the nightly loop at a repo${reset}"
+  say "Then: ${bold}screenless init${reset} ${dim}— point the loop at a repo${reset}"
+  say "Then, in Claude Code: ${bold}/screenless start${reset} ${dim}— arm it, and leave the session open${reset}"
   say ""
   exit 0
 fi
