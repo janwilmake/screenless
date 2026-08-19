@@ -74,3 +74,5 @@ expected output.
 - 19:14 — `yes i like all of your suggested shape. build it and update  the readme. start in-session, we can think about subagents later.`
 - 19:15 — `also clean up my system, the systemd things etc, of the old architecture`
   *(macOS, so launchd: both plists unloaded and removed, `~/.screenless/bin/{nightly,collect}.sh` deleted; logs left in place as a record)*
+- 19:25 — `please read screenless/CLAUDE.md if you haven't already, and also push my intent for this session.`
+  *(CLAUDE.md had been read at the start; the intent file was already in `20bfa3e` on `main` — this line and the push of it are the answer)*
