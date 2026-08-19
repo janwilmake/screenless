@@ -1,7 +1,7 @@
 # Intent, resolved
 
-**Last updated 19 August 2026** — covers sessions 1–6, through the prompt at
-19:15 in session 6. If the session files carry prompts newer than that, this document is
+**Last updated 19 August 2026** — covers sessions 1–6, through the 19:3x
+prompts in session 6. If the session files carry prompts newer than that, this document is
 behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -28,6 +28,7 @@ product, never executed against reality · **not built**.
 | CLI: `call "<prompt>"` blocks and returns the transcript | built |
 | Auth by phone number + OTP, no passwords, no Google SSO *(was: Google SSO)* | built |
 | Only ever dials the number that was verified | built |
+| Calls come from the Dutch number, and it can be rung back *(was: a US number while the NL review was pending)* | **built and proven** — test call from +31 85 083 5195 answered 19 Aug |
 | Telnyx, EU media anchoring, interruptible, code-switching | built |
 | The assistant is actually audible on a phone call | **built and proven** — needed a third-party voice; Telnyx's own TTS renders nothing on PSTN (`telnyx-bug/`) |
 | Voices chosen on measured latency, English and Dutch first | built — AWS Polly Joanna-Neural ~300ms, Azure Fenna ~396ms |
@@ -48,7 +49,7 @@ product, never executed against reality · **not built**.
 | Sent to one confirmed email, bound to the account | **built and proven** — confirmed on two accounts |
 | A deep dive on how one area works today, from real codebase research | built, unrun |
 | No charts of files or lines changed per PR — visualise schemas, data models, API surfaces instead | built, unrun |
-| The nightly run schedules the call | built — ran once, parked nothing (no session at the time) |
+| The nightly run schedules the call | **built and proven** — 19 Aug hand-run parked a brief for 08:00 and queued the paper for 07:45; the first attempt rang the phone at once instead (bare `--at` bug, fixed) |
 
 ## Install and loop
 
@@ -108,16 +109,14 @@ Things asked for that the product does not yet do.
    underneath it. Everything else in this document is packaging.
 2. **The return leg has never run.** Gate, manifest and apply skill are
    written and unexecuted, because there has been no call worth applying.
-3. **The site is not redeployed** after session 6: `wrangler` is not
-   authenticated on this machine. Until it is, `curl | bash` still installs
-   the launchd runners.
+3. ~~The site is not redeployed after session 6.~~ Deployed later that
+   session, Worker too.
 4. **The deep dive and the new figures are unrendered.** Written into the skill
    after you read the first paper; no edition has used them.
 5. **"Up to 30 minutes of call a day"** is on the pricing page and enforced
    nowhere — the code counts 20 calls an hour and no minutes at all.
-6. **The Dutch number is still blocked.** Regulatory review rejected the
-   business name twice; calls come from a US number, which was meant to be
-   temporary.
+6. ~~The Dutch number is still blocked.~~ Cleared on 19 August; calls come
+   from +31 85 083 5195 since session 6, and it can be rung back.
 7. **Stripe is in test mode**, so no one can actually pay.
 8. **Multi-repo** is supported by the registry and untested.
 9. **Parking has only been done by writing KV directly**, which skips the

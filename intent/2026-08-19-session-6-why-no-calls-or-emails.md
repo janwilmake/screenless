@@ -17,11 +17,21 @@ new shape. This machine was cleaned (plists unloaded and removed, runners
 deleted, skill + press + CLI reinstalled through the real installer against a
 local build) and the loop was armed in the session at the end.
 
-**Still open:** the site is not deployed — `wrangler` is not authenticated on
-this machine and `wrangler login` is an OAuth consent the user has to click.
-Until `cd site && npm run deploy`, a fresh `curl | bash` still installs the old
-runners. Also untested: the return leg through the new gate, and a real
-`NIGHTLY` wake (the first one is due 03:00 on 20 August).
+**Later in the session:** the user logged wrangler in; Worker and site were
+deployed. A forced nightly run was done by hand for hyre at 21:28: an 11-page
+edition (`~/screenless/press/2026-08-19.pdf`, deep dive on the ATS/CRM write
+target), a Dutch brief of six decisions, and the manifest. The paper is queued
+for 07:45 and the brief parked for 08:00 on 20 August. The first attempt to
+park found two bugs and **rang the phone at 21:36**: the Worker tested `at`
+for truth so a bare `--at` fell through to dial-now, and the CLI defaulted
+`--lang` to `en`. Both fixed and deployed; a stamp dated tomorrow now skips
+tonight. The Dutch number's review had cleared (Active on the portal, same
+TeXML app as the US number); `TELNYX_FROM_NUMBER` swapped to it and a test
+call from it was answered.
+
+**Still untested:** the return leg through the new gate, and a real
+`NIGHTLY` wake from the waiter (next due 03:00 on 21 August, since tonight is
+stamped).
 
 **Why the change rather than a fix:** the three causes below were each fatal
 on their own, and two of them (TCC, headless approvals) are properties of
@@ -76,3 +86,7 @@ expected output.
   *(macOS, so launchd: both plists unloaded and removed, `~/.screenless/bin/{nightly,collect}.sh` deleted; logs left in place as a record)*
 - 19:25 — `please read screenless/CLAUDE.md if you haven't already, and also push my intent for this session.`
   *(CLAUDE.md had been read at the start; the intent file was already in `20bfa3e` on `main` — this line and the push of it are the answer)*
+- 19:2x — `install wrangler`
+  *(installed globally; symlinked into `~/.local/bin` like node/npm)*
+- 19:3x — `is the dutch telnyx number also connected? will i get the call from the dutch number next time? can i call it? can we do a nigly run now (for repo hyre btw) such that the clal has the proper context?`
+- 19:3x — `after the nigthly is done, pls finish the work for screenless. telnyx is logged in and wrangler is authenticated too.`
