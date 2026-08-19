@@ -73,9 +73,9 @@ product, never executed against reality · **not built**.
 
 | Intent | Status |
 |---|---|
-| After the call, results reach the machine as fast as possible | built, unrun — the armed waiter probes every minute; ≤1 min awake or after waking |
+| After the call, results reach the machine as fast as possible | **built and proven** — the waiter woke within a minute of the call ending |
 | Nothing lost if the laptop never wakes | **built and proven** — the transcript email arrived in the Inbox |
-| The machine acts on the decisions | built, unrun — `loop/APPLY.md` via the user's own MCPs |
+| The machine acts on the decisions | **built and proven** — 19 Aug: comments on #792 and #791 from the transcript, merges withheld |
 | A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
 
 ## Money
@@ -107,8 +107,8 @@ Things asked for that the product does not yet do.
    triage, agenda building, the "this needs your eyes" router. Session 1's
    entire premise. What exists is `screenless call "<prompt>"`, the primitive
    underneath it. Everything else in this document is packaging.
-2. **The return leg has never run.** Gate, manifest and apply skill are
-   written and unexecuted, because there has been no call worth applying.
+2. ~~The return leg has never run.~~ Ran on 19 August from the call that
+   rang early: two decisions commented on #792 and #791, nothing merged.
 3. ~~The site is not redeployed after session 6.~~ Deployed later that
    session, Worker too.
 4. **The deep dive and the new figures are unrendered.** Written into the skill

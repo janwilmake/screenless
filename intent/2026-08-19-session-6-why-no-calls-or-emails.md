@@ -29,9 +29,16 @@ tonight. The Dutch number's review had cleared (Active on the portal, same
 TeXML app as the US number); `TELNYX_FROM_NUMBER` swapped to it and a test
 call from it was answered.
 
-**Still untested:** the return leg through the new gate, and a real
-`NIGHTLY` wake from the waiter (next due 03:00 on 21 August, since tonight is
-stamped).
+**The return leg ran, unplanned.** The call that rang early was answered and
+carried two real decisions before it ended at the third: hold the release
+until staging has its two variables, and one write target per organization —
+*per category*, ATS and CRM each — with no re-stamping of `source`. The
+waiter woke on the finished call, the loop commented both decisions on #792
+and #791 (quoting the caller), merged nothing, marked the call applied. The
+probe then died on the Worker's 204 — a refactor slip — fixed and redeployed.
+
+**Still untested:** a real `NIGHTLY` wake from the waiter (next due 03:00 on
+21 August, since tonight is stamped).
 
 **Why the change rather than a fix:** the three causes below were each fatal
 on their own, and two of them (TCC, headless approvals) are properties of
