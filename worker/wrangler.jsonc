@@ -13,16 +13,16 @@
   "routes": [{ "pattern": "api.screenless.sh", "custom_domain": true }],
 
   "vars": {
-    // The Telnyx number the call comes *from*. Must be a number you own.
+    // The Telnyx number the call comes *from*, and the one the user rings back.
+    // Must be a number you own and assigned to the inbound TeXML application.
     //
-    // Currently a US number, because it has no regulatory requirements and
-    // activates instantly. Fine while it only ever dials your own verified
-    // phone, where the caller ID is cosmetic.
-    //
-    // Swap back to the NL number (+31850835195) once its regulatory review
-    // clears: anonymous or foreign CLI is not acceptable for real NL outbound,
-    // and the Amsterdam AnchorSite pairs with an NL origin.
-    "TELNYX_FROM_NUMBER": "+16412153640",
+    // The NL number: its regulatory review cleared on 19 August 2026. It was a
+    // US number (+16412153640) before that, kept because it activated instantly;
+    // that number is still on the account and on the same application, so
+    // swapping back is this one line. An NL origin is what pairs with the
+    // Amsterdam AnchorSite, and anonymous or foreign CLI is not acceptable for
+    // real NL outbound.
+    "TELNYX_FROM_NUMBER": "+31850835195",
 
     // Region each call's media is anchored to. Telnyx's EU GPUs are co-located
     // with the telephony PoPs in Amsterdam, which is the point of using Telnyx
