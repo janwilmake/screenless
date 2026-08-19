@@ -609,7 +609,9 @@ async function probe(): Promise<Probe> {
   }
   const forced = process.env.SCREENLESS_FORCE === "1";
   if (projects.length === 0) quiet.push("no projects registered");
-  else if (stamp === now.date && !forced) quiet.push(`tonight's run already done (${stamp})`);
+  // `>=`, not `===`: a stamp dated tomorrow means "tonight is covered" — the
+  // way to skip a night on purpose after running one by hand at 21:30.
+  else if (stamp >= now.date && !forced) quiet.push(`tonight's run already done (${stamp})`);
   else if (now.minute < dueMinute && !forced) quiet.push(`nightly at ${NIGHTLY_AT}, it is ${now.clock}`);
   else for (const p of projects) work.push(`NIGHTLY ${p}`);
 
