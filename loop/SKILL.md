@@ -1,17 +1,110 @@
 ---
 name: screenless
-description: The nightly loop. Reads a repo's tickets, pull requests and code once, then produces both of screenless's surfaces from that one pass — the printable paper, mailed to land at wake-up, and the morning call brief, dialled at the user's call time. Both are parked with the Worker and released on the user's schedule. Runs unattended at 03:00, or catches up first thing when the laptop opens. Use when the user says "run the nightly loop", "build tonight's edition", "prepare my morning call", or "start screenless".
+description: The screenless loop, armed in a Claude Code session. Waits in pure shell until there is work — 03:00 (or the first wake after it), or a finished morning call — then reads the repo's tickets, pull requests and code once and produces both surfaces from that one pass: the printable paper, mailed to land at wake-up, and the call brief, dialled at the user's call time; after a call, applies what was decided. Modes: start (arm it), tick, status, stop. Use when the user says "start screenless", "arm the loop", "run the nightly loop", "build tonight's edition", "prepare my morning call", or "apply the decisions".
 ---
 
-# screenless — the nightly loop
+# screenless — the loop
 
-One run, one context, two surfaces.
+One run, one context, two surfaces — and the return leg after the call.
 
 The paper answers *what is my product becoming?* The call answers *what do I
 need to decide today?* They are built together because they are built from the
 same reading: the same tickets, the same diffs, the same judgement about what
 mattered last night. Building them separately means paying for that reading
 twice and — worse — letting the two disagree about what the week was about.
+
+## Modes
+
+Pick by the argument you were called with.
+
+| Argument      | Mode                                                        |
+| ------------- | ----------------------------------------------------------- |
+| none, `start` | **Arm the loop** — one tick now, then block until there is work. |
+| `tick`        | **One tick** — probe once; do whatever it reports.          |
+| `status`      | Say what the next probe would do. Change nothing.           |
+| `stop`        | Stop the waiter and the heartbeat. Change nothing else.     |
+
+The loop lives *in this session* rather than in a scheduler, on purpose. A
+launchd job running `claude -p` had no Desktop access (macOS denies it to
+anything not started from a terminal), no way to approve a tool call, and no
+MCPs — it fired every night for four nights and shipped nothing. Here the agent
+already has the permissions, the tracker, `gh`, the browser and the subscription
+the work needs. The price is that the session has to stay open; that is the
+same contract as the orchestrator, and the one thing the user has to know.
+
+### Mode: start
+
+1. Run **one tick** (below), so the user sees it do something real rather than
+   wait for proof that it works. Usually it says `NO - …`; that is fine.
+2. **Arm the waiter** — Bash tool, `run_in_background: true`,
+   `dangerouslyDisableSandbox: true` (the sandbox denies `~/.screenless` and
+   the network the probe needs):
+
+   ```
+   screenless wait
+   ```
+
+   It probes every 60 s in this process, no model, and prints one line when
+   its reason changes so the user watches a live shell rather than a scroll of
+   identical ticks. The harness re-invokes the model when a backgrounded
+   command exits, so **the waiter's exit is the next tick**: when you are woken
+   by it, read what it printed and go to *Mode: tick, step 2*. It gives up after
+   40 minutes and exits with `re-arm` — when that is what woke you, arm it
+   again and say nothing else.
+3. **Add the heartbeat**, because a waiter that dies takes the night with it.
+   Invoke the `loop` skill with:
+
+   ```
+   /loop 1h /screenless tick
+   ```
+
+4. Tell the user it is live: what the first tick did, when tonight's run is due
+   (03:00 machine time, or the first probe after it if the lid was shut), and
+   that `/screenless stop` ends it.
+
+Do not detach the waiter with `nohup`, and do not send its output to a log file
+the user has to tail. The point of running it here is that it stays visible and
+the user can interrupt it.
+
+### Mode: tick
+
+1. Probe, outside the sandbox:
+
+   ```
+   screenless wait --once
+   ```
+
+   (`SCREENLESS_FORCE=1 screenless wait --once` to run tonight again even
+   though it is stamped — for testing, or a night you want redone.)
+
+2. Act on every line it printed, in this order:
+
+   - `NO - <reason>` — say the reason in one line and stop.
+   - `NIGHTLY <repo>` — run **one night** (below) for that repo, `cd` there
+     first. Several lines means several repos; do them one after another, and
+     one failing must not cost the others their paper.
+   - `APPLY <callId>` — follow the `screenless-apply` skill (`APPLY.md` next
+     to this file), then `screenless applied <callId>`. Mark it only when the
+     apply actually ran; a failed apply is retried on the next probe, not
+     written off.
+
+   `NIGHTLY` before `APPLY` when both appear: the call being applied was
+   briefed from last night's manifest, and tonight's run writes a new one.
+
+3. If you were woken by the waiter, re-arm it (*start*, step 2) before you
+   finish the turn. A tick that does not re-arm is the loop ending quietly.
+
+### Mode: status
+
+`screenless wait --peek` — same probe, never stamps — and `screenless settings
+--json` for when the phone will ring. Report both. Spawn nothing, run nothing.
+
+### Mode: stop
+
+Stop the backgrounded `screenless wait` (TaskStop on its task) and end the
+`/loop` heartbeat. Say that tonight's run will not happen until the loop is
+armed again. Nothing parked with the Worker is touched: a brief already parked
+still rings, a paper already mailed still lands.
 
 ## Where the settings come from
 
@@ -58,7 +151,10 @@ nobody answers twice.
 | Which files changed, and how much      | Which four to six things deserve a page        |
 | Ticket status and assignee             | Which three to six things deserve a *decision* |
 
-## Running one night
+## One night
+
+The toolkit this section calls lives next to this file, at
+`~/.claude/skills/screenless/press/` — write `press/…` below as that path.
 
 Steps 1–4 are the shared pass. Do them once. Step 5 splits the result into the
 two surfaces; steps 6–7 deliver them.
@@ -72,7 +168,7 @@ rather than aborting.
 ### 2. Collect the deterministic facts
 
 ```bash
-node press/bin/collect.mjs --repo <repo> --days <windowDays> > /tmp/press-facts.json
+node ~/.claude/skills/screenless/press/bin/collect.mjs --repo <repo> --days <windowDays> > /tmp/press-facts.json
 ```
 
 Composition, churn by area over both windows, commits per day, staleness, open
@@ -178,7 +274,7 @@ Writing rules:
 Render it:
 
 ```bash
-node press/bin/render.mjs <edition.json> --out <outDir>/<date>.pdf
+node ~/.claude/skills/screenless/press/bin/render.mjs <edition.json> --out <outDir>/<date>.pdf
 ```
 
 `--keep-html` prints the intermediate HTML while iterating. Check the page
@@ -288,16 +384,17 @@ Confirm what was parked, and when it will ring.
 
 ## When this runs
 
-Once a night, at **03:00**, by launchd — see `loop/README.md` for the plist.
-The schedule has two properties that matter:
+Once a night, when `screenless wait` says `NIGHTLY` — at **03:00** machine
+time, or on the first probe after it. Two properties matter:
 
-- **If the machine is asleep or off at 03:00, the run happens when it next
-  wakes.** launchd holds missed calendar jobs. That is the "first thing when
-  the laptop opens" behaviour, and it is why the catch-up branch in step 7
-  exists rather than being theoretical.
-- **It runs at most once per day.** `loop/nightly.sh` stamps a date file and
-  exits early if today is already done, so a laptop that wakes four times
-  before breakfast still produces one paper.
+- **If the machine is asleep at 03:00, the run happens when it next wakes.**
+  The waiter's `sleep 60` resumes with the lid, the probe sees no stamp for
+  today, and the agent builds. That is the "first thing when the laptop opens"
+  behaviour, and it is why the catch-up branch in step 7 exists rather than
+  being theoretical.
+- **It runs at most once per day.** The waiter stamps `~/.screenless/last-run`
+  the moment it hands `NIGHTLY` over — before the build, not after — so a
+  crash mid-run is a missed night, not four papers and four phone calls.
 
 If a step fails, ship a shorter paper and a shorter call. A missing section is
 a finding; a missing paper is a broken product.
@@ -305,7 +402,8 @@ a finding; a missing paper is a broken product.
 ## What this deliberately does not do
 
 - **It does not ask you anything.** Every question belongs on the call, which
-  is interruptible. Both artefacts are produced unattended.
+  is interruptible. Both artefacts are produced unattended — the session is
+  open, the user is asleep.
 - **It does not merge, comment, or move tickets.** It only reads. Applying
   decisions happens after the call, from the transcript, in a separate run — so
   a bad night produces a bad paper and nothing worse.

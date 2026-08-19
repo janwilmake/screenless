@@ -9,8 +9,9 @@ This is the return leg. The call collected decisions and changed nothing; this
 is where they take effect, on the user's own machine, with the access the user
 already granted.
 
-Run it after a call. `loop/collect.sh` triggers it automatically, but it is
-equally valid to run by hand.
+Run it after a call. The armed loop gets here by itself — `screenless wait`
+prints `APPLY <callId>` within a minute of the call ending — but it is equally
+valid to run by hand.
 
 ## What you are working from
 
@@ -105,6 +106,10 @@ part they see:
 - what was left alone, and whether it was refused or unclear
 - anything said on the call that the manifest never asked about
 - anything that failed, with the error
+
+Then `screenless applied <callId>`, so the next probe does not hand you the
+same call again — and only then, so an apply that failed is retried rather
+than written off.
 
 Then stop. Do not open new work off the back of what you found; that belongs to
 tonight's run.
