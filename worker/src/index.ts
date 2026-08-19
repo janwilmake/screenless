@@ -3,7 +3,7 @@ import * as billing from "./billing";
 import * as schedule from "./schedule";
 import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
 import { session, sign, webhookToken, safeEqual, revokeSessions } from "./auth";
-import { scheduleMail, sweepOutbox, sendEmailCode, sendTranscript, isEmail } from "./mail";
+import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
 
 export interface Env {
   CALLS: KVNamespace;
@@ -338,35 +338,19 @@ async function captureTranscript(env: Env, callId: string, record: CallRecord): 
     await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
 
     await telnyx.deleteConversation(env.TELNYX_API_KEY, conversationId).catch(() => {});
-    await mailTranscript(env, record, callId);
   } catch (err) {
     console.error("transcript capture failed", callId, (err as Error).message);
   }
 }
 
-/**
- * Emails the transcript once the call ends.
- *
- * The collector on the user's machine is an optimisation, not the guarantee:
- * it only runs when the laptop is awake, and the transcript is deleted after
- * 24 hours. A laptop left shut over a weekend would otherwise lose a
- * conversation the user actually had. This is the copy that survives that,
- * and it costs one email per call.
- */
-async function mailTranscript(env: Env, record: CallRecord, callId: string): Promise<void> {
-  if (!env.RESEND_API_KEY || !record.transcript?.length) return;
-
-  const settings = await schedule.loadSettings(env, record.phone);
-  if (!settings.emailVerifiedAt || !settings.email) return;
-
-  const body = record.transcript
-    .map((l) => `${l.role === "assistant" ? "agent" : "you"}  ${l.text}`)
-    .join("\n\n");
-
-  await sendTranscript(env, settings.email, callId, body).catch((err) =>
-    console.error("transcript mail failed", callId, (err as Error).message),
-  );
-}
+// The Worker used to email the raw transcript here, as the copy that survived
+// a laptop shut over a weekend. The first person to receive one did not want
+// it: a transcript in the inbox is the screen the product exists to remove.
+// What arrives instead is written by the loop after it has applied the
+// decisions — what was decided, what was done, what was left — and is sent
+// through /mail like the paper. Nothing is lost: the Worker keeps the
+// transcript for 24 hours and the armed session collects it within a minute
+// of waking.
 
 type Lang = string;
 
@@ -385,11 +369,34 @@ const asLang = (v: unknown): Lang => (isSupportedLanguage(v) ? v : DEFAULT_LANGU
 const instructionsFor = (prompt: string): string =>
   `${prompt}
 
+## How to hold this conversation
+This is a phone call at breakfast, not a status report. The caller has not seen
+any of this yet, and the brief above is ordered hardest first, so the first
+thing you say about an item must not be the question.
+
+- **Context first, then check, then ask.** For each item: say in two or three
+  sentences what it is and why it is on the call, then stop and ask whether
+  that is clear or whether they want more before you go on. Only when they say
+  they have it do you put the decision, as one question with named options.
+- **Short turns.** Never more than three sentences before you pause for them.
+  If you notice yourself listing, stop and ask.
+- **Answer from the brief.** The background under each item is there so you can
+  answer "what else reads it", "who asked for this", "what happens if we don't".
+  Use it. If the answer is not in the brief, say so plainly — "that is not in
+  my notes" — and offer to mark it for their eyes. Never invent a detail.
+- **Let them steer.** If they ask a question, answer it before moving on. If
+  they want to skip an item, skip it and say their agent will leave it alone. If
+  they are done, wrap up; do not press for the remaining items.
+- **Confirm what you heard** in their words, briefly, before the next item. A
+  misheard decision is worse than no decision.
+- Speak the caller's language throughout. Say pull request numbers and ticket
+  ids only if they ask for them; otherwise use the names in the brief.
+
 ## What you can and cannot do
 You are on a phone call. You cannot take any action yourself: you cannot merge,
 comment, label, close, deploy, or write anything anywhere. You have no tools.
-Your only job is to walk the caller through the items above, ask for the
-decision on each, and make sure you have understood it.
+Your job is to make sure the caller understands each item and to collect what
+they decide.
 
 Never say or imply that you have done something, or that you will do it. The
 transcript of this call is handed back to the caller's own agent afterwards,
@@ -480,7 +487,10 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     hold?: boolean;
   };
   if (typeof prompt !== "string" || !prompt.trim()) return fail(400, "prompt is required");
-  if (prompt.length > 4000) return fail(400, "prompt too long (max 4000 chars)");
+  // Three items with enough background to answer questions from is longer
+  // than the six-question list this used to cap; the ceiling guards against a
+  // pasted diff, not against a real brief.
+  if (prompt.length > 12000) return fail(400, "prompt too long (max 12000 chars)");
 
   const settings = await schedule.loadSettings(env, s.phone);
   const lang = language === undefined ? asLang(settings.language) : asLang(language);

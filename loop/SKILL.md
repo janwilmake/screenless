@@ -149,7 +149,7 @@ nobody answers twice.
 | -------------------------------------- | --------------------------------------------- |
 | Composition, churn, staleness, PR ages | What the week's story is                      |
 | Which files changed, and how much      | Which four to six things deserve a page        |
-| Ticket status and assignee             | Which three to six things deserve a *decision* |
+| Ticket status and assignee             | Which three things deserve a *decision*        |
 
 ## One night
 
@@ -208,8 +208,9 @@ Now write both, from the same notes, in this order — the paper first, because
 writing it is what forces you to decide what the week's story actually was.
 
 **The paper** is one-way and complete-ish. **The call** is interruptible and
-ruthless: it carries only what genuinely needs a human decision. Something can
-be interesting enough for a page and not important enough for the call. Almost
+ruthless: it carries only what genuinely needs a human decision — three items,
+each with enough background to be understood cold. Something can be
+interesting enough for a page and not important enough for the call. Almost
 nothing is the reverse.
 
 #### 5a. The edition
@@ -292,17 +293,43 @@ inventing a figure it cannot draw.
 #### 5b. The call brief
 
 The brief is the prompt the phone assistant is given. It is spoken, so write it
-to be *said*, not read.
+to be *said*, not read — and it is the assistant's **only** source of truth on
+the call, so it has to carry the answers to the questions the caller will ask.
 
-- **Three to six decisions, hardest first.** The caller may hang up at four.
-- **Each decision states the situation in two sentences, then asks one
-  question with named options.** "Separate table, or leave it?" — not "what do
-  you think?"
-- **Carry the context an interruption will need.** The caller will ask "what
-  else reads it?" Put the answer in the brief or the assistant will invent one.
-- **Name anything you could not decide** and say plainly it needs their eyes.
-- **No numbers that only make sense written down.** No SHAs, no percentages to
-  two decimal places, no file paths deeper than one segment.
+The first real call taught this: six decisions read out in a row, each with
+two sentences of context, and the caller was lost by the second. The brief was
+written for the agent's list, not for a person hearing it cold at breakfast.
+
+- **Three items. Never more.** Pick the three that most need a human — hardest
+  first. Everything else goes in the paper, and the last line of the brief
+  names what was left out ("three more are in the paper; none of them need
+  you today"). Three well-understood decisions beat six half-heard ones.
+- **Each item is a small dossier, not a question.** Write, in this order:
+  1. *What it is*, in one breath — the feature or fix, in the product's words.
+  2. *How that part works today*, two or three sentences — the thing a reader
+     who has been away a week needs before anything else makes sense.
+  3. *What the agent did and why* — the choice it made, the alternative it
+     rejected, and what it costs to undo. These come from the PR's own
+     Decisions section; quote its reasoning, do not paraphrase it away.
+  4. *What else this touches* — other PRs, tickets, readers of the same table,
+     a doc it makes wrong. This is where "what else reads it?" gets answered.
+  5. *Numbers worth having ready* — counts, dates, sizes — spoken, not written:
+     "about seventy-five thousand rows", never "74,571".
+  6. *The one question*, with named options. Last, not first.
+- **Anticipate.** Before you close an item, ask yourself the three questions
+  the caller is most likely to ask — "who asked for this", "what breaks if we
+  wait", "is this reversible" — and make sure the dossier answers them. If you
+  cannot answer one from what you read, say so in the brief: "I do not know
+  whether X; that is for your eyes."
+- **Write it in the account's language** (`screenless settings --json` →
+  `language`). Product names, ticket prefixes and table names stay as they are.
+- **Tell the assistant how to pace it** by shape, not by instruction: the
+  Worker already tells it to give context, check, then ask. Your job is to give
+  it context worth checking. No "first / second / third" rhythm; no lists.
+- **Name anything you could not decide** and say plainly it needs their eyes —
+  one sentence, after the third item.
+- Length: the Worker accepts up to 12,000 characters. A good three-item brief
+  is 5,000–8,000. Under 3,000 means the dossiers are thin.
 
 End the brief with the wrap-up line: the assistant should say the transcript
 goes to their agent, and hang up.
@@ -331,8 +358,8 @@ Without it, applying a decision means guessing what "the second one" referred
 to, and a wrong guess merges the wrong code. Write it every time, even when
 there is one decision.
 
-Keep it under ~4000 characters — the Worker rejects more, and anything longer
-is not a nine-minute call.
+One entry per item in the brief — three, normally. The manifest is the list
+the return leg applies from; an item the brief skipped must not appear here.
 
 ### 6. Park the paper for wake-up
 

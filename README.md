@@ -34,23 +34,28 @@ workflow that are not a screen.
 
 03:00  --- woke after 4h20m ---  NIGHTLY ~/code/your-repo
        $ screenless call "<brief>" --at
-       ✓ parked — calling +31612345678 at 08:00 · 14 PRs open, 6 need you
+       ✓ parked — calling +31612345678 at 08:00 · 14 PRs open, 3 need you
 
 08:00
-agent  Morning. Six decisions, about nine minutes. First one:
-       HYR2-441 adds a `notes` field to candidates. The agent
-       put it in a JSONB column. Separate table or leave it?
+agent  Morning. Three things today, the paper has the rest.
+       The first is the candidate notes field — the intake form
+       writes it, nothing reads it yet. The agent put it in a
+       JSONB column on candidates rather than its own table.
+       Shall I go on, or is there something you want first?
 you    What else reads it?
-agent  Nothing yet. It's write-only from the intake form.
-you    Leave it. Revisit when something queries it.
-agent  Got it — JSONB stays, revisit on first read. Next:
-       HYR2-448 changes the default page size from 25 to 100 —
+agent  Nothing. Write-only from the intake form, and the PR says
+       so. So: separate table now, or leave it until something
+       queries it?
+you    Leave it. Revisit on first read.
+agent  Leave it, revisit on first read. The second one is in the
+       export ticket, and it's really about page size —
 you    Wait, why is that in a ticket about export?
-agent  It isn't scoped there. Split it out, or leave it?
+agent  It isn't scoped there; the agent says so itself. Split it
+       out, or leave it?
 you    Split it, and hold the export PR until that's gone.
 ...
 
-✓ 6 decisions · 8m41s · nothing changed yet
+✓ 3 decisions · 9m10s · nothing changed yet
 
 08:09  --- woke after 5h9m ---  APPLY 5ef8e342
        $ screenless transcript --json
