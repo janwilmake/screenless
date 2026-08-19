@@ -330,7 +330,7 @@ async function setup(args: string[]): Promise<void> {
 
     if (existsSync(join(cwd, ".git"))) {
       const yes = (
-        await rl.question(`\nSet up the nightly loop for ${c.bold(basename(cwd))}? ${c.dim("Y/n")}: `)
+        await rl.question(`\nPoint the loop at ${c.bold(basename(cwd))}? ${c.dim("Y/n")}: `)
       ).trim().toLowerCase();
       if (yes !== "n" && yes !== "no") {
         await init([cwd]);
@@ -341,6 +341,7 @@ async function setup(args: string[]): Promise<void> {
     }
 
     console.log(`\nTry: ${c.cyan('screenless test')} ${c.dim("— a demo call, right now")}`);
+    console.log(`Then, in Claude Code: ${c.cyan('/screenless start')} ${c.dim("— arm the loop, and leave the session open")}`);
   } finally {
     rl.close();
   }
@@ -463,17 +464,14 @@ function statePath(): string {
 }
 
 /**
- * Is there a finished call whose decisions have not been acted on?
- *
- * Written to be driven by a script every few minutes, so the quiet path is the
- * fast one: the Worker answers 204 when nothing is newer than what we have,
- * and this exits 3 without allocating anything worth mentioning.
- *
- * Exit codes: 0 there is work, 3 there is not, 1 something broke.
+ * The one question behind both `collect` and `wait`: is there a finished call
+ * newer than the last one applied? Null means no — including offline, a
+ * Worker hiccup, or no session at all, because none of those is worth waking
+ * anyone for and the next probe retries.
  */
-async function collect(args: string[]): Promise<void> {
+async function unappliedCall(): Promise<CallStatus | null> {
   const cfg = await config.load();
-  if (!cfg) exit(3);
+  if (!cfg) return null;
 
   const state = await readState();
   const since = state.applied ? `?since=${encodeURIComponent(state.applied)}` : "";
@@ -484,16 +482,27 @@ async function collect(args: string[]): Promise<void> {
       headers: { Authorization: `Bearer ${cfg.token}` },
     });
   } catch {
-    // Offline is not an error worth waking anyone for; the next tick retries.
-    exit(3);
+    return null;
   }
-
-  if (res.status === 204 || res.status === 404) exit(3);
-  if (!res.ok) exit(3);
+  if (!res.ok) return null;
 
   const call = (await res.json()) as CallStatus;
-  if (!call.done || call.callId === state.applied) exit(3);
+  if (!call.done || call.callId === state.applied) return null;
+  return call;
+}
 
+/**
+ * Is there a finished call whose decisions have not been acted on?
+ *
+ * The quiet path is the fast one: the Worker answers 204 when nothing is newer
+ * than what we have, and this exits 3 without allocating anything worth
+ * mentioning. `wait` is the usual caller; this stays for scripts and by hand.
+ *
+ * Exit codes: 0 there is work, 3 there is not.
+ */
+async function collect(args: string[]): Promise<void> {
+  const call = await unappliedCall();
+  if (!call) exit(3);
   const out = { ready: true, callId: call.callId, status: call.status, transcript: call.transcript ?? [] };
   console.log(args.includes("--json") ? JSON.stringify(out, null, 2) : call.callId);
 }
@@ -509,6 +518,164 @@ async function applied(args: string[]): Promise<void> {
   if (!callId) die("usage: screenless applied <callId>");
   await writeState({ ...(await readState()), applied: callId });
   console.log(`${c.green("✓")} ${callId} marked applied`);
+}
+
+/* ------------------------------------------------------------------- wait */
+
+/**
+ * The gate the armed session blocks on.
+ *
+ * `screenless wait` probes every minute, in this process and without a model,
+ * and exits the moment there is something for the agent to do. It is run as a
+ * background command inside a Claude Code session: the exit is what wakes the
+ * model, so a quiet night costs no turns at all, and the work that follows runs
+ * with the permissions, MCPs and browser the session already has. This is why
+ * there is no launchd job and no `claude -p` any more — a scheduler outside
+ * the session had none of those, and four nights of it produced nothing.
+ *
+ * Two reasons to wake, printed one per line:
+ *
+ *   NIGHTLY <repo>     it is past the nightly hour and no edition has been
+ *                      stamped for today; one line per registered repo. This
+ *                      is also the catch-up: a laptop shut at 03:00 and opened
+ *                      at 08:40 wakes into exactly this line.
+ *   APPLY <callId>     a call finished and nobody has applied its decisions.
+ *
+ * The stamp is written here, when NIGHTLY is handed over, not when the run
+ * finishes. A crash mid-run must not become four more attempts over breakfast;
+ * a missed night is cheaper than four papers and four phone calls.
+ *
+ *   --once      one probe, print, exit — the tick a heartbeat loop runs
+ *   --peek      like --once but never stamps — for "what would it do?"
+ *   --max <s>   give up after this long and exit anyway, so the session
+ *               re-arms; never wait forever (default 2400)
+ *   --interval <s>   seconds between probes (default 60)
+ *
+ * SCREENLESS_FORCE=1 treats tonight as not yet run, whatever the stamp says.
+ */
+const NIGHTLY_AT = process.env.SCREENLESS_NIGHTLY_AT ?? "03:00";
+
+function stateDir(): string {
+  return process.env.SCREENLESS_STATE_DIR ?? `${process.env.HOME}/.screenless`;
+}
+
+/** Today's date and wall-clock minute, in the machine's own zone. */
+function localNow(): { date: string; minute: number; clock: string } {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    minute: d.getHours() * 60 + d.getMinutes(),
+    clock: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+async function registeredProjects(): Promise<string[]> {
+  const { readFile } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  try {
+    const list = JSON.parse(await readFile(`${stateDir()}/projects.json`, "utf8")) as unknown;
+    if (!Array.isArray(list)) return [];
+    return list.filter((p): p is string => typeof p === "string" && existsSync(p));
+  } catch {
+    return [];
+  }
+}
+
+interface Probe {
+  /** Lines for the model. Empty means nothing to do. */
+  work: string[];
+  /** Why not, when there is nothing — one clause per thing checked. */
+  quiet: string;
+  /** True when the work includes tonight's run, so the caller can stamp it. */
+  nightly: boolean;
+}
+
+async function probe(): Promise<Probe> {
+  const { readFile } = await import("node:fs/promises");
+  const now = localNow();
+  const work: string[] = [];
+  const quiet: string[] = [];
+
+  // --- tonight's run ---
+  const [h, m] = NIGHTLY_AT.split(":").map(Number);
+  const dueMinute = (h ?? 3) * 60 + (m ?? 0);
+  const projects = await registeredProjects();
+  let stamp = "";
+  try {
+    stamp = (await readFile(`${stateDir()}/last-run`, "utf8")).trim();
+  } catch {
+    /* never run */
+  }
+  const forced = process.env.SCREENLESS_FORCE === "1";
+  if (projects.length === 0) quiet.push("no projects registered");
+  else if (stamp === now.date && !forced) quiet.push(`tonight's run already done (${stamp})`);
+  else if (now.minute < dueMinute && !forced) quiet.push(`nightly at ${NIGHTLY_AT}, it is ${now.clock}`);
+  else for (const p of projects) work.push(`NIGHTLY ${p}`);
+
+  // --- a call to act on ---
+  const call = await unappliedCall();
+  if (call) work.push(`APPLY ${call.callId}`);
+  else quiet.push("no unapplied call");
+
+  return { work, quiet: quiet.join("; "), nightly: work.some((l) => l.startsWith("NIGHTLY ")) };
+}
+
+async function stampTonight(): Promise<void> {
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await mkdir(stateDir(), { recursive: true, mode: 0o700 });
+  await writeFile(`${stateDir()}/last-run`, localNow().date);
+}
+
+async function wait(args: string[]): Promise<void> {
+  const once = args.includes("--once") || args.includes("--peek");
+  const peek = args.includes("--peek");
+  const interval = Number(argFlag(args, "--interval") ?? process.env.SCREENLESS_WAIT_INTERVAL ?? 60) * 1000;
+  const max = Number(argFlag(args, "--max") ?? process.env.SCREENLESS_WAIT_MAX ?? 2400) * 1000;
+
+  // Printed before anything it says, so a reader of the transcript knows which
+  // machine clock the NIGHTLY line was judged against.
+  const hand = async (p: Probe) => {
+    if (p.nightly && !peek) await stampTonight();
+    console.log(`now: ${localNow().date} ${localNow().clock} ${machineTimezone() ?? "local"}`);
+    for (const line of p.work) console.log(line);
+  };
+
+  if (once) {
+    const p = await probe();
+    if (p.work.length) await hand(p);
+    else console.log(`NO - ${p.quiet}`);
+    return;
+  }
+
+  const dur = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`);
+  const started = Date.now();
+  console.log(`waiting for work - probe every ${dur(interval)}, give up after ${dur(max)}`);
+
+  // Heartbeat when the reason changes, and every ten minutes regardless — the
+  // digits are stripped from the key so a ticking clock does not print a line
+  // a minute and bury the one that matters.
+  let lastKey = "";
+  let lastPrint = 0;
+  for (;;) {
+    const p = await probe();
+    if (p.work.length) {
+      console.log(`--- woke after ${dur(Date.now() - started)} ---`);
+      await hand(p);
+      return;
+    }
+    const key = p.quiet.replace(/[0-9.:]/g, "");
+    if (key !== lastKey || Date.now() - lastPrint >= 600_000) {
+      console.log(`${new Date().toISOString().slice(11, 16)}Z NO - ${p.quiet}`);
+      lastKey = key;
+      lastPrint = Date.now();
+    }
+    if (Date.now() - started >= max) {
+      console.log(`--- still nothing after ${dur(Date.now() - started)}, re-arm ---`);
+      return;
+    }
+    await sleep(interval);
+  }
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -837,7 +1004,7 @@ async function init(args: string[]): Promise<void> {
   }
 
   // The registry is append-only and deduped: registering twice is a no-op
-  // rather than a second nightly run against the same repo.
+  // rather than a second paper about the same repo.
   const dir = join(homedir(), ".screenless");
   const registry = join(dir, "projects.json");
   await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -851,9 +1018,9 @@ async function init(args: string[]): Promise<void> {
   if (!projects.includes(repo)) {
     projects.push(repo);
     await writeFile(registry, `${JSON.stringify(projects, null, 2)}\n`);
-    console.log(`${c.green("✓")} registered ${c.bold(basename(repo))} for the nightly run`);
+    console.log(`${c.green("✓")} registered ${c.bold(basename(repo))} for the loop`);
   } else {
-    console.log(c.dim(`  already registered for the nightly run`));
+    console.log(c.dim(`  already registered for the loop`));
   }
 
   console.log(`\n  ${projects.length} project${projects.length === 1 ? "" : "s"} in ${c.dim(registry)}`);
@@ -879,10 +1046,11 @@ ${c.bold("Usage")}
   screenless call "<prompt>" [options]       call now, or park it for later
   screenless test                            ring me now with a demo call
   screenless transcript [--wait] [--json]    what was decided on the last call
+  screenless wait [--once|--peek]            block until there is work for the agent
   screenless collect [--json]                is there a call not yet acted on?
   screenless applied <callId>                mark a call's decisions as done
   screenless settings [--at HH:MM]           when the morning call goes out
-  screenless init [path]                     configure a repo for the nightly loop
+  screenless init [path]                     configure a repo for the loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
   screenless email                           confirm where the paper is sent
   screenless whoami                          show the verified number
@@ -915,6 +1083,14 @@ ${c.bold("What the call does not do")}
   your decisions; your own loop reads ${c.dim("screenless transcript --json")} afterwards
   and is what actually merges, comments and closes.
 
+${c.bold("Wait options")}
+  (none)               block until tonight's run is due or a call has finished,
+                       probing every 60s; prints NIGHTLY <repo> / APPLY <id>
+  --once               one probe, print, exit — the tick of the hourly loop
+  --peek               like --once, but never marks tonight's run as taken
+  --max <secs>         exit anyway after this long so the session re-arms
+                       (default 2400)
+
 ${c.bold("Mail options")}
   --at HH:MM           next occurrence of that local time (default: now)
   --subject <text>     override the subject line
@@ -946,6 +1122,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   transcript,
   collect,
   applied,
+  wait,
   settings,
   init,
   mail,
