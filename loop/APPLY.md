@@ -83,6 +83,22 @@ done as the user, with the access they already have.
 - Move a ticket, or open a follow-up one.
 - Request a review, assign, set a milestone.
 
+**Sign every pull request comment, and name the tickets you already opened.**
+Other loops read these pull requests — the nightly orchestrator treats any
+comment it did not write as a person talking to it, and answers. That is what
+you want, because the caller *is* talking to it. What you must not leave it
+guessing is which work is already ticketed. So a comment on a pull request
+starts with the marker line, and carries the ids when the apply opened any:
+
+```markdown
+<!-- ☎️ screenless call 8a45af48 -->
+Already ticketed: PLAT-501, PLAT-502
+```
+
+Open the ticket **before** you write the comment, so its id can go in. Without
+that line the other loop reads the same question as unticketed and opens a
+second ticket for it — seen on a real run, one minute apart.
+
 **Merging is different, and gets a second gate.**
 
 Merge only when the transcript is unambiguous about *that specific pull
