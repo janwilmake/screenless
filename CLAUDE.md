@@ -4,52 +4,18 @@ Instructions for any agent working in this repo.
 
 ## Always record intent
 
-Every session gets a file in [`intent/`](intent/README.md) holding the user's
-prompts verbatim. This is not optional and not an end-of-session chore.
+This repo follows the [intent convention](https://github.com/janwilmake/intent)
+— it was extracted from this very folder. The `/intent` skill is the law:
+every session gets a file in [`intent/`](intent/README.md) with the prompts
+verbatim and the author, topped up early, on every correction, and at the end;
+reversals resolve into [`intent/SUMMARY.md`](intent/SUMMARY.md) immediately;
+the pre-push gate refuses code with no intent beside it. Run `/intent` before
+pushing, `/intent resolve` when the summary lags.
 
-**When to write:**
-
-1. **Early.** Once the session has a shape — usually after the second or third
-   prompt — create `intent/YYYY-MM-DD-session-N-short-slug.md` and write what
-   has been said so far.
-2. **Intermittently.** Top it up as the session goes. A good trigger: if you
-   notice several prompts have landed since the last update, or the user
-   changes direction, append before continuing. Do not wait to be asked, and do
-   not wait for the end — sessions end by running out of context or by the user
-   closing the terminal, and neither gives you a chance to catch up.
-3. **On any correction.** If the user tells you something you built is wrong,
-   that prompt is the most valuable line in the file. Record it with the
-   correction intact.
-4. **Resolve it into [`intent/SUMMARY.md`](intent/SUMMARY.md)** at the end of
-   the session — and immediately whenever an instruction *reverses* an earlier
-   one, rather than waiting. Sessions end by running out of context or by the
-   terminal closing, so "at the end" is a thing you often do not get to do; a
-   reversal recorded late is a summary that quietly disagrees with the code.
-
-   SUMMARY.md keeps the winning version of each instruction, notes what it
-   replaced, and marks every line **built**, **built but never run**, or **not
-   built**. Keep the middle value honest — most of a young product is written
-   and unexercised, and a summary that flattens that distinction is worse than
-   none. Update its "Last updated" line to name the newest prompt it covers,
-   and keep the two standing sections current: *Missing intent* for what was
-   asked and is not there, *Assumptions* for what you decided without being
-   asked.
-
-**How to write it:**
-
-- Prompts verbatim, typos and all. Prefix each with its `HH:MM` in UTC.
-- A short header written after the fact: what landed in the code, what is still
-  open, and where the session drifted. Keep it honest — a session that spent an
-  hour on a dead end should say so.
-- Record answers to your own questions inline, marked as answers.
-- Redact secrets from anything pasted: API keys, tokens, phone numbers.
-- Add the session to the table in `intent/README.md`.
-
-**Where prompts come from if you lose them:** `~/.claude/history.jsonl`, one
-JSON object per line with `display`, `timestamp`, `project` and `sessionId`.
-Filter by `sessionId`. Note that `project` is the directory Claude was started
-in, which for this repo's early history is the *parent* directory and the old
-name, `voxcall`.
+Repo-specific: the early history predates the rename — sessions before
+15 August live under the *parent* directory and the old name, `voxcall`, in
+`~/.claude/history.jsonl` and `~/.claude/projects/`. Pass
+`--also <flattened-old-path>` to the seed scanner if you ever re-mine.
 
 ## Ops tasks are your job too
 

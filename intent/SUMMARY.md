@@ -1,8 +1,8 @@
 # Intent, resolved
 
-**Last updated 19 August 2026** — covers sessions 1–6, through the 20:3x
-prompt in session 6 ("no dont call me tomorrow"). If the session files carry prompts newer than that, this document is
-behind them and they win.
+Last updated: 2026-08-20 — covers sessions 1–7, through the 05:42 prompt in
+session 7. If the session files carry prompts newer than that, this document
+is behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
 where an instruction was later replaced, only the replacement is listed, with
@@ -94,7 +94,7 @@ product, never executed against reality · **not built**.
 
 | Intent | Status |
 |---|---|
-| Record every prompt verbatim in `intent/`, topped up during the session | built |
+| Record every prompt verbatim in `intent/`, topped up during the session | built — and extracted into its own product, the [intent](https://github.com/janwilmake/intent) skill, in session 7: seeding from transcripts, authorship, inline sources, a weekly summary contract, and a pre-push gate |
 | No API keys or private details in the repo | built |
 | Do ops work in the browser rather than handing back instructions | built |
 | Sign in as `wijnand@hyre.io` via Google SSO for Resend and Telnyx — **not** Cloudflare | built |
