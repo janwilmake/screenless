@@ -1,7 +1,7 @@
 # Intent, resolved
 
-Last updated: 2026-08-20 — covers sessions 1–7, through the 05:42 prompt in
-session 7. If the session files carry prompts newer than that, this document
+Last updated: 2026-08-20 — covers sessions 1–8, through the 06:12 prompt in
+session 8. If the session files carry prompts newer than that, this document
 is behind them and they win.
 
 Every instruction given across both sessions, collapsed to its final form —
@@ -80,6 +80,7 @@ product, never executed against reality · **not built**.
 | Nothing lost if the laptop never wakes | built — the Worker keeps the transcript 24 h; the transcript email that proved this in session 2 was removed at the user's request in session 6 |
 | The machine acts on the decisions | **built and proven** — 19 Aug: comments on #792 and #791 from the transcript, merges withheld |
 | A proactive inbound call is acted on just as fast | built, unrun — the collector keys on "newer than last applied", not on expectation |
+| A comment the apply leg writes on a pull request is signed, and names the tickets it already opened | built, unrun — `<!-- ☎️ screenless call <id> -->` plus an `Already ticketed:` line, added in session 8 after the nightly orchestrator read an unsigned one as a person and opened a second ticket for the same question |
 
 ## Money
 
