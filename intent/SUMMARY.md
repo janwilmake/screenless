@@ -1,6 +1,6 @@
 # Intent, resolved
 
-Last updated: 2026-08-21 — covers sessions 1–9, through the 18:40 prompt in
+Last updated: 2026-08-21 — covers sessions 1–9, through the 22:08 prompt in
 session 9. If the session files carry prompts newer than that, this document
 is behind them and they win.
 
@@ -29,6 +29,8 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
 | The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
+| One store: KV removed entirely — settings on the user row, briefs/calls/watchers/outbox/codes/counters as tables, the team queue a *query* over calls, edition PDFs in R2 *(was: KV beside D1, two consistency models, and an org-queue array to maintain)* | **built and proven** — deployed, settings migrated, every CLI surface and a synthetic queued call re-verified on the new store |
+| One work channel: `screenless watch` delivers every finished call; `collect`/`applied`, the local state file and the `?since` protocol deleted *(was: a per-user APPLY channel beside the team watcher)* | built — `wait` now gates only the nightly; loop skill updated |
 
 ## Teams
 
@@ -39,6 +41,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | One page at screenless.sh/team — sign-in, roster, invites, accept flow and billing as states of a single document | **built and proven** — exercised in the browser end to end |
 | Invite by **email only**; the invitee fills in and verifies their own phone on accept *(was: admin enters phone and email, invite by text + email)* | **built and proven** — invite sent, accepted, member created pending phone |
 | A wrongly typed phone must never strand anyone: re-enter and re-verify any time, before or after accepting | built — the pending number lives server-side until verified; "change your number" re-runs the same flow |
+| Verifying a number that is on another account takes it over; the old account is disconnected *(was: refused with "already on another account")* | built — the OTP proves possession; the old holder loses the phone and every CLI token minted for it |
 | A reminder email a day later if the phone is still unverified — email only, once | built, unrun — cron sweep, marked before send |
 | Invites valid seven days; expired ones still shown as that person, marked expired | built — expiry state exercised only as "fresh" |
 | The page shows who invited you, by name and email | **built and proven** |
@@ -52,7 +55,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | Billing per organization, pay-as-you-go: ~$10 free credit up front, then usage *(was: $99/month, 7-day trial, card up front)* | **built and proven** — $10 granted on first sight in production |
 | Price at roughly double the cost | built — 30¢/min (`PRICE_PER_MINUTE_CENTS`), against ~7–15¢ COGS |
 | Billing tab, visible to admins only: credit used and left, per-day statistics, who calls/costs most | built — rendered live with the grant; call stats have no calls to show yet |
-| Topping up | built — Stripe Checkout one-time payments; sandbox page reached, no payment completed; webhook + poll-reconcile both credit idempotently |
+| Topping up | built — **Stripe is live** (keys set by the user; a `cs_live_` Checkout session created and verified); no real payment made yet, and the live webhook endpoint's event list is unverified — the billing page's own poll covers it either way |
 | Calls debit the org by the minute when they complete | **built and proven** — a 50s demo call billed 25¢ and two ring-ins 11¢ and 8¢, all in the ledger |
 
 ## The call
@@ -122,13 +125,14 @@ Things asked for that the product does not yet do, or has not yet proven.
    at 21:38 on 21 Aug: a ring-in pressed 1, met the parked brief's assistant,
    and the conversation was routed to the watcher. Every leg of the line has
    now carried a real call.
-3. **Stripe is in test mode**, so a topup cannot actually be paid. The old
-   webhook endpoint also still subscribes to subscription events and may not
-   subscribe to `checkout.session.completed` — unverified; the billing page's
-   poll-reconcile covers the gap either way.
+3. ~~Stripe is in test mode.~~ Live keys are in and a live Checkout session
+   was created. Still open: no real payment has run, and whether the live
+   webhook endpoint subscribes to `checkout.session.completed` is unverified
+   — the billing page's poll-reconcile covers the gap either way.
 4. **The deep dive and new figures are unrendered**; no edition has used them.
-5. **Old-model leftovers in Stripe/KV**: the $99 product, test subscriptions
-   and `sub:`/`pending:` KV records are dead weight, harmless but unswept.
+5. **Old-model leftovers**: the $99 test-mode product in Stripe, and the now
+   entirely unused KV namespace (kept as a backup of pre-migration state;
+   delete it once a quiet week has passed).
 6. **The pending invite left by this session's test** — jan@wilmake.com sits
    in "My team" as a phone-unverified member; tomorrow's cron will send the
    first real reminder email. A live test, but also cleanup nobody asked for.
@@ -187,7 +191,11 @@ Decisions taken without a specific instruction, each reversible cheaply.
   stored.
 - Watcher heartbeats live 90 s; polls every 10 s double as heartbeats; ties in
   routing break by earliest start, then id.
-- Queued calls are capped at 50 per org and their records kept 7 days;
+- Storage: the `stash` and `counters` tables are KV-shaped leftovers in SQL;
+  expiry is one cron sweep instead of KV TTLs; a confirmed paper email now
+  *is* the account email, so confirming an address another account holds is
+  refused rather than silently shared.
+- Queued calls are read 20 at a time per org and their records kept 7 days;
   nothing is ever acked on display — only `screenless done` after the work
   ran, so every call is at-least-once *(was: a display mode that acked on
   print, dropped with the never-ending default)*.

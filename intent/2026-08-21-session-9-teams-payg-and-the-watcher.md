@@ -91,3 +91,15 @@ a wrongly-typed number can never receive its own verification text.
   *(the 21:34 ring-in woke the agent through the exiting watcher — the full loop live)*
 - 21:40 — `perfect. can u once more go over all my feature requests and show in a table how far we are implementing`
 - 21:48 — `move stripe out of testmode to real. also how's the codebase complexity? is there anything we could simplify? how many loc and where does this go?`
+  *(Stripe blocked: the Chrome extension has no permission for dashboard.stripe.com, and account activation needs business details only the user may enter)*
+
+- 22:02 — `also, i added the secrets ofr stripe`
+
+- 22:05 — `wtf? i accepted the invite on wijnand@hyre.io but i didn't enter the right organisation, im in my own org now. also if i verify my phone and its already on another account i should be able to take it over and the phone from the other account should be disconnected.`
+  *(first half was test residue — the agent's remove-member test had parked that account in a solo org and the invite link was already consumed; moved back by hand. Second half is a rule change: verifying a number takes it over — the OTP proves possession — and the old account loses the phone and its CLI sessions.)*
+
+- 21:58 — `do all options. remove kv fully, it can all go to users table right?`
+  *(all three simplifications: collapse the two work channels into the watcher, fold settings into users, delete the orphaned paid.html — plus the full KV removal: everything to D1 except the parked edition PDFs, which go to R2 because a 12MB attachment does not belong in a SQL row)*
+
+- 22:08 — `hmm interesting does the move from kv to sql make it more complex? more lines, harder to read? how many tables does it add? is sql really needed or sis kv better?`
+  *(answered mid-flight: slightly more lines — six new tables, ~250 lines of accessors — but one storage system instead of two, strong consistency exactly where "never lose a request" needs it, and the org queue stops being a maintained structure and becomes a query. Continued on that basis.)*
