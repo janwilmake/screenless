@@ -597,7 +597,12 @@ function inviteFlow() {
 function renderMain() {
   var me = S.me;
   document.getElementById('orgcrumb').textContent = '\\u00b7 ' + me.org.name;
-  document.getElementById('whoami').textContent = me.user.email || me.user.phone || '';
+  document.getElementById('whoami').innerHTML =
+    esc(me.user.email || me.user.phone || '') + ' \\u00b7 <a href="#" id="signout">sign out</a>';
+  document.getElementById('signout').onclick = function (e) {
+    e.preventDefault();
+    api('/logout', {}).then(function () { S.me = null; S.tab = 'team'; renderLogin(); });
+  };
   var html = '';
 
   if (me.isAdmin) {
