@@ -1,17 +1,18 @@
 ---
 name: screenless
-description: The screenless loop, armed in a Claude Code session. Waits in pure shell until there is work — 03:00 (or the first wake after it), or a finished morning call — then reads the repo's tickets, pull requests and code once and produces both surfaces from that one pass: the printable paper, mailed to land at wake-up, and the call brief, dialled at the user's call time; after a call, applies what was decided. Modes: start (arm it), tick, status, stop. Use when the user says "start screenless", "arm the loop", "run the nightly loop", "build tonight's edition", "prepare my morning call", or "apply the decisions".
+description: The screenless loop, armed in a Claude Code session. Waits in pure shell until there is work — 03:00 (or the first wake after it), or a call landing in the watcher — then reads the repo's tickets, pull requests and code and produces the surfaces due: the call brief every night, dialled at the user's call time, and the weekly team edition on Saturday's run, mailed to land Saturday morning; after a call, applies what was decided. Modes: start (arm it), tick, status, stop. Use when the user says "start screenless", "arm the loop", "run the nightly loop", "build the weekly edition", "prepare my morning call", or "apply the decisions".
 ---
 
 # screenless — the loop
 
-One run, one context, two surfaces — and the return leg after the call.
+One loop, two cadences — and the return leg after the call.
 
-The paper answers *what is my product becoming?* The call answers *what do I
-need to decide today?* They are built together because they are built from the
-same reading: the same tickets, the same diffs, the same judgement about what
-mattered last night. Building them separately means paying for that reading
-twice and — worse — letting the two disagree about what the week was about.
+The call answers *what do I need to decide today?* and is built **every
+night**. The paper answers *what is my product becoming?* and is built **once
+a week, on Saturday's run**, to land Saturday morning — a weekend read about
+the team's week, not a daily status sheet. On the six plain nights the reading
+is scoped to the brief; on Saturday the same sitting reads wider — the whole
+week, everyone's work, and what is coming — and produces both.
 
 ## Modes
 
@@ -96,8 +97,10 @@ the user can interrupt it.
 
    - `NO - <reason>` — say the reason in one line and stop.
    - `NIGHTLY <repo>` — run **one night** (below) for that repo, `cd` there
-     first. Several lines means several repos; do them one after another, and
-     one failing must not cost the others their paper.
+     first: the brief always, and the weekly edition when it is Saturday's
+     run (or the edition was missed — see *One night*). Several lines means
+     several repos; do them one after another, and one failing must not cost
+     the others their brief.
    - `WORK <callId>` — printed by the watcher, with the call above it. A
      `request` is a teammate's spoken instruction, transcribed: treat the text
      as a prompt from them, do the work in this repo, and reply the way the
@@ -177,8 +180,16 @@ nobody answers twice.
 The toolkit this section calls lives next to this file, at
 `~/.claude/skills/screenless/press/` — write `press/…` below as that path.
 
-Steps 1–4 are the shared pass. Do them once. Step 5 splits the result into the
-two surfaces; steps 6–7 deliver them.
+**First decide whether tonight is an edition night.** The edition is weekly:
+build it when the machine's local date is **Saturday**, or when the newest
+edition PDF in `outDir` is more than seven days old (the catch-up for a
+Saturday the laptop slept through). Every other night, do only the brief-sized
+share of the reading — steps 1–4 scoped to what the call needs (this week's
+PRs and tickets, code for the three items) — then steps 5b, 5c and 7.
+
+On an edition night, steps 1–4 are the shared pass over the whole week. Do
+them once. Step 5 splits the result into the two surfaces; steps 6–7 deliver
+them.
 
 ### 1. Check the ground is readable
 
@@ -204,6 +215,9 @@ Use the tracker MCP named in the config. For `trackerTeam`:
 
 - every ticket **In Progress** or **In Review**
 - every ticket moved to **Done** inside the window
+- on an edition night, also the top of **Todo / Backlog** — ten or so, in the
+  tracker's own priority order. They feed the week-ahead page, and the point
+  is what is *about* to happen, not the archaeology of the whole backlog
 - for each: identifier, title, status, assignee, and the description — the
   description is where the *intent* lives, and intent is what a diff cannot
   tell you
@@ -234,7 +248,10 @@ each with enough background to be understood cold. Something can be
 interesting enough for a page and not important enough for the call. Almost
 nothing is the reverse.
 
-#### 5a. The edition
+#### 5a. The edition (Saturday only)
+
+The weekly team paper: what happened this week, who did it, and what is
+coming. It gives the state of the product, not one person's queue.
 
 Author `edition.json` next to the output PDF. Read `press/example/edition.json`
 before writing your first one. Structure, in order:
@@ -244,14 +261,23 @@ before writing your first one. Structure, in order:
    "Matching moved to the centre of the product" beats "Weekly summary".
 2. **A composition page** — treemap of what the product is made of.
 3. **A movement page** — churn by area, plus the ticket status bar.
-4. **The deep dive** — one or two pages explaining how *one thing in the
+4. **The week, by person** — who shipped what. `collect.mjs` emits `authors`
+   (commits, lines, areas per author); pair each teammate with the merged PRs
+   and tickets that were theirs, one caption each in the product's words, not
+   a commit count contest. A member with nothing merged is left out, not
+   called out.
+5. **The deep dive** — one or two pages explaining how *one thing in the
    product actually works today*. See below; this is the part of the paper
    worth the most and the part that takes real reading.
-5. **One page per ticket in flight**, four to six. Each gets a plain-language
+6. **One page per ticket in flight**, four to six. Each gets a plain-language
    caption, a figure that shows something structural about what the change
    touches, and — where one exists — the `decision` line naming what is needed
    from the reader.
-6. **An attention page** — PR ages, what is not moving, what is stale, which
+7. **The week ahead** — the forward look: open PRs by age and owner (what will
+   land or rot), and the top of the backlog in the tracker's priority order —
+   what the team is about to start. A `table` figure each; captions say what
+   to expect, not what to do.
+8. **An attention page** — PR ages, what is not moving, what is stale, which
    docs the week made wrong.
 
 #### The deep dive
@@ -382,13 +408,18 @@ there is one decision.
 One entry per item in the brief — three, normally. The manifest is the list
 the return leg applies from; an item the brief skipped must not appear here.
 
-### 6. Park the paper for wake-up
+### 6. Park the paper for Saturday morning
 
 ```bash
 screenless settings --json          # callAt, and the machine's timezone
 screenless mail <outDir>/<date>.pdf --at <that callAt, or a little before> \
-  --subject "screenless · <repo> · <date>"
+  --subject "screenless · <repo> · week of <date>"
 ```
+
+This step runs on the edition night only — which *is* Saturday's run, so the
+next occurrence of that wall-clock time is Saturday morning. On a late
+catch-up build (Sunday, say), park it for the next morning rather than
+pretending it is still Saturday; the subject keeps the week it covers.
 
 Read the settings here rather than in step 7: this step needs the call time
 too, and a step that depends on a value the *next* step fetches only works
@@ -433,7 +464,9 @@ Confirm what was parked, and when it will ring.
 ## When this runs
 
 Once a night, when `screenless wait` says `NIGHTLY` — at **03:00** machine
-time, or on the first probe after it. Two properties matter:
+time, or on the first probe after it. The brief is built every night; the
+edition only on Saturday's run (or the first run after a missed Saturday),
+so six nights out of seven are the cheap kind. Two properties matter:
 
 - **If the machine is asleep at 03:00, the run happens when it next wakes.**
   The waiter's `sleep 60` resumes with the lid, the probe sees no stamp for
@@ -445,7 +478,7 @@ time, or on the first probe after it. Two properties matter:
   crash mid-run is a missed night, not four papers and four phone calls.
 
 If a step fails, ship a shorter paper and a shorter call. A missing section is
-a finding; a missing paper is a broken product.
+a finding; a missing paper is a broken Saturday.
 
 ## What this deliberately does not do
 

@@ -103,6 +103,35 @@ function churn(since) {
   return { areas: tally(pairs), commits };
 }
 
+/**
+ * Who did what: per-author commits, churn, and the areas they worked in. The
+ * weekly edition is a team paper, and "changes from different team members"
+ * needs names against areas, not one anonymous churn total.
+ */
+function authors(since) {
+  const raw = run("git", ["log", `--since=${since} days ago`, "--numstat", "--format=%x00%aN"]);
+  const by = new Map();
+  let current = null;
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("\0")) {
+      const name = line.slice(1).trim();
+      current = by.get(name) ?? { commits: 0, lines: 0, areas: [] };
+      current.commits += 1;
+      by.set(name, current);
+      continue;
+    }
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+    if (!m || !current || isNoise(m[3])) continue;
+    const add = m[1] === "-" ? 0 : Number(m[1]);
+    const del = m[2] === "-" ? 0 : Number(m[2]);
+    current.lines += add + del;
+    current.areas.push([area(m[3]), add + del]);
+  }
+  return [...by.entries()]
+    .map(([name, a]) => ({ name, commits: a.commits, lines: a.lines, areas: tally(a.areas).slice(0, 5) }))
+    .sort((a, b) => b.lines - a.lines);
+}
+
 /** Commits per day for the window, oldest→newest. Feeds the masthead spark. */
 function commitsPerDay(window) {
   const raw = run("git", ["log", `--since=${window} days ago`, "--format=%aI"]);
@@ -271,6 +300,7 @@ const facts = {
     docs: comp.docs.slice(0, 60),
     docCount: comp.docs.length,
   },
+  authors: authors(DAYS),
   activity: {
     commitsLastWindow: short.commits,
     commitsLongWindow: long.commits,
