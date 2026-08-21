@@ -102,4 +102,10 @@ a wrongly-typed number can never receive its own verification text.
   *(all three simplifications: collapse the two work channels into the watcher, fold settings into users, delete the orphaned paid.html — plus the full KV removal: everything to D1 except the parked edition PDFs, which go to R2 because a 12MB attachment does not belong in a SQL row)*
 
 - 22:08 — `hmm interesting does the move from kv to sql make it more complex? more lines, harder to read? how many tables does it add? is sql really needed or sis kv better?`
-  *(answered mid-flight: slightly more lines — six new tables, ~250 lines of accessors — but one storage system instead of two, strong consistency exactly where "never lose a request" needs it, and the org queue stops being a maintained structure and becomes a query. Continued on that basis.)*
+  *(answered mid-flight: slightly more lines — six new tables, ~250 lines of accessors — but one storage system instead of two, strong consistency exactly where "never lose a request" needs it, and the org queue stops being a maintained structure and becomes a query. Continued on that basis. Measured afterwards: net +65 lines across the product.)*
+
+- 22:20 — `whats the diff btwn snake case rows and recordd shape?`
+- 22:24 — `how many lines we could save without hte convention`
+  *(~30–35 lines; the coercions and the INSERT column lists survive any naming, and the toll would move to the CLI's JSON API boundary rather than vanish)*
+- 22:26 — `no leave it, commit and push.`
+  *(decision: the snake_case column convention stays, mapping toll accepted)*
