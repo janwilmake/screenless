@@ -1,7 +1,7 @@
 # Intent, resolved
 
-Last updated: 2026-08-21 — covers sessions 1–9, through the 22:08 prompt in
-session 9. If the session files carry prompts newer than that, this document
+Last updated: 2026-08-22 — covers sessions 1–9, through the 00:05 prompt on
+22 Aug in session 9. If the session files carry prompts newer than that, this document
 is behind them and they win.
 
 Every instruction given across all sessions, collapsed to its final form —
@@ -14,17 +14,24 @@ product, never executed against reality · **not built**.
 
 ## The goal
 
-A phone line and a nightly paper for teams whose coding agents work overnight.
-Session 9 widened the "who": not one engineer but a team — one shared balance,
-one number to ring, and every call routed to whichever teammate's terminal is
-watching. The assistant on the phone still takes no action; the terminal does.
+A **programmable phone line for a team and its coding agents** — not a
+PR-review app. The line goes both ways: anyone rings in and it lands in a
+watching terminal; any command rings out to one, some, or all teammates. The
+morning PR briefing and the weekly paper are two *branded skills* built on the
+CLI, offered as examples of what the line can do; the CLI is the tooling
+anyone builds their own skills on. The voice still takes no action — it
+collects decisions and hands them to a terminal that acts. *(The product
+started, in session 1, as a solo morning PR call; session 9 turned it into
+team infrastructure, and its final prompt reframed it as tooling.)*
 
 ## The product
 
 | Intent | Status |
 |---|---|
 | Get the decisions coding agents are blocked on out of a screen and into a phone call | not built — `rounds` does not exist |
-| A **weekly** paper, landing **Saturday morning** — the team's week by member, the week ahead (open PRs and the top of the backlog), the state of the product *(was: nightly, single-person)* | built — skill cadence split (brief nightly, edition Saturdays), collector emits per-author facts; first Saturday edition unrun |
+| A **weekly** paper, landing **Saturday morning** — the team's week by member, the week ahead, the state of the product *(was: nightly, single-person)*; mailed to the whole team | built — cadence split, per-author facts, `--team` send; first Saturday edition unrun |
+| The paper and the morning brief are **two branded skills**, not the product; the CLI is tooling anyone builds skills on | built — reframed in the skill descriptions and the landing page; no third-party skill exists yet |
+| The landing page sells the team line and the tooling, not solo PR review; no false lines | **built and live** — rebuilt around the line + skills; the Stripe-cancel and caller-is-always-you falsehoods removed |
 | The call brief nightly and the edition weekly from the same Saturday sitting *(was: both nightly from one reading; before that, two loops)* | built, unrun |
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
 | The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
@@ -70,6 +77,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | Three items per call, dossier-shaped; assistant answers from the brief and says when it cannot | **built and proven** — the 22:10 call on 19 Aug |
 | Hang up on voicemail rather than brief it | **built and proven** |
 | CLI: `call "<prompt>"` blocks and returns the transcript | built |
+| `screenless call --to <who>` / `--all` dials any, some, or all teammates; each call queued, transcripts routed to watchers *(new — the founding "only ever dials your own verified number" widened to "only a verified number on your own team")* | **built and proven** — unknown/other-org/no-phone targets refused; `--all` dispatched a real call |
 | Auth by phone number + OTP; only ever dials the verified number | built |
 | Calls come from the Dutch number and it can be rung back | **built and proven** |
 | Telnyx, EU media anchoring, third-party voices chosen on latency, ten languages | built |
@@ -191,6 +199,11 @@ Decisions taken without a specific instruction, each reversible cheaply.
   stored.
 - Watcher heartbeats live 90 s; polls every 10 s double as heartbeats; ties in
   routing break by earliest start, then id.
+- Calling teammates: each is queued and routes by the callee-first rules, so
+  a dispatched briefing lands in the callee's own terminal, not the
+  initiator's — a sensible default, but a skill wanting all transcripts in one
+  place would need its own routing. Dispatch is rate-capped at 10/hour per
+  initiator on top of the org credit.
 - Storage: the `stash` and `counters` tables are KV-shaped leftovers in SQL;
   expiry is one cron sweep instead of KV TTLs; a confirmed paper email now
   *is* the account email, so confirming an address another account holds is

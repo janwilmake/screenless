@@ -136,3 +136,9 @@ a wrongly-typed number can never receive its own verification text.
 
 - 23:44 — `is there a max duration of the recording? there shouldnt be`
   *(the Record ceiling was 5 minutes; raised to the platform max of one hour — effectively no limit, since a voice note ends on hang-up, #, or the silence timeout anyway)*
+
+- 23:52 — `we need to rethink the value prop. is the landingpage still good?`
+  *(assessment: the page is a solo pitch and the product went team; the team line, calling, and the team paper are invisible, and the cancel-via-Stripe-portal FAQ line is false)*
+
+- 2026-08-22 00:05 — `fix the false lines and make it all about the team. thats the new product. btw the call via cli should also be able to call any,some or all team members. add that feature . this gives countless possibilities so therell be many more differnt uses for it yet to be discovered. the newspaper and the morning pr brief are just 2 of screenless's branded skills tht are great examples of what can be done with it, but anyone can make skills with this cli as tooling`
+  *(the repositioning: screenless is a programmable voice layer for a team and its agents, not a PR-review app. The paper and the morning brief are two branded example skills; the CLI is the tooling anyone builds skills on. New feature: `screenless call` can dial any / some / all teammates, not only yourself — so the founding "only ever dials your own verified number" invariant widens to "only ever dials a verified number on your own team". Landing page rebuilt around the team and the tooling; the false Stripe-cancel line and the caller-is-always-you framing removed.)*
