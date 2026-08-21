@@ -60,7 +60,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | Intent | Status |
 |---|---|
 | A ring-in gets a robot voice, not the assistant: "Press 1 to speak to the assistant or start talking to make your request." *(was: ring-ins always answered by the assistant)* | **built and proven** — three real ring-ins on 21 Aug; the first two found the bug (TeXML never calls a Record's action URL on hangup; the recording only arrives via recordingStatusCallback) |
-| Press 1 = the assistant with the parked brief, the same context as the morning call | built, unrun since the IVR rewrite |
+| Press 1 = the assistant with the parked brief, the same context as the morning call | **built and proven** — a 21:38 ring-in pressed 1, got the parked Hyre brief in Dutch, and the conversation landed in the watcher |
 | No keypress = a recording, transcribed, delivered as a request to the team's terminal — not a conversation | **built and proven** — two spoken requests transcribed by Telnyx Whisper and delivered |
 | Requests route to the right terminal: your own first (earliest if you have two), else any teammate's watcher | **built and proven** — synthetic call exercised own-first, standby and dead-watcher failover; two real requests then routed live |
 | Nothing gets lost when no watcher is up: the next watcher to spawn drains the backlog, one by one or in parallel as the agent chooses | built — queue holds seven days; `--gate` leaves a call unacked until `screenless done`, so it is re-handed rather than dropped |
@@ -118,11 +118,10 @@ Things asked for that the product does not yet do, or has not yet proven.
 1. **`rounds` — the actual product.** Pull-request ingestion, cross-repo
    triage, the "this needs your eyes" router. Session 1's premise, still
    packaging ahead of product.
-2. **The press-1 assistant path is the last unrun leg of the line.** The
-   record-a-request path, transcription, routing, debit and the watcher
-   hand-off were all proven with real calls on 21 Aug; connecting a ring-in
-   to the parked brief's assistant has not run since the IVR rewrite, and the
-   first morning where someone declines the call and rings back is its test.
+2. ~~The press-1 assistant path is the last unrun leg of the line.~~ Proven
+   at 21:38 on 21 Aug: a ring-in pressed 1, met the parked brief's assistant,
+   and the conversation was routed to the watcher. Every leg of the line has
+   now carried a real call.
 3. **Stripe is in test mode**, so a topup cannot actually be paid. The old
    webhook endpoint also still subscribes to subscription events and may not
    subscribe to `checkout.session.completed` — unverified; the billing page's

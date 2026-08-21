@@ -86,3 +86,8 @@ a wrongly-typed number can never receive its own verification text.
   *(the user's own shell ran the 19 Aug CLI, which predates `watch`; their install was updated in place)*
 - 21:33 — `I think you misunderstood me. I said at some point that the watcher should never stop, but of course that wouldn't bring it back to you. You should be activated when a new call enters. If it never stops, you will never be reactivated, right? This is a problem, and we should just go back to the old architecture where the watcher exits the moment it receives a transcript. That's the way it was, right?`
   *(reverses the never-ending default: `screenless watch` now always blocks until one call is delivered, prints it with WORK, and exits — the loop re-arming it is what never stops. The display+auto-ack mode and the --gate flag are gone.)*
+
+- 21:36 — `ok testing it now with a real call, arm the waiter`
+  *(the 21:34 ring-in woke the agent through the exiting watcher — the full loop live)*
+- 21:40 — `perfect. can u once more go over all my feature requests and show in a table how far we are implementing`
+- 21:48 — `move stripe out of testmode to real. also how's the codebase complexity? is there anything we could simplify? how many loc and where does this go?`
