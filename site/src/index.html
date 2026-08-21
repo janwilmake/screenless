@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screenless — review your agents' overnight pull requests by phone</title>
+<title>screenless — a phone line for your team and its coding agents</title>
 <!-- Kept under ~155 characters, which is where Google truncates. The old one
      ran to 192 and lost the price, which is the part people search for. -->
-<meta name="description" content="Your agents open pull requests overnight. A morning call finds the few that need you, and hands your decisions to your own agent. Free paper, $10 call credit free, then pay as you go.">
+<meta name="description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Free paper, $10 call credit, then pay as you go.">
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
-<meta property="og:title" content="Your agents wrote the code. You still make the calls.">
-<meta property="og:description" content="A morning phone call that walks the pull requests your agents opened overnight, and a weekly Saturday paper about your own codebase.">
+<meta property="og:title" content="Your agents write the code. Your team still makes the calls.">
+<meta property="og:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh/">
 <meta property="og:site_name" content="screenless">
@@ -19,10 +19,10 @@
 <meta property="og:image" content="https://screenless.sh/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="A newspaper masthead reading screenless, over the headline: your agents wrote the code, you still make the calls.">
+<meta property="og:image:alt" content="A newspaper masthead reading screenless, over the headline: your agents write the code, your team still makes the calls.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Your agents wrote the code. You still make the calls.">
-<meta name="twitter:description" content="A morning phone call that walks the pull requests your agents opened overnight, and a weekly Saturday paper about your own codebase.">
+<meta name="twitter:title" content="Your agents write the code. Your team still makes the calls.">
+<meta name="twitter:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
 <meta name="twitter:image" content="https://screenless.sh/og.png">
 <!-- The mark: an S of two half circles, a dot centred in each bowl. -->
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -44,7 +44,7 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "A morning phone call that walks the pull requests your coding agents opened overnight and takes your decisions on each, plus a weekly printed paper about your own codebase, landing Saturday morning. The call takes no action itself: your own agent, on your own machine, applies what you decided.",
+      "description": "A phone line for a team and its coding agents. Ring in and leave a spoken request that lands in whoever's terminal is watching, or dispatch a call to any, some, or all of your teammates from the CLI. The voice takes no action itself: transcripts route to a terminal on someone's own machine, which acts. The morning PR briefing and the weekly team paper are two branded skills built on the CLI; anyone can build their own.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
@@ -129,7 +129,15 @@
           "name": "What does cancelling look like?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "One command into Stripe's own portal. No email and no retention call — which would be a strange thing for us of all products to do."
+            "text": "There is nothing to cancel — it is pay-as-you-go, not a subscription. Stop calling and you stop spending; leftover credit just sits there. The paper keeps arriving, free, for as long as you want it."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a teammate misuse the line?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A request from a teammate runs on someone else's terminal, so we treat it as untrusted: it arrives marked as theirs, and the agent is told never to read personal data or secrets, never to leave the repo, and never to do anything irreversible without the operator's say-so. The line only ever dials verified numbers on your own team."
           }
         }
       ]
@@ -369,21 +377,22 @@
   <div class="top">
     <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
     <nav>
-      <a href="#call">the call</a>
+      <a href="#line">the line</a>
+      <a href="#skills">skills</a>
       <a href="#try">try it</a>
-      <a href="#paper">the paper</a>
       <a href="#price">price</a>
       <a href="#faq">faq</a>
     </nav>
   </div>
 
   <header class="hero">
-    <p class="for">For engineers whose agents open pull requests overnight</p>
-    <h1>Your agents wrote the code. You still make the calls.</h1>
+    <p class="for">For teams whose coding agents open more work than anyone can read</p>
+    <h1>Your agents write the code. Your team still makes the calls.</h1>
     <p class="stand">
-      Thirty-five pull requests land while you sleep and not one has been read
-      by a human. Five actually need you. Take those five on the phone at
-      eight — nine minutes, and the queue is decided before you open a laptop.
+      A phone line for your team and its coding agents. Ring in with a spoken
+      request and it lands in whoever's terminal is watching; dispatch a call
+      to any teammate, or all of them, from one command. The decisions get
+      made out loud, and your own agents do the work — no screen in the middle.
     </p>
 
     <div class="cmd">
@@ -392,21 +401,22 @@
     </div>
     <p class="fine">
       macOS or Linux · Node 20+ · Claude Code ·
-      <a href="/install">read the script first</a>
+      <a href="/install">read the script first</a> ·
+      <a href="/team">manage your team</a>
     </p>
 
     <div class="assure">
       <div>
-        <b>It runs on your machine</b>
-        <span>Through the MCPs you already connected</span>
+        <b>It runs on your machines</b>
+        <span>Through the MCPs your team already connected</span>
       </div>
       <div>
-        <b>Your code never leaves it</b>
+        <b>Your code never leaves them</b>
         <span>What we hold is a brief and a transcript</span>
       </div>
       <div>
         <b>The voice has no credentials</b>
-        <span>It cannot merge, write, or touch a repo</span>
+        <span>It collects decisions; it cannot touch a repo</span>
       </div>
     </div>
   </header>
@@ -415,45 +425,87 @@
     <p class="kicker">the problem</p>
     <h2>Agents made writing code cheap. They made deciding expensive.</h2>
     <p class="lede">
-      You did not adopt coding agents in order to become a full-time reviewer
-      of code you did not write. But that is the job now, and it arrives all at
-      once, before you have had coffee.
+      Your team did not adopt coding agents in order to spend its mornings
+      reviewing code nobody wrote. But that is the job now — and the deciding,
+      the dispatching, and the keeping-everyone-in-sync all happen at a screen,
+      one tab at a time.
     </p>
 
     <div class="cols">
       <div>
-        <h3>The queue outruns you</h3>
+        <h3>The queue outruns the team</h3>
         <p>
-          Overnight your agents open more work than one person can read before
-          standup. So it carries to tomorrow, and tomorrow it is bigger.
+          Overnight your agents open more work than anyone reads before
+          standup. It carries to tomorrow, and tomorrow it is bigger — for
+          everyone at once.
         </p>
       </div>
       <div>
-        <h3>So you merge on trust</h3>
+        <h3>The decisions stay stuck in chairs</h3>
         <p>
-          Not because you read it — thirty-five is not a number anyone reads.
-          The gap between <em>reviewed</em> and <em>approved</em> widens quietly,
-          and only ever shows itself in production.
+          The calls only a person can make — is this the right scope, does this
+          ship, who picks this up — wait for someone to be at a keyboard, in a
+          thread, in a meeting. So they wait.
         </p>
       </div>
       <div>
-        <h3>And the five are in there</h3>
+        <h3>A phone needs no screen</h3>
         <p>
-          Two fixes for the same bug that conflict. A gate that went green by
-          lowering the bar. Nothing marks them. Finding them is the whole job,
-          and it is the part nobody has time for.
+          A voice line can reach anyone on the team, collect what they decide,
+          and hand it straight to the agents that do the work. That is the one
+          medium in this workflow that isn't a screen.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="line">
+    <p class="kicker">the line</p>
+    <h2>One number. Your whole team, and every agent behind them.</h2>
+    <p class="lede">
+      screenless gives your team a phone line wired to the terminals it runs.
+      It goes both ways: anyone can ring in, and any command can ring out.
+    </p>
+
+    <div class="cols">
+      <div>
+        <h3>Ring in</h3>
+        <p>
+          A teammate calls the line and speaks — a request, a decision, an
+          idea. It is transcribed and routed to whoever's terminal is watching:
+          the caller's own first, any teammate's otherwise, and a queue that
+          holds up to a week when nobody is. Their agent picks it up and acts.
+        </p>
+      </div>
+      <div>
+        <h3>Ring out</h3>
+        <p>
+          <code>screenless call "…" --to alex@team.com</code>, or
+          <code>--all</code>. Dispatch a briefing to one teammate or the whole
+          team, and each conversation lands back in a terminal. It only ever
+          dials verified numbers on your own team.
+        </p>
+      </div>
+      <div>
+        <h3>Watch</h3>
+        <p>
+          Everyone runs <code>screenless watch</code> in a terminal. Calls
+          route to exactly one, so a team drains its queue together — and a
+          teammate's request arrives marked as theirs, weighed before it runs
+          with your access.
         </p>
       </div>
     </div>
   </section>
 
   <section id="call">
-    <p class="kicker">the call</p>
-    <h2>It reads everything. It asks about almost nothing.</h2>
+    <p class="kicker">a skill, live</p>
+    <h2>The morning PR briefing, for example.</h2>
     <p class="lede">
-      Your agents opened thirty-five pull requests last night and recorded a
-      hundred and ninety-three decisions they made on your behalf. Three of them
-      actually need you. Finding those three is the product.
+      One of the two skills we ship. Your agents opened thirty-five pull
+      requests overnight and recorded a hundred and ninety-three decisions they
+      made on your behalf. Three actually need a person. This is that call —
+      and it is just one thing the line can be pointed at.
     </p>
 
     <div class="call">
@@ -533,19 +585,39 @@
     </p>
   </section>
 
-  <section id="paper">
-    <p class="kicker">the paper</p>
-    <h2>And a newspaper about your own product, every night.</h2>
+  <section id="skills">
+    <p class="kicker">skills</p>
+    <h2>Two examples we ship. The tooling is yours.</h2>
     <p class="lede">
-      Not a changelog. A deep dive on how one part of your product actually
-      works today, built by reading the code — so a month away doesn't cost you
-      the thread. Free, forever, no card.
+      screenless is a CLI: verify a number, call it, dispatch to a team, watch
+      a terminal for what lands. A <em>skill</em> is a prompt that points those
+      primitives at a job. We ship two, as proof of what the line can do —
+      then it is yours to build the rest.
     </p>
 
-    <div class="sheet" aria-label="Example page from the weekly paper">
+    <div class="split">
+      <div>
+        <div class="what">the morning PR briefing</div>
+        <ul>
+          <li>Reads the night's pull requests and tickets on your machine</li>
+          <li>Calls each person about the few decisions that are theirs</li>
+          <li>Hands the transcript to your own agent, which does the work</li>
+        </ul>
+      </div>
+      <div>
+        <div class="what">the weekly paper</div>
+        <ul>
+          <li>A Saturday PDF: the team's week, by person, and the week ahead</li>
+          <li>A deep dive on how one part of the product works today</li>
+          <li>Mailed to the whole team — free, forever, no card</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sheet" aria-label="Example page from the weekly paper" style="margin-top:34px">
       <div class="sheet-top">
         <span class="sheet-name">screenless</span>
-        <span class="sheet-meta">2026-08-15 · edition 41</span>
+        <span class="sheet-meta">week of 2026-08-15 · edition 41</span>
       </div>
       <h4>Matching moved to the centre of the product this week</h4>
       <p class="sub">
@@ -554,19 +626,26 @@
       </p>
       <div class="stats">
         <div><div class="v">38</div><div class="l">open PRs</div></div>
-        <div class="spot"><div class="v">5</div><div class="l">need you</div></div>
+        <div class="spot"><div class="v">5</div><div class="l">need eyes</div></div>
         <div><div class="v">171</div><div class="l">merged, 7d</div></div>
-        <div><div class="v">36k</div><div class="l">lines waiting</div></div>
+        <div><div class="v">4</div><div class="l">shipped by</div></div>
       </div>
       <p class="cap">
         Printable, mostly picture, and short enough to finish with one coffee.
       </p>
     </div>
+
+    <p class="lede" style="margin-top:34px">
+      A standup that phones whoever missed it and collects their update. An
+      on-call line that reads a teammate the failing check and takes the call
+      on whether to roll back. A release gate that rings the reviewer. Same
+      four commands — the uses are yours to discover.
+    </p>
   </section>
 
   <section id="how">
     <p class="kicker">how it works</p>
-    <h2>It runs on your machine. That is the whole trick.</h2>
+    <h2>It runs on your team's machines. That is the whole trick.</h2>
 
     <div class="steps">
       <div class="step">
@@ -585,19 +664,19 @@
           <h3>The phone rings</h3>
           <p>
             Interruptible, in ten languages, and it hangs up when the queue is
-            drained. Decline it and ring back whenever suits — same brief,
-            same conversation.
+            drained. Decline it and the items roll into tomorrow; ring the line
+            any time to leave a spoken request instead.
           </p>
         </div>
       </div>
       <div class="step">
         <span class="n">08:09</span>
         <div>
-          <h3>Your agent does the work</h3>
+          <h3>An agent does the work</h3>
           <p>
             The voice has no tools and no credentials. It collects decisions and
-            hangs up; your own loop merges, comments and closes, with the access
-            you already gave it.
+            hangs up; the terminal it routes to merges, comments and closes,
+            with the access that machine already has.
           </p>
         </div>
       </div>
@@ -608,28 +687,29 @@
     <p class="kicker">the boundary</p>
     <h2>The voice on the phone cannot touch your code. On purpose.</h2>
     <p class="lede">
-      A hosted service cannot have your MCPs, your logged-in browser and your
-      Claude subscription without asking you for credentials nobody should hand
-      over. So it doesn't ask. It takes decisions and gives them back.
+      A hosted service cannot have your team's MCPs, logged-in browsers and
+      Claude subscriptions without asking for credentials nobody should hand
+      over. So it doesn't ask. It takes decisions and gives them back to a
+      terminal that already has the access — never to us.
     </p>
 
     <div class="split">
       <div>
-        <div class="what">what the call does</div>
+        <div class="what">what the line does</div>
         <ul>
-          <li>Reads out what your own agent found overnight</li>
-          <li>Asks only about what it could not settle for you</li>
-          <li>Takes your answer, including "wait, explain that one"</li>
-          <li>Hands the transcript back to your machine</li>
+          <li>Collects what a person says, and only what a person can decide</li>
+          <li>Routes each conversation to one teammate's terminal</li>
+          <li>Marks a teammate's request as theirs, to weigh before it runs</li>
+          <li>Hands the transcript back to a machine on your team</li>
         </ul>
       </div>
       <div class="no">
         <div class="what">what it will never do</div>
         <ul>
           <li>Hold a token, a key or a repo credential</li>
-          <li>Merge, close, comment or push</li>
+          <li>Merge, close, comment or push from the call itself</li>
           <li>Keep your source on our servers</li>
-          <li>Change anything at all while you are on the phone</li>
+          <li>Reach a number that is not verified on your own team</li>
         </ul>
       </div>
     </div>
@@ -735,8 +815,19 @@
       <div>
         <h3>What does cancelling look like?</h3>
         <p>
-          One command into Stripe's own portal. No email, no retention call —
-          which would be a strange thing for us of all products to do.
+          There is nothing to cancel — it is pay-as-you-go, not a subscription.
+          Stop calling and you stop spending; leftover credit just sits there.
+          The paper keeps arriving, free, for as long as you want it.
+        </p>
+      </div>
+      <div>
+        <h3>Can a teammate misuse the line?</h3>
+        <p>
+          A request from a teammate runs on someone else's terminal, so we
+          treat it as untrusted: it arrives marked as theirs, and the agent is
+          told never to read personal data or secrets, never to leave the repo,
+          and never to do anything irreversible without the operator's say-so.
+          The line only ever dials verified numbers on your own team.
         </p>
       </div>
     </div>
@@ -746,44 +837,46 @@
 <section class="early">
   <div class="wrap">
     <p class="kicker">where this actually is</p>
-    <h2>The telephony works. The paper ships. The rest is being built with the first fifty.</h2>
+    <h2>The line works. The skills are early. The rest is being built with the first fifty.</h2>
     <p class="lede">
-      We would rather say it here than have you find out on day three. Calling
-      works — ten languages, interruptible — and it took a fortnight to prove,
-      because our own carrier's text-to-speech renders silence on a phone line.
-      The weekly paper ships. The part that reads thirty-five pull requests and
-      picks the five is what we are building now, in the open.
+      We would rather say it here than have you find out on day three. The line
+      itself is real and proven: calling out, ringing in, teammates, routing to
+      terminals, billing — all of it works on real phones today. What is early
+      is the two skills on top of it: the morning briefing that reads a queue of
+      pull requests and picks the few that need a person is still being built,
+      in the open, with the first fifty teams.
     </p>
     <p class="lede">
-      That is the offer: install it today, get the paper for nothing, and if you
-      take the call while it is still being built, the per-minute price you
-      joined at is locked for as long as you stay.
+      That is the offer: install it today, get the paper and the line for
+      almost nothing, and help shape what a phone line for a team of agents
+      turns out to be good for. The per-minute price you join at is locked for
+      as long as you stay.
     </p>
   </div>
 </section>
 
 <section class="close">
   <div class="wrap">
-    <h2>Take tomorrow's call.</h2>
+    <h2>Give your team a phone line.</h2>
     <p class="stand">
-      One command. It installs, verifies your number, and asks what time you
-      want to be woken up to.
+      One command. It installs, verifies your number, and points a repo at the
+      line. Invite the team at <a href="/team">screenless.sh/team</a>.
     </p>
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
     <p class="fine">
-      The paper costs nothing and always will. The call is pay-as-you-go —
-      $10 free, then 30¢ a minute — and if a phone call turns out to be the
-      wrong shape for your mornings, just stop calling, and keep the paper.
+      The paper costs nothing and always will. The line is pay-as-you-go —
+      $10 free, then 30¢ a minute — and if it turns out to be the wrong shape
+      for your team, just stop calling, and keep the paper.
     </p>
   </div>
 </section>
 
 <div class="wrap">
   <footer>
-    <span>screenless — a call and a paper for people whose agents write the code</span>
+    <span>screenless — a phone line for teams whose agents write the code</span>
     <span>
       <a href="/terms">terms</a> ·
       <a href="/privacy">privacy</a> ·
