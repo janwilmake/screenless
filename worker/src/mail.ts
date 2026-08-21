@@ -10,6 +10,7 @@
  * laptop that built the paper is usually asleep by the time it should send.
  */
 import type { Env } from "./index";
+import { layout, mdToHtml, codeBlock, esc } from "./emailhtml";
 
 /** KV key prefix for parked mail. The epoch is in the key so the sweep can
  *  decide what is due by string comparison, without reading every value. */
@@ -71,10 +72,17 @@ export function resolveSendAt(at: string, offsetMinutes: number, now = Date.now(
 export const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 
 /**
- * Sends a confirmation code, to prove the person asking for the paper actually
- * reads the inbox it would go to.
+ * Immediate branded send — the transport under every mail that is not the
+ * parked outbox. Both bodies always: `html` is the mail, `text` is the
+ * fallback for clients (and spam filters) that want one.
  */
-export async function sendEmailCode(env: Env, to: string, code: string): Promise<void> {
+export async function sendHtml(
+  env: Env,
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<void> {
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -86,15 +94,35 @@ export async function sendEmailCode(env: Env, to: string, code: string): Promise
     body: JSON.stringify({
       from: env.MAIL_FROM || "screenless <press@screenless.sh>",
       to: [to],
-      subject: `${code} is your screenless code`,
-      text:
-        `Your confirmation code is ${code}.\n\n` +
-        "Type it into the terminal to have the nightly paper delivered here.\n" +
-        "If you did not ask for this, ignore it — nothing will be sent.\n",
+      subject,
+      html,
+      text,
     }),
   });
 
   if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
+}
+
+/**
+ * Sends a confirmation code, to prove the person asking for the paper actually
+ * reads the inbox it would go to.
+ */
+export async function sendEmailCode(env: Env, to: string, code: string): Promise<void> {
+  const html = layout(
+    env,
+    `<p>Your confirmation code is:</p>
+${codeBlock(code)}
+<p>Type it into the terminal to have the nightly paper delivered here.</p>
+<p style="color:#8d837a;">If you did not ask for this, ignore it — nothing will be sent.</p>`,
+    `Your screenless code is ${code}`,
+  );
+  await sendHtml(
+    env,
+    to,
+    `${code} is your screenless code`,
+    html,
+    `Your confirmation code is ${code}.\n\nType it into the terminal to have the nightly paper delivered here.\nIf you did not ask for this, ignore it — nothing will be sent.\n`,
+  );
 }
 
 export async function scheduleMail(
@@ -187,6 +215,22 @@ export async function sweepOutbox(env: Env): Promise<{ sent: number; failed: num
 async function send(item: OutboxItem, env: Env): Promise<void> {
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
 
+  // The loop hands over markdown-ish text; the inbox gets it rendered inside
+  // the branded frame. The plain-text part keeps the raw original.
+  const paperNote =
+    "Tonight's edition is attached.\n\n" +
+    "Print it, or don't — but don't answer it. Anything that needs a decision " +
+    "is on the call.\n";
+  const text = item.text ?? paperNote;
+  const html = layout(
+    env,
+    item.text
+      ? mdToHtml(item.text)
+      : `<p>Tonight's edition is attached — <strong>${esc(item.filename)}</strong>.</p>
+<p>Print it, or don't — but don't answer it. Anything that needs a decision is on the call.</p>`,
+    item.subject,
+  );
+
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -197,11 +241,8 @@ async function send(item: OutboxItem, env: Env): Promise<void> {
       from: env.MAIL_FROM || "screenless <press@screenless.sh>",
       to: [item.to],
       subject: item.subject,
-      text:
-        item.text ??
-        "Tonight's edition is attached.\n\n" +
-          "Print it, or don't — but don't answer it. Anything that needs a decision " +
-          "is on the call.\n",
+      html,
+      text,
       ...(item.contentBase64
         ? { attachments: [{ filename: item.filename, content: item.contentBase64 }] }
         : {}),
