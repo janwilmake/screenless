@@ -1,55 +1,29 @@
 /**
- * Subscription gating: a 7-day free trial, then $99/month, card required up
- * front.
+ * Pay-as-you-go, per organization.
  *
- * The subscriber's identity is the verified phone number — the same key
- * everything else in this API is scoped to. Stripe never sees a user id
- * because there isn't one; the phone travels as subscription metadata and
- * comes back on every lifecycle event.
+ * Every org starts with ~$10 of credit (the free plan) and calls draw it down
+ * by the minute at roughly double our cost. When it runs out, calls stop until
+ * an admin tops up — a one-time Stripe Checkout payment, no subscription, no
+ * trial clock. The org's balance lives in D1 (`orgs.credit_cents`) with a
+ * ledger row per movement; Stripe only ever hears about topups.
  *
- * Two paths keep a subscription record fresh, deliberately:
+ * This replaced the $99/month subscription while Stripe was still in test
+ * mode, so there were no live subscribers to migrate.
  *
- *   1. The webhook, which is the only thing that hears about a cancellation,
- *      a failed renewal, or a trial ending three days from now.
- *   2. A direct read of the Checkout Session in `status()`, used while the
- *      CLI is polling right after payment. The webhook usually wins that race,
- *      but "usually" is not good enough when the user is watching a spinner,
- *      and this path also carries the flow entirely on its own if the webhook
- *      is misconfigured — which, on a paywall, is the failure you notice last.
+ * Two paths record a topup, deliberately:
+ *   1. The webhook, the moment Stripe confirms payment.
+ *   2. `reconcilePending()`, polled while the billing page is waiting — which
+ *      also carries the whole flow if the webhook is misconfigured. Both write
+ *      the same ledger id, so whichever lands second changes nothing.
  */
 
 import type { Env } from "./index";
+import * as db from "./db";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
-/** Statuses that entitle the holder to place calls. A trial is a paid state. */
-const ENTITLED = new Set(["trialing", "active"]);
-
-/** Free trial length. Card is collected up front regardless. */
-const TRIAL_DAYS = 7;
-
-/** Fallback pricing, used when STRIPE_PRICE_ID is unset. Amount is in cents. */
-const FALLBACK_PRICE = { currency: "usd", unitAmount: 9900, interval: "month" };
-
-export interface Subscription {
-  status: string;
-  customerId?: string;
-  subscriptionId?: string;
-  /** Seconds since epoch; the moment the card is first charged. */
-  trialEnd?: number;
-  currentPeriodEnd?: number;
-  /** Set when the user has cancelled but the paid period has not run out. */
-  cancelAtPeriodEnd?: boolean;
-  updatedAt: number;
-}
-
-export interface BillingStatus {
-  active: boolean;
-  status: string;
-  trialEnd?: number;
-  currentPeriodEnd?: number;
-  cancelAtPeriodEnd?: boolean;
-}
+/** Topup sizes offered on the billing tab, in cents. */
+export const TOPUP_OPTIONS = [1000, 2500, 10000];
 
 /**
  * Billing is off until a key is present, which keeps `wrangler dev` and any
@@ -58,8 +32,9 @@ export interface BillingStatus {
  */
 export const billingEnabled = (env: Env): boolean => Boolean(env.STRIPE_SECRET_KEY);
 
-export const isEntitled = (sub: Subscription | null): boolean =>
-  Boolean(sub && ENTITLED.has(sub.status));
+/** Whether this org may place or take a call right now. */
+export const entitled = (env: Env, org: db.Org): boolean =>
+  !billingEnabled(env) || org.credit_cents > 0;
 
 /* ------------------------------------------------------------ stripe glue */
 
@@ -72,8 +47,8 @@ export class StripeError extends Error {
 
 /**
  * Stripe's API is form-encoded, including its nested structures, which arrive
- * as `subscription_data[metadata][phone]`. Flatten rather than hand-write the
- * bracket paths at every call site.
+ * as `metadata[orgId]`. Flatten rather than hand-write the bracket paths at
+ * every call site.
  */
 function form(params: Record<string, unknown>, prefix = ""): string[] {
   const out: string[] = [];
@@ -109,182 +84,94 @@ async function stripe<T>(
   return body as T;
 }
 
-/* ------------------------------------------------------------------ store */
-
-const subKey = (phone: string) => `sub:${phone}`;
-/** Records the Checkout Session the CLI is currently waiting on. */
-const pendingKey = (phone: string) => `pending:${phone}`;
-
-export async function load(env: Env, phone: string): Promise<Subscription | null> {
-  const raw = await env.CALLS.get(subKey(phone));
-  return raw ? (JSON.parse(raw) as Subscription) : null;
-}
-
-async function save(env: Env, phone: string, sub: Subscription): Promise<void> {
-  // No TTL. A lapsed subscription record is the thing that tells us this phone
-  // has been here before, which matters for not handing out a second trial.
-  await env.CALLS.put(subKey(phone), JSON.stringify(sub));
-}
-
-/* ---------------------------------------------------------------- checkout */
+/* ----------------------------------------------------------------- topups */
 
 interface CheckoutSession {
   id: string;
   url?: string;
   status?: string;
-  subscription?: string | { id: string };
+  payment_status?: string;
   customer?: string | { id: string };
-}
-
-interface StripeSubscription {
-  id: string;
-  status: string;
-  customer: string | { id: string };
-  trial_end?: number | null;
-  current_period_end?: number | null;
-  cancel_at_period_end?: boolean;
+  amount_total?: number;
   metadata?: Record<string, string>;
 }
-
-/**
- * Creates a Checkout Session for this phone number and remembers it, so the
- * poll in `status()` has something to reconcile against.
- *
- * Trial eligibility is decided here rather than in Stripe: a number that has
- * held a subscription before goes straight to a charge. Stripe has no notion
- * of "this phone already had its week" — only of customers, and a returning
- * user arrives at Checkout as a brand new one.
- */
-export async function createCheckout(
-  env: Env,
-  phone: string,
-  origin: string,
-): Promise<{ url: string; sessionId: string }> {
-  const site = env.SITE_URL || "https://screenless.sh";
-  const previous = await load(env, phone);
-  const trialUsed = Boolean(previous?.subscriptionId);
-
-  const lineItem = env.STRIPE_PRICE_ID
-    ? { price: env.STRIPE_PRICE_ID, quantity: 1 }
-    : {
-        quantity: 1,
-        price_data: {
-          currency: FALLBACK_PRICE.currency,
-          unit_amount: FALLBACK_PRICE.unitAmount,
-          recurring: { interval: FALLBACK_PRICE.interval },
-          product_data: { name: "screenless" },
-        },
-      };
-
-  const session = await stripe<CheckoutSession>(env, "/checkout/sessions", {
-    mode: "subscription",
-    line_items: { 0: lineItem },
-    // The card is taken during the trial, not after it. This is the whole
-    // point of "credit card required": it filters for intent, and it means
-    // day 8 is a charge rather than a dunning email.
-    payment_method_collection: "always",
-    subscription_data: {
-      ...(trialUsed ? {} : { trial_period_days: TRIAL_DAYS }),
-      // Carried on every subsequent lifecycle event, which is how a
-      // `customer.subscription.deleted` months from now still finds its phone.
-      metadata: { phone },
-    },
-    metadata: { phone },
-    // Stripe rejects "+" here, and this field is only ever used for eyeballing
-    // sessions in the dashboard. The authoritative copy is in metadata.
-    client_reference_id: phone.replace(/\D/g, ""),
-    allow_promotion_codes: true,
-    success_url: `${site}/paid`,
-    cancel_url: `${site}/#price`,
-    ...(previous?.customerId ? { customer: previous.customerId } : {}),
-  });
-
-  if (!session.url) throw new StripeError(502, "/checkout/sessions", "no checkout url returned");
-
-  // One hour is far longer than anyone stares at a payment page, and the key
-  // is only a reconciliation hint — losing it costs a webhook round trip.
-  await env.CALLS.put(pendingKey(phone), session.id, { expirationTtl: 3600 });
-  void origin;
-
-  return { url: session.url, sessionId: session.id };
-}
-
-/** A Stripe-hosted page for changing the card, or cancelling. */
-export async function createPortal(env: Env, phone: string): Promise<string | null> {
-  const sub = await load(env, phone);
-  if (!sub?.customerId) return null;
-
-  const session = await stripe<{ url: string }>(env, "/billing_portal/sessions", {
-    customer: sub.customerId,
-    return_url: env.SITE_URL || "https://screenless.sh",
-  });
-  return session.url;
-}
-
-/* ------------------------------------------------------------------ status */
 
 const idOf = (v: string | { id: string } | undefined | null): string | undefined =>
   typeof v === "string" ? v : v?.id;
 
-function record(sub: StripeSubscription): Subscription {
-  return {
-    status: sub.status,
-    customerId: idOf(sub.customer),
-    subscriptionId: sub.id,
-    trialEnd: sub.trial_end ?? undefined,
-    currentPeriodEnd: sub.current_period_end ?? undefined,
-    cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
-    updatedAt: Date.now(),
-  };
+/** KV key remembering the Checkout Session the billing page is polling on. */
+const pendingKey = (orgId: string) => `topup:${orgId}`;
+
+export async function createTopup(
+  env: Env,
+  org: db.Org,
+  user: db.User,
+  amountCents: number,
+  origin: string,
+  kv: KVNamespace,
+): Promise<{ url: string }> {
+  if (!Number.isInteger(amountCents) || amountCents < 500 || amountCents > 100000)
+    throw new StripeError(400, "/checkout/sessions", "topup must be between $5 and $1000");
+
+  const site = env.SITE_URL || "https://screenless.sh";
+  const session = await stripe<CheckoutSession>(env, "/checkout/sessions", {
+    mode: "payment",
+    line_items: {
+      0: {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: amountCents,
+          product_data: { name: "screenless credit", description: "Pay-as-you-go call credit" },
+        },
+      },
+    },
+    // Everything needed to credit the right org travels in metadata and comes
+    // back on the webhook; nothing is inferred from the payer.
+    metadata: { kind: "topup", orgId: org.id, userId: user.id, amountCents: String(amountCents) },
+    ...(org.stripe_customer_id
+      ? { customer: org.stripe_customer_id }
+      : { customer_creation: "always", ...(user.email ? { customer_email: user.email } : {}) }),
+    success_url: `${site}/team?topup=done`,
+    cancel_url: `${site}/team`,
+  });
+
+  if (!session.url) throw new StripeError(502, "/checkout/sessions", "no checkout url returned");
+  await kv.put(pendingKey(org.id), session.id, { expirationTtl: 3600 });
+  void origin;
+  return { url: session.url };
+}
+
+/** Applies a paid Checkout Session exactly once, whoever reports it first. */
+async function applyTopup(env: Env, session: CheckoutSession): Promise<void> {
+  const meta = session.metadata ?? {};
+  if (meta.kind !== "topup" || !meta.orgId) return;
+  if (session.payment_status !== "paid") return;
+
+  const cents = session.amount_total ?? parseInt(meta.amountCents || "0", 10);
+  if (!cents) return;
+
+  await db.credit(env, meta.orgId, cents, "topup", `stripe ${session.id}`, `topup:${session.id}`, meta.userId);
+  const customerId = idOf(session.customer);
+  if (customerId) await db.setStripeCustomer(env, meta.orgId, customerId);
 }
 
 /**
- * Current entitlement for a phone number, reconciling against Stripe if a
- * Checkout Session is still outstanding.
+ * Polled by the billing page after Checkout: reads the pending session straight
+ * from Stripe so the balance updates even if the webhook never arrives.
  */
-export async function status(env: Env, phone: string): Promise<BillingStatus> {
-  if (!billingEnabled(env)) {
-    return { active: true, status: "unmetered" };
-  }
-
-  let sub = await load(env, phone);
-
-  if (!isEntitled(sub)) {
-    const reconciled = await reconcilePending(env, phone);
-    if (reconciled) sub = reconciled;
-  }
-
-  return {
-    active: isEntitled(sub),
-    status: sub?.status ?? "none",
-    trialEnd: sub?.trialEnd,
-    currentPeriodEnd: sub?.currentPeriodEnd,
-    cancelAtPeriodEnd: sub?.cancelAtPeriodEnd,
-  };
-}
-
-/**
- * Turns a completed Checkout Session into a subscription record without
- * waiting for the webhook. Best-effort by design: any failure here just means
- * the caller stays unentitled for another poll.
- */
-async function reconcilePending(env: Env, phone: string): Promise<Subscription | null> {
-  const sessionId = await env.CALLS.get(pendingKey(phone));
-  if (!sessionId) return null;
-
+export async function reconcilePending(env: Env, orgId: string, kv: KVNamespace): Promise<boolean> {
+  const sessionId = await kv.get(pendingKey(orgId));
+  if (!sessionId) return false;
   try {
     const session = await stripe<CheckoutSession>(env, `/checkout/sessions/${sessionId}`);
-    const subscriptionId = idOf(session.subscription);
-    if (session.status !== "complete" || !subscriptionId) return null;
-
-    const sub = await stripe<StripeSubscription>(env, `/subscriptions/${subscriptionId}`);
-    const rec = record(sub);
-    await save(env, phone, rec);
-    await env.CALLS.delete(pendingKey(phone));
-    return rec;
+    if (session.payment_status !== "paid") return false;
+    await applyTopup(env, session);
+    await kv.delete(pendingKey(orgId));
+    return true;
   } catch (err) {
     console.error("stripe reconcile failed", (err as Error).message);
-    return null;
+    return false;
   }
 }
 
@@ -296,8 +183,9 @@ const enc = new TextEncoder();
  * Verifies Stripe's `t=<ts>,v1=<hmac>` signature over `${ts}.${body}`.
  *
  * The timestamp check is not ceremony: without it a signed body stays valid
- * forever, and a single captured `subscription.created` could be replayed to
- * re-entitle a cancelled number.
+ * forever, and a single captured payment event could be replayed at will —
+ * harmless here only because the ledger id makes crediting idempotent, but
+ * cheap to keep correct.
  */
 async function verifySignature(
   body: string,
@@ -344,13 +232,6 @@ async function verifySignature(
   return ok;
 }
 
-/**
- * Applies a Stripe lifecycle event to the stored record.
- *
- * Everything routes through subscription metadata, so an event that has lost
- * its phone is dropped rather than guessed at — writing an entitlement to the
- * wrong number is worse than missing one.
- */
 export async function handleWebhook(req: Request, env: Env): Promise<Response> {
   if (!env.STRIPE_WEBHOOK_SECRET) {
     return new Response(JSON.stringify({ error: "billing webhook not configured" }), {
@@ -372,28 +253,13 @@ export async function handleWebhook(req: Request, env: Env): Promise<Response> {
     type: string;
     data: { object: Record<string, unknown> };
   };
-  const object = event.data.object;
 
   try {
-    if (event.type === "checkout.session.completed") {
-      const phone = (object.metadata as Record<string, string> | undefined)?.phone;
-      const subscriptionId = idOf(object.subscription as string | { id: string });
-      if (phone && subscriptionId) {
-        const sub = await stripe<StripeSubscription>(env, `/subscriptions/${subscriptionId}`);
-        await save(env, phone, record(sub));
-        await env.CALLS.delete(pendingKey(phone));
-      }
-    } else if (event.type.startsWith("customer.subscription.")) {
-      const sub = object as unknown as StripeSubscription;
-      const phone = sub.metadata?.phone;
-      if (phone) {
-        // `deleted` arrives with whatever status the subscription ended on,
-        // which is not always a non-entitling one. Pin it.
-        const rec = record(sub);
-        if (event.type === "customer.subscription.deleted") rec.status = "canceled";
-        await save(env, phone, rec);
-      }
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+      await applyTopup(env, event.data.object as unknown as CheckoutSession);
     }
+    // Subscription lifecycle events from the old model may still arrive while
+    // the Stripe endpoint subscribes to them; they are simply no longer state.
   } catch (err) {
     // A 500 makes Stripe retry, which is what we want for a transient failure.
     console.error("stripe webhook failed", event.type, (err as Error).message);
