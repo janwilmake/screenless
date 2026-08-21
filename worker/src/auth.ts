@@ -124,6 +124,54 @@ export async function session(
   return (payload.iat ?? 0) >= (await revokedBefore(kv, payload.phone)) ? payload : null;
 }
 
+/* ------------------------------------------------------------ web sessions */
+
+/**
+ * Cookie session for the team page, signed the same way as the CLI token but
+ * carrying a user id rather than a phone: the page's users include invitees
+ * who have no verified phone yet, which is exactly what the page exists to fix.
+ */
+export interface WebPayload {
+  uid: string;
+  exp: number;
+}
+
+export async function signWeb(payload: WebPayload, secret: string): Promise<string> {
+  const body = b64urlEncode(enc.encode(JSON.stringify({ ...payload, web: 1 })));
+  const sig = await crypto.subtle.sign("HMAC", await key(secret), enc.encode(body));
+  return `${body}.${b64urlEncode(new Uint8Array(sig))}`;
+}
+
+export async function verifyWeb(token: string, secret: string): Promise<WebPayload | null> {
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  const ok = await crypto.subtle.verify(
+    "HMAC",
+    await key(secret),
+    b64urlDecode(sig),
+    enc.encode(body),
+  );
+  if (!ok) return null;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(body)));
+    // `web: 1` keeps a CLI token from doubling as a cookie and vice versa.
+    if (payload.web !== 1) return null;
+    if (typeof payload.exp !== "number" || payload.exp < Date.now() / 1000) return null;
+    if (typeof payload.uid !== "string" || !payload.uid) return null;
+    return { uid: payload.uid, exp: payload.exp };
+  } catch {
+    return null;
+  }
+}
+
+/** The signed-in team-page user, from the session cookie. */
+export async function webSession(req: Request, secret: string): Promise<WebPayload | null> {
+  const cookie = req.headers.get("Cookie") ?? "";
+  const match = cookie.match(/(?:^|;\s*)sl_session=([^;]+)/);
+  if (!match) return null;
+  return verifyWeb(match[1], secret);
+}
+
 /**
  * Per-call webhook token. Telnyx signs its webhooks with ed25519, which is the
  * production answer; this is a lighter shared-secret check that at least stops
