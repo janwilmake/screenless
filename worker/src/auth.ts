@@ -88,40 +88,20 @@ export async function verify(
   }
 }
 
-/** Tokens issued before this instant are void. Absent means nothing revoked. */
-export async function revokedBefore(kv: KVNamespace, phone: string): Promise<number> {
-  const raw = await kv.get(`revoked:${phone}`);
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/** Invalidates every token issued for this number up to now. */
-export async function revokeSessions(kv: KVNamespace, phone: string): Promise<number> {
-  const at = Math.floor(Date.now() / 1000);
-  await kv.put(`revoked:${phone}`, String(at));
-  return at;
-}
-
 /**
- * Extracts and validates the session from an Authorization: Bearer header.
- *
- * The KV read is the price of revocable tokens. It is one read against a key
- * that is almost never written, so it is cached at the edge and costs
- * essentially nothing — and without it `logout` is a lie.
+ * Extracts and validates the session token from an Authorization: Bearer
+ * header. Pure signature-and-expiry: the revocation check lives with the
+ * caller, because "is this token revoked" is a row on the user
+ * (`tokens_revoked_at`) and this module deliberately knows nothing about
+ * storage.
  */
 export async function session(
   req: Request,
   secret: string,
-  kv?: KVNamespace,
 ): Promise<SessionPayload | null> {
   const header = req.headers.get("Authorization");
   if (!header?.startsWith("Bearer ")) return null;
-
-  const payload = await verify(header.slice(7), secret);
-  if (!payload || !kv) return payload;
-
-  // A token with no `iat` predates this scheme, so any revocation voids it.
-  return (payload.iat ?? 0) >= (await revokedBefore(kv, payload.phone)) ? payload : null;
+  return verify(header.slice(7), secret);
 }
 
 /* ------------------------------------------------------------ web sessions */

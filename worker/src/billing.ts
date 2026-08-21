@@ -99,7 +99,7 @@ interface CheckoutSession {
 const idOf = (v: string | { id: string } | undefined | null): string | undefined =>
   typeof v === "string" ? v : v?.id;
 
-/** KV key remembering the Checkout Session the billing page is polling on. */
+/** Stash key remembering the Checkout Session the billing page is polling on. */
 const pendingKey = (orgId: string) => `topup:${orgId}`;
 
 export async function createTopup(
@@ -107,8 +107,6 @@ export async function createTopup(
   org: db.Org,
   user: db.User,
   amountCents: number,
-  origin: string,
-  kv: KVNamespace,
 ): Promise<{ url: string }> {
   if (!Number.isInteger(amountCents) || amountCents < 500 || amountCents > 100000)
     throw new StripeError(400, "/checkout/sessions", "topup must be between $5 and $1000");
@@ -137,8 +135,7 @@ export async function createTopup(
   });
 
   if (!session.url) throw new StripeError(502, "/checkout/sessions", "no checkout url returned");
-  await kv.put(pendingKey(org.id), session.id, { expirationTtl: 3600 });
-  void origin;
+  await db.stashPut(env, pendingKey(org.id), session.id, 3600);
   return { url: session.url };
 }
 
@@ -160,14 +157,14 @@ async function applyTopup(env: Env, session: CheckoutSession): Promise<void> {
  * Polled by the billing page after Checkout: reads the pending session straight
  * from Stripe so the balance updates even if the webhook never arrives.
  */
-export async function reconcilePending(env: Env, orgId: string, kv: KVNamespace): Promise<boolean> {
-  const sessionId = await kv.get(pendingKey(orgId));
+export async function reconcilePending(env: Env, orgId: string): Promise<boolean> {
+  const sessionId = await db.stashGet(env, pendingKey(orgId));
   if (!sessionId) return false;
   try {
     const session = await stripe<CheckoutSession>(env, `/checkout/sessions/${sessionId}`);
     if (session.payment_status !== "paid") return false;
     await applyTopup(env, session);
-    await kv.delete(pendingKey(orgId));
+    await db.stashDelete(env, pendingKey(orgId));
     return true;
   } catch (err) {
     console.error("stripe reconcile failed", (err as Error).message);

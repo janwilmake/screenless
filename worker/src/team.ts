@@ -132,7 +132,7 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     const user = await db.userByEmail(env, email);
     if (user) {
       const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
-      await env.CALLS.put(`weblogin:${email.toLowerCase()}`, code, { expirationTtl: 900 });
+      await db.stashPut(env, `weblogin:${email.toLowerCase()}`, code, 900);
       await sendLoginCode(env, email, code);
     }
     return json({ sent: true });
@@ -141,11 +141,11 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
   if (method === "POST" && sub === "/login/verify") {
     const { email, code } = await readJson(req);
     if (typeof email !== "string" || typeof code !== "string") return fail(400, "email and code required");
-    const expected = await env.CALLS.get(`weblogin:${email.toLowerCase()}`);
+    const expected = await db.stashGet(env, `weblogin:${email.toLowerCase()}`);
     if (!expected || !safeEqual(code.trim(), expected)) return fail(401, "that code is not right");
     const user = await db.userByEmail(env, email);
     if (!user) return fail(401, "that code is not right");
-    await env.CALLS.delete(`weblogin:${email.toLowerCase()}`);
+    await db.stashDelete(env, `weblogin:${email.toLowerCase()}`);
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json", "Set-Cookie": await cookieFor(env, user.id) },
     });
@@ -215,8 +215,6 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     if (!isE164(phone)) return fail(400, "phone must be E.164, e.g. +31612345678");
     if (!destinationAllowed(phone, env.ALLOWED_DESTINATIONS))
       return fail(403, "we can't text that country yet — mail hello@screenless.sh");
-    const holder = await db.userByPhone(env, phone);
-    if (holder && holder.id !== user.id) return fail(409, "that number is already on another account");
     // The same spend guards as the CLI's OTP path, same KV keys.
     if (!(await rateLimit(env, `otp:${phone}`, 5)))
       return fail(429, "too many codes for this number, try again in an hour");
@@ -226,7 +224,7 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     await telnyx.triggerSmsVerification(env.TELNYX_API_KEY, phone, env.TELNYX_VERIFY_PROFILE_ID);
     // The number being verified lives server-side, so the verify step binds
     // the code to the number it was sent to, not to whatever the form resends.
-    await env.CALLS.put(`webphone:${user.id}`, phone, { expirationTtl: 900 });
+    await db.stashPut(env, `webphone:${user.id}`, phone, 900);
     return json({ sent: true, phone });
   }
 
@@ -234,17 +232,18 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     const user = await currentUser(req, env);
     if (!user) return fail(401, "not signed in");
     const { code } = await readJson(req);
-    const phone = await env.CALLS.get(`webphone:${user.id}`);
+    const phone = await db.stashGet(env, `webphone:${user.id}`);
     if (!phone) return fail(410, "no pending verification — enter your number again");
     if (typeof code !== "string" || !/^\d{4,10}$/.test(code)) return fail(400, "invalid code format");
 
     const ok = await telnyx.checkVerificationCode(env.TELNYX_API_KEY, phone, code, env.TELNYX_VERIFY_PROFILE_ID);
     if (!ok) return fail(401, "code rejected or expired");
 
+    // Verifying a number that lives on another account takes it over: the
+    // code just proved possession, and possession is the identity model.
     const bound = await db.setUserPhone(env, user.id, phone);
-    if (!bound.ok) return fail(409, bound.error);
-    await env.CALLS.delete(`webphone:${user.id}`);
-    return json({ verified: true, phone });
+    await db.stashDelete(env, `webphone:${user.id}`);
+    return json({ verified: true, phone, tookOver: Boolean(bound.tookOverFrom) });
   }
 
   /* ---- the roster ---- */
@@ -360,7 +359,7 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     if (gate instanceof Response) return gate;
     // A topup the webhook has not reported yet is picked up here, which is
     // what makes the balance move while the page polls after Checkout.
-    if (billing.billingEnabled(env)) await billing.reconcilePending(env, gate.org.id, env.CALLS);
+    if (billing.billingEnabled(env)) await billing.reconcilePending(env, gate.org.id);
     const org = (await db.orgById(env, gate.org.id))!;
     const stats = await db.usageStats(env, org.id);
     return json({
@@ -379,7 +378,7 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     if (!billing.billingEnabled(env)) return fail(503, "billing is not configured on this Worker");
     const { cents } = await readJson(req);
     const amount = Number(cents);
-    const { url } = await billing.createTopup(env, gate.org, gate.user, amount, "", env.CALLS);
+    const { url } = await billing.createTopup(env, gate.org, gate.user, amount);
     return json({ url });
   }
 
@@ -716,7 +715,8 @@ function phonePanel(isChange) {
   return '<div class="card" id="phonecard">' +
     '<h1>' + (isChange ? 'Change your number' : 'Verify your phone') + '</h1>' +
     '<p class="dim">This is the number the morning call rings and the number the team line recognises. ' +
-    'Typed it wrong? Enter the right one \\u2014 it replaces the old one.</p>' +
+    'Typed it wrong? Enter the right one \\u2014 it replaces the old one. A number that is on ' +
+    'another screenless account moves to this one when you verify it.</p>' +
     '<div class="form-inline"><input id="phone" placeholder="+31612345678" size="17">' +
     '<button class="act" id="sendotp">Text me a code</button></div>' +
     '<div class="form-inline" id="otprow" style="margin-top:10px;display:none">' +

@@ -12,31 +12,20 @@
 import type { Env } from "./index";
 import { layout, mdToHtml, codeBlock, esc } from "./emailhtml";
 
-/** KV key prefix for parked mail. The epoch is in the key so the sweep can
- *  decide what is due by string comparison, without reading every value. */
-const OUTBOX = "outbox:";
-
-/** Parked items expire a week after their send time, sent or not. */
-const OUTBOX_TTL_SECS = 7 * 24 * 60 * 60;
-
 /** Cap a single attachment. A newspaper that big is a bug, not an edition. */
 const MAX_BYTES = 12 * 1024 * 1024;
 
-export interface OutboxItem {
+interface OutboxItem {
   to: string;
   subject: string;
   filename: string;
-  /** Base64 PDF. Stored as-is so the sweep can hand it straight to the API.
-   *  Empty for a text-only mail — the loop's report of what it applied. */
-  contentBase64: string;
+  /** True when the base64 PDF sits in R2 under outbox/<id>. A 12 MB
+   *  attachment is not a database row; everything else about the mail is. */
+  hasAttachment: boolean;
   /** Plain-text body. Set for a report; the paper uses the fixed note below. */
   text?: string;
   sendAt: number;
-  createdAt: number;
 }
-
-/** Zero-padded epoch seconds, so lexical order matches chronological order. */
-const stamp = (epochSecs: number) => String(epochSecs).padStart(12, "0");
 
 /**
  * Resolve a requested send time to an epoch.
@@ -157,19 +146,20 @@ export async function scheduleMail(
   if (sendAt === null) return { ok: false, status: 400, error: "`at` must be HH:MM or an ISO instant" };
 
   const id = crypto.randomUUID();
-  const item: OutboxItem = {
+  if (contentBase64) await env.OUTBOX.put(`outbox/${id}`, contentBase64);
+  await env.DB.prepare(
+    `INSERT INTO outbox (id, to_email, subject, filename, has_attachment, body_text, send_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    id,
     to,
-    subject: typeof b.subject === "string" && b.subject ? b.subject : "screenless",
-    filename: typeof b.filename === "string" && b.filename ? b.filename : "edition.pdf",
-    contentBase64,
-    ...(text.trim() ? { text } : {}),
-    sendAt,
-    createdAt: Math.floor(Date.now() / 1000),
-  };
-
-  await env.CALLS.put(`${OUTBOX}${stamp(sendAt)}:${id}`, JSON.stringify(item), {
-    expirationTtl: Math.max(60, sendAt - Math.floor(Date.now() / 1000) + OUTBOX_TTL_SECS),
-  });
+    typeof b.subject === "string" && b.subject ? b.subject : "screenless",
+    typeof b.filename === "string" && b.filename ? b.filename : "edition.pdf",
+    contentBase64 ? 1 : 0,
+    text.trim() ? text : "",
+    sendAt * 1000,
+    Date.now(),
+  ).run();
 
   return { ok: true, id, sendAt: new Date(sendAt * 1000).toISOString() };
 }
@@ -177,42 +167,49 @@ export async function scheduleMail(
 /**
  * Cron sweep — send everything now due.
  *
- * Deletes the key *before* sending. A duplicate paper is a worse failure than a
+ * Deletes the row *before* sending. A duplicate paper is a worse failure than a
  * missing one: the reader trusts that what lands at 06:30 is tonight's edition,
  * and two copies make them check which is which.
  */
 export async function sweepOutbox(env: Env): Promise<{ sent: number; failed: number }> {
-  const nowKey = `${OUTBOX}${stamp(Math.floor(Date.now() / 1000))}`;
   let sent = 0;
   let failed = 0;
-  let cursor: string | undefined;
 
-  do {
-    const page = await env.CALLS.list({ prefix: OUTBOX, cursor, limit: 100 });
-    cursor = page.list_complete ? undefined : page.cursor;
+  const due = await env.DB.prepare("SELECT * FROM outbox WHERE send_at <= ? ORDER BY send_at LIMIT 50")
+    .bind(Date.now()).all<Record<string, unknown>>();
 
-    for (const key of page.keys) {
-      // Keys sort chronologically, so anything past "now" is not due yet — and
-      // because the listing is ordered, nothing after it is either.
-      if (key.name > nowKey) return { sent, failed };
+  for (const row of due.results ?? []) {
+    const id = String(row.id);
+    await env.DB.prepare("DELETE FROM outbox WHERE id = ?").bind(id).run();
 
-      const raw = await env.CALLS.get(key.name);
-      await env.CALLS.delete(key.name);
-      if (!raw) continue;
+    const item: OutboxItem = {
+      to: String(row.to_email),
+      subject: String(row.subject),
+      filename: String(row.filename),
+      hasAttachment: Boolean(row.has_attachment),
+      ...(row.body_text ? { text: String(row.body_text) } : {}),
+      sendAt: Number(row.send_at),
+    };
 
-      try {
-        await send(JSON.parse(raw) as OutboxItem, env);
-        sent += 1;
-      } catch {
-        failed += 1;
-      }
+    let contentBase64 = "";
+    if (item.hasAttachment) {
+      const obj = await env.OUTBOX.get(`outbox/${id}`);
+      contentBase64 = obj ? await obj.text() : "";
     }
-  } while (cursor);
+
+    try {
+      await send(item, contentBase64, env);
+      sent += 1;
+    } catch {
+      failed += 1;
+    }
+    if (item.hasAttachment) await env.OUTBOX.delete(`outbox/${id}`).catch(() => {});
+  }
 
   return { sent, failed };
 }
 
-async function send(item: OutboxItem, env: Env): Promise<void> {
+async function send(item: OutboxItem, contentBase64: string, env: Env): Promise<void> {
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
 
   // The loop hands over markdown-ish text; the inbox gets it rendered inside
@@ -243,8 +240,8 @@ async function send(item: OutboxItem, env: Env): Promise<void> {
       subject: item.subject,
       html,
       text,
-      ...(item.contentBase64
-        ? { attachments: [{ filename: item.filename, content: item.contentBase64 }] }
+      ...(contentBase64
+        ? { attachments: [{ filename: item.filename, content: contentBase64 }] }
         : {}),
     }),
   });

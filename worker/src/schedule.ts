@@ -1,101 +1,59 @@
 /**
- * Per-subscriber settings, and the brief the morning call is placed from.
+ * Per-person settings, and the brief the morning call is placed from.
  *
- * The split matters. A *brief* is what to talk about — written by the loop on
- * the user's machine, which is the only thing that has read the pull requests.
- * A *setting* is when to talk about it, which is a property of the person, not
- * of the night's work. Keeping them apart is what lets the same brief be
- * delivered at 08:00, or twenty minutes early because the user rang in.
+ * Settings are columns on the user row — when the call rings, in which zone,
+ * in what language, where the paper mails. They used to be a KV blob keyed by
+ * phone; folding them into `users` removed a second identity store and the
+ * email-sync glue between the two.
+ *
+ * The split with briefs still matters. A *brief* is what to talk about —
+ * written by the loop on the user's machine, which is the only thing that has
+ * read the pull requests. A *setting* is when to talk about it, which is a
+ * property of the person, not of the night's work. Keeping them apart is what
+ * lets the same brief be delivered at 08:00, or twenty minutes early because
+ * the user rang in.
  */
 
 import type { Env } from "./index";
+import * as db from "./db";
 import { isValidTimezone, parseClock, nextOccurrence } from "./time";
 import { DEFAULT_LANGUAGE, isSupportedLanguage } from "./languages";
-
-/** When the call goes out if the user never says otherwise. */
-const DEFAULT_CALL_AT = "08:00";
 
 /**
  * How long a brief stays interesting. Two days covers a missed call and a
  * weekend lie-in; past that, last night's PR queue is not news.
  */
-const BRIEF_TTL_SECS = 48 * 60 * 60;
+const BRIEF_TTL_MS = 48 * 60 * 60 * 1000;
 
+/** The shape the CLI has always read; mapped from the user row. */
 export interface Settings {
-  /** Local wall-clock time of the morning call, "HH:MM". */
   callAt: string;
-  /**
-   * IANA zone the callAt is read in.
-   *
-   * Not a preference — it is whatever the CLI last reported its machine to be
-   * set to, refreshed on every settings call. There is deliberately no way for
-   * a person to set this: the laptop already knows, and a second copy of the
-   * answer is a second copy to get wrong.
-   */
   timezone: string;
-  /** False parks briefs without ever dialling — for pausing without cancelling. */
   callEnabled: boolean;
-  /**
-   * Language the call is held in, account-wide. Chosen once at setup rather
-   * than passed per call, because it is a property of the person, not of the
-   * night's work.
-   */
   language: string;
-  /** When the terms were accepted, ms since epoch. Zero means never. */
   termsAcceptedAt: number;
-  /**
-   * The one address the edition may be sent to.
-   *
-   * Bound to the account and confirmed by a code, because the paper is free:
-   * an unauthenticated `to` on a free endpoint is an open relay wearing our
-   * own verified sending domain.
-   */
   email: string;
-  /** When the address was confirmed. Zero means unverified — nothing sends. */
   emailVerifiedAt: number;
   updatedAt: number;
 }
 
-export interface Brief {
-  prompt: string;
-  language: string;
-  /** When to dial, ms since epoch. Null means "held, dial only on request". */
-  dueAt: number | null;
-  status: "parked" | "placed";
-  /** Dials attempted. A declined call is not a failure to retry forever. */
-  attempts: number;
-  /** The call this brief was last delivered on, so a transcript can be found. */
-  callId?: string;
-  createdAt: number;
+export function settingsOf(user: db.User): Settings {
+  return {
+    callAt: user.call_at,
+    timezone: user.timezone,
+    callEnabled: Boolean(user.call_enabled),
+    language: user.language,
+    termsAcceptedAt: user.terms_accepted_at,
+    email: user.email ?? "",
+    emailVerifiedAt: user.email_verified_at,
+    updatedAt: user.settings_updated_at,
+  };
 }
 
-const settingsKey = (phone: string) => `settings:${phone}`;
-const briefKey = (phone: string) => `brief:${phone}`;
-
-/* --------------------------------------------------------------- settings */
-
-/**
- * Settings for a number, inventing sensible ones on first read.
- *
- * UTC is the fallback rather than a guess from the dialling code, because the
- * CLI reports the machine's real zone on the very first call and a guess would
- * only ever be visible in the window before that. A wrong guess that looks
- * like an answer is worse than an obviously neutral default.
- */
+/** Settings for a verified phone; the user row is created on first sight. */
 export async function loadSettings(env: Env, phone: string): Promise<Settings> {
-  const raw = await env.CALLS.get(settingsKey(phone));
-  if (raw) return JSON.parse(raw) as Settings;
-
-  return {
-    callAt: DEFAULT_CALL_AT,
-    timezone: "UTC",
-    callEnabled: true,
-    language: DEFAULT_LANGUAGE,
-    termsAcceptedAt: 0,
-    email: "",
-    emailVerifiedAt: 0,
-    updatedAt: 0,
-  };
+  const { user } = await db.ensureUserForPhone(env, phone);
+  return settingsOf(user);
 }
 
 export interface SettingsPatch {
@@ -117,61 +75,74 @@ export async function updateSettings(
   phone: string,
   patch: SettingsPatch,
 ): Promise<{ ok: true; settings: Settings } | { ok: false; error: string }> {
-  const current = await loadSettings(env, phone);
-  const next: Settings = { ...current, updatedAt: Date.now() };
+  const { user } = await db.ensureUserForPhone(env, phone);
+
+  const sets: string[] = ["settings_updated_at = ?"];
+  const binds: unknown[] = [Date.now()];
 
   if (patch.callAt !== undefined) {
     if (typeof patch.callAt !== "string" || !parseClock(patch.callAt))
       return { ok: false, error: "callAt must be 24-hour HH:MM, e.g. 08:00" };
-    next.callAt = patch.callAt.trim();
+    sets.push("call_at = ?");
+    binds.push(patch.callAt.trim());
   }
 
   if (patch.timezone !== undefined) {
     if (typeof patch.timezone !== "string" || !isValidTimezone(patch.timezone))
-      return {
-        ok: false,
-        error: "timezone must be an IANA zone, e.g. Europe/Amsterdam",
-      };
-    next.timezone = patch.timezone;
+      return { ok: false, error: "timezone must be an IANA zone, e.g. Europe/Amsterdam" };
+    sets.push("timezone = ?");
+    binds.push(patch.timezone);
   }
 
   if (patch.language !== undefined) {
-    if (!isSupportedLanguage(patch.language))
-      return { ok: false, error: "unsupported language" };
-    next.language = patch.language as string;
+    if (!isSupportedLanguage(patch.language)) return { ok: false, error: "unsupported language" };
+    sets.push("language = ?");
+    binds.push(patch.language as string);
   }
 
   // Set together by /email/verify and nowhere else, so an address can never be
-  // marked confirmed without a code having been redeemed for it.
+  // marked confirmed without a code having been redeemed for it. Unique across
+  // users — the address doubles as the team-page sign-in.
   if (patch.email !== undefined && patch.emailVerifiedAt !== undefined) {
     if (typeof patch.email !== "string" || !patch.email.includes("@"))
       return { ok: false, error: "invalid email" };
-    next.email = patch.email;
-    next.emailVerifiedAt = Number(patch.emailVerifiedAt) || Date.now();
+    const holder = await db.userByEmail(env, patch.email);
+    if (holder && holder.id !== user.id)
+      return { ok: false, error: "that email is already on another screenless account" };
+    sets.push("email = ?", "email_verified_at = ?");
+    binds.push(patch.email.toLowerCase(), Number(patch.emailVerifiedAt) || Date.now());
   }
 
   // Write-once and never cleared: acceptance is a record of something that
   // happened, not a toggle. Re-accepting refreshes the timestamp; nothing
   // un-accepts.
-  if (patch.acceptTerms === true) next.termsAcceptedAt = Date.now();
+  if (patch.acceptTerms === true) {
+    sets.push("terms_accepted_at = ?");
+    binds.push(Date.now());
+  }
 
   if (patch.callEnabled !== undefined) {
     if (typeof patch.callEnabled !== "boolean")
       return { ok: false, error: "callEnabled must be true or false" };
-    next.callEnabled = patch.callEnabled;
+    sets.push("call_enabled = ?");
+    binds.push(patch.callEnabled ? 1 : 0);
   }
 
-  await env.CALLS.put(settingsKey(phone), JSON.stringify(next));
+  await env.DB.prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...binds, user.id).run();
+
+  const fresh = (await db.userById(env, user.id))!;
+  const settings = settingsOf(fresh);
 
   // A brief already parked for the old time would otherwise keep the old time,
   // which is the least defensible way to answer "I moved my call to 06:30".
   const brief = await loadBrief(env, phone);
   if (brief && brief.status === "parked" && brief.dueAt !== null) {
-    brief.dueAt = nextCallTime(next);
+    brief.dueAt = nextCallTime(settings);
     await saveBrief(env, phone, brief);
   }
 
-  return { ok: true, settings: next };
+  return { ok: true, settings };
 }
 
 /** The next instant the configured call time comes round, in UTC ms. */
@@ -182,19 +153,53 @@ export function nextCallTime(settings: Settings, from: number = Date.now()): num
 
 /* ----------------------------------------------------------------- briefs */
 
+export interface Brief {
+  prompt: string;
+  language: string;
+  /** When to dial, ms since epoch. Null means "held, dial only on request". */
+  dueAt: number | null;
+  status: "parked" | "placed";
+  /** Dials attempted. A declined call is not a failure to retry forever. */
+  attempts: number;
+  /** The call this brief was last delivered on, so a transcript can be found. */
+  callId?: string;
+  createdAt: number;
+}
+
 export async function loadBrief(env: Env, phone: string): Promise<Brief | null> {
-  const raw = await env.CALLS.get(briefKey(phone));
-  return raw ? (JSON.parse(raw) as Brief) : null;
+  const row = await env.DB.prepare("SELECT * FROM briefs WHERE phone = ? AND expires_at > ?")
+    .bind(phone, Date.now()).first<Record<string, unknown>>();
+  if (!row) return null;
+  return {
+    prompt: String(row.prompt),
+    language: String(row.language),
+    dueAt: row.due_at === null ? null : Number(row.due_at),
+    status: row.status as Brief["status"],
+    attempts: Number(row.attempts),
+    callId: (row.call_id as string) ?? undefined,
+    createdAt: Number(row.created_at),
+  };
 }
 
 export async function saveBrief(env: Env, phone: string, brief: Brief): Promise<void> {
-  await env.CALLS.put(briefKey(phone), JSON.stringify(brief), {
-    expirationTtl: BRIEF_TTL_SECS,
-  });
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO briefs (phone, prompt, language, due_at, status, attempts, call_id, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    phone,
+    brief.prompt,
+    brief.language,
+    brief.dueAt,
+    brief.status,
+    brief.attempts,
+    brief.callId ?? null,
+    brief.createdAt,
+    brief.createdAt + BRIEF_TTL_MS,
+  ).run();
 }
 
 export async function clearBrief(env: Env, phone: string): Promise<void> {
-  await env.CALLS.delete(briefKey(phone));
+  await env.DB.prepare("DELETE FROM briefs WHERE phone = ?").bind(phone).run();
 }
 
 /**
@@ -235,30 +240,19 @@ export async function parkBrief(
   return { ok: true, brief };
 }
 
-/**
- * Every brief whose time has come.
- *
- * A KV list per cron tick is the right shape while this is one number per
- * subscriber and the sweep runs twelve times an hour. If it ever isn't, the
- * fix is a due-time index, not a bigger list.
- */
+/** Every brief whose time has come — one indexed query, no scan. */
 export async function dueBriefs(
   env: Env,
   now: number = Date.now(),
 ): Promise<Array<{ phone: string; brief: Brief }>> {
+  const res = await env.DB.prepare(
+    "SELECT phone FROM briefs WHERE status = 'parked' AND due_at IS NOT NULL AND due_at <= ? AND expires_at > ?",
+  ).bind(now, now).all<{ phone: string }>();
+
   const due: Array<{ phone: string; brief: Brief }> = [];
-  let cursor: string | undefined;
-
-  do {
-    const page = await env.CALLS.list({ prefix: "brief:", cursor });
-    for (const key of page.keys) {
-      const phone = key.name.slice("brief:".length);
-      const brief = await loadBrief(env, phone);
-      if (!brief || brief.status !== "parked" || brief.dueAt === null) continue;
-      if (brief.dueAt <= now) due.push({ phone, brief });
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-
+  for (const { phone } of res.results ?? []) {
+    const brief = await loadBrief(env, phone);
+    if (brief) due.push({ phone, brief });
+  }
   return due;
 }

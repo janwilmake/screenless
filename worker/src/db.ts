@@ -31,6 +31,15 @@ export interface User {
   role: "admin" | "member";
   phone_verified_at: number;
   phone_reminder_sent_at: number;
+  // Personal settings — the columns schedule.ts reads and writes.
+  call_at: string;
+  timezone: string;
+  call_enabled: number;
+  language: string;
+  terms_accepted_at: number;
+  email_verified_at: number;
+  tokens_revoked_at: number;
+  settings_updated_at: number;
   created_at: number;
 }
 
@@ -236,9 +245,11 @@ export async function acceptInvite(
 
   const userId = crypto.randomUUID();
   await env.DB.batch([
+    // Accepting proves the inbox: the invite only ever travelled by email, so
+    // the address arrives verified — the paper can mail there right away.
     env.DB.prepare(
-      "INSERT INTO users (id, org_id, email, name, role, created_at) VALUES (?, ?, ?, ?, 'member', ?)",
-    ).bind(userId, invite.org_id, invite.email, name, now),
+      "INSERT INTO users (id, org_id, email, name, role, email_verified_at, created_at) VALUES (?, ?, ?, ?, 'member', ?, ?)",
+    ).bind(userId, invite.org_id, invite.email, name, now, now),
     env.DB.prepare("UPDATE invites SET accepted_at = ? WHERE token = ?").bind(now, invite.token),
   ]);
   return (await userById(env, userId))!;
@@ -271,18 +282,38 @@ export async function removeMember(env: Env, orgId: string, userId: string): Pro
   ]);
 }
 
-/** Binds a verified phone to a user. Fails if another account holds it. */
+/**
+ * Binds a verified phone to a user — taking it over if another account holds
+ * it. The OTP just proved possession of the number, and possession is the
+ * whole identity model: the old account loses the phone, and every CLI token
+ * ever minted for it is revoked, because those tokens would otherwise start
+ * resolving to the new owner.
+ */
 export async function setUserPhone(
   env: Env,
   userId: string,
   phone: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; tookOverFrom: string | null }> {
   const holder = await userByPhone(env, phone);
-  if (holder && holder.id !== userId)
-    return { ok: false, error: "that phone number is already on another screenless account" };
-  await env.DB.prepare("UPDATE users SET phone = ?, phone_verified_at = ? WHERE id = ?")
-    .bind(phone, Date.now(), userId).run();
-  return { ok: true };
+  const takeover = holder && holder.id !== userId;
+  const nowSecs = Math.floor(Date.now() / 1000);
+
+  const statements = [];
+  if (takeover) {
+    statements.push(
+      env.DB.prepare("UPDATE users SET phone = NULL, phone_verified_at = 0 WHERE id = ?").bind(holder.id),
+    );
+  }
+  statements.push(
+    takeover
+      ? env.DB.prepare(
+          "UPDATE users SET phone = ?, phone_verified_at = ?, tokens_revoked_at = ? WHERE id = ?",
+        ).bind(phone, Date.now(), nowSecs, userId)
+      : env.DB.prepare("UPDATE users SET phone = ?, phone_verified_at = ? WHERE id = ?")
+          .bind(phone, Date.now(), userId),
+  );
+  await env.DB.batch(statements);
+  return { ok: true, tookOverFrom: takeover ? holder.id : null };
 }
 
 /* ------------------------------------------------------------------- money */
@@ -394,6 +425,236 @@ export async function usageStats(env: Env, orgId: string): Promise<UsageStats> {
     perMember: perMember.results ?? [],
     ledger: recent.results ?? [],
   };
+}
+
+/* ------------------------------------------------------------------- calls */
+
+/** How long a watcher heartbeat counts as alive. Watchers poll well inside it. */
+export const WATCHER_TTL_MS = 90 * 1000;
+const CALL_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * A call waiting in a team's queue lives a week, not a day. The queue is the
+ * promise that a request made while nobody's terminal was watching is still
+ * there when the next watcher spawns — a weekend must not eat it.
+ */
+const QUEUED_CALL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface TranscriptLine {
+  role: string;
+  text: string;
+  at?: string;
+}
+
+export interface CallRecord {
+  phone: string;
+  userId?: string;
+  orgId?: string;
+  /** Empty for a recorded-request call — no assistant was ever on the line. */
+  assistantId: string;
+  transcript?: TranscriptLine[];
+  texmlAppId?: string;
+  status: "initiated" | "ringing" | "answered" | "completed" | "failed";
+  voicemail?: boolean;
+  inbound?: boolean;
+  /** brief = a conversation with the assistant; request = a recorded ask. */
+  kind?: "brief" | "request";
+  requestText?: string;
+  recordingUrl?: string;
+  /** Whether this call goes to the team's watchers when it finishes. */
+  queued?: boolean;
+  /** User id of whoever's watcher took it. Set once; the queue query skips it. */
+  handledBy?: string;
+  /** Guards the ledger against a duplicated end-of-call webhook. */
+  debited?: boolean;
+  conversationId?: string;
+  createdAt: number;
+  endedAt?: number;
+}
+
+function rowToCall(row: Record<string, unknown>): CallRecord {
+  return {
+    phone: String(row.phone),
+    userId: (row.user_id as string) ?? undefined,
+    orgId: (row.org_id as string) ?? undefined,
+    assistantId: String(row.assistant_id ?? ""),
+    texmlAppId: (row.texml_app_id as string) ?? undefined,
+    status: row.status as CallRecord["status"],
+    voicemail: Boolean(row.voicemail),
+    inbound: Boolean(row.inbound),
+    kind: (row.kind as CallRecord["kind"]) ?? undefined,
+    requestText: (row.request_text as string) ?? undefined,
+    recordingUrl: (row.recording_url as string) ?? undefined,
+    queued: Boolean(row.queued),
+    handledBy: (row.handled_by as string) ?? undefined,
+    debited: Boolean(row.debited),
+    conversationId: (row.conversation_id as string) ?? undefined,
+    transcript: row.transcript ? (JSON.parse(String(row.transcript)) as TranscriptLine[]) : undefined,
+    createdAt: Number(row.created_at),
+    endedAt: row.ended_at ? Number(row.ended_at) : undefined,
+  };
+}
+
+export async function putCall(env: Env, id: string, r: CallRecord): Promise<void> {
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO calls
+       (id, org_id, user_id, phone, assistant_id, texml_app_id, status, voicemail,
+        inbound, kind, request_text, recording_url, queued, handled_by, debited,
+        conversation_id, transcript, created_at, ended_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    id,
+    r.orgId ?? null,
+    r.userId ?? null,
+    r.phone,
+    r.assistantId,
+    r.texmlAppId ?? null,
+    r.status,
+    r.voicemail ? 1 : 0,
+    r.inbound ? 1 : 0,
+    r.kind ?? null,
+    r.requestText ?? null,
+    r.recordingUrl ?? null,
+    r.queued ? 1 : 0,
+    r.handledBy ?? null,
+    r.debited ? 1 : 0,
+    r.conversationId ?? null,
+    r.transcript ? JSON.stringify(r.transcript) : null,
+    r.createdAt,
+    r.endedAt ?? null,
+    r.createdAt + (r.queued ? QUEUED_CALL_TTL_MS : CALL_TTL_MS),
+  ).run();
+}
+
+export async function getCall(env: Env, id: string): Promise<CallRecord | null> {
+  const row = await env.DB.prepare("SELECT * FROM calls WHERE id = ? AND expires_at > ?")
+    .bind(id, Date.now()).first<Record<string, unknown>>();
+  return row ? rowToCall(row) : null;
+}
+
+export async function deleteCall(env: Env, id: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM calls WHERE id = ?").bind(id).run();
+}
+
+export async function latestCallFor(
+  env: Env,
+  phone: string,
+): Promise<{ id: string; record: CallRecord } | null> {
+  const row = await env.DB.prepare(
+    "SELECT * FROM calls WHERE phone = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
+  ).bind(phone, Date.now()).first<Record<string, unknown>>();
+  return row ? { id: String(row.id), record: rowToCall(row) } : null;
+}
+
+/** The team's queue *is* this query: finished, meant for a watcher, untaken. */
+export async function queuedCalls(
+  env: Env,
+  orgId: string,
+): Promise<Array<{ id: string; record: CallRecord }>> {
+  const res = await env.DB.prepare(
+    `SELECT * FROM calls
+     WHERE org_id = ? AND queued = 1 AND status = 'completed' AND voicemail = 0
+       AND handled_by IS NULL AND expires_at > ?
+     ORDER BY created_at LIMIT 20`,
+  ).bind(orgId, Date.now()).all<Record<string, unknown>>();
+  return (res.results ?? []).map((row) => ({ id: String(row.id), record: rowToCall(row) }));
+}
+
+/** Claims a queued call. False if someone else already had. */
+export async function markHandled(env: Env, orgId: string, callId: string, userId: string): Promise<boolean> {
+  const res = await env.DB.prepare(
+    "UPDATE calls SET handled_by = ? WHERE id = ? AND org_id = ? AND handled_by IS NULL",
+  ).bind(userId, callId, orgId).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
+export async function staleInboundCalls(
+  env: Env,
+  olderThan: number,
+): Promise<Array<{ id: string; record: CallRecord }>> {
+  const res = await env.DB.prepare(
+    "SELECT * FROM calls WHERE inbound = 1 AND status = 'answered' AND created_at < ?",
+  ).bind(olderThan).all<Record<string, unknown>>();
+  return (res.results ?? []).map((row) => ({ id: String(row.id), record: rowToCall(row) }));
+}
+
+/* ---------------------------------------------------------------- watchers */
+
+export interface WatcherInfo {
+  watcherId: string;
+  userId: string;
+  startedAt: number;
+  repo: string;
+}
+
+export async function heartbeatWatcher(
+  env: Env,
+  orgId: string,
+  w: WatcherInfo,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO watchers (org_id, watcher_id, user_id, repo, started_at, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (org_id, watcher_id) DO UPDATE SET last_seen = excluded.last_seen`,
+  ).bind(orgId, w.watcherId, w.userId, w.repo, w.startedAt, Date.now()).run();
+}
+
+export async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo[]> {
+  const res = await env.DB.prepare(
+    "SELECT watcher_id, user_id, started_at, repo FROM watchers WHERE org_id = ? AND last_seen > ?",
+  ).bind(orgId, Date.now() - WATCHER_TTL_MS).all<Record<string, unknown>>();
+  return (res.results ?? []).map((r) => ({
+    watcherId: String(r.watcher_id),
+    userId: String(r.user_id),
+    startedAt: Number(r.started_at),
+    repo: String(r.repo ?? ""),
+  }));
+}
+
+/* ------------------------------------------------------------------- stash */
+
+/** Short-lived values: codes, pending phone numbers, polling hints. */
+export async function stashPut(env: Env, key: string, value: string, ttlSecs: number): Promise<void> {
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO stash (key, value, expires_at) VALUES (?, ?, ?)",
+  ).bind(key, value, Date.now() + ttlSecs * 1000).run();
+}
+
+export async function stashGet(env: Env, key: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT value FROM stash WHERE key = ? AND expires_at > ?")
+    .bind(key, Date.now()).first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+export async function stashDelete(env: Env, key: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM stash WHERE key = ?").bind(key).run();
+}
+
+/* -------------------------------------------------------------- revocation */
+
+export async function revokeTokens(env: Env, phone: string): Promise<void> {
+  await env.DB.prepare("UPDATE users SET tokens_revoked_at = ? WHERE phone = ?")
+    .bind(Math.floor(Date.now() / 1000), phone).run();
+}
+
+/** Tokens issued before this instant (epoch seconds) are void. */
+export async function revokedBefore(env: Env, phone: string): Promise<number> {
+  const row = await env.DB.prepare("SELECT tokens_revoked_at FROM users WHERE phone = ?")
+    .bind(phone).first<{ tokens_revoked_at: number }>();
+  return row?.tokens_revoked_at ?? 0;
+}
+
+/* ----------------------------------------------------------------- cleanup */
+
+/** The cron's broom: TTLs were free in KV, here they are one sweep. */
+export async function cleanupExpired(env: Env): Promise<void> {
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM calls WHERE expires_at < ?").bind(now),
+    env.DB.prepare("DELETE FROM briefs WHERE expires_at < ?").bind(now),
+    env.DB.prepare("DELETE FROM stash WHERE expires_at < ?").bind(now),
+    env.DB.prepare("DELETE FROM counters WHERE expires_at < ?").bind(now),
+    env.DB.prepare("DELETE FROM watchers WHERE last_seen < ?").bind(now - 24 * 60 * 60 * 1000),
+  ]);
 }
 
 /* --------------------------------------------------------------- reminders */

@@ -89,10 +89,19 @@ export function destinationAllowed(phone: string, allowed: string): boolean {
   return list.some((c) => prefixes[c] && phone.startsWith(prefixes[c]));
 }
 
+/**
+ * Windowed counter in D1: one atomic upsert that resets the count when the
+ * window has lapsed. Strong consistency is a quiet upgrade over the KV
+ * version this replaced, which could under-count across edges.
+ */
 export async function rateLimit(env: Env, key: string, limit: number, ttl = 3600): Promise<boolean> {
-  const k = `rl:${key}`;
-  const current = parseInt((await env.CALLS.get(k)) ?? "0", 10);
-  if (current >= limit) return false;
-  await env.CALLS.put(k, String(current + 1), { expirationTtl: ttl });
-  return true;
+  const now = Date.now();
+  const row = await env.DB.prepare(
+    `INSERT INTO counters (key, n, expires_at) VALUES (?1, 1, ?2)
+     ON CONFLICT (key) DO UPDATE SET
+       n = CASE WHEN counters.expires_at < ?3 THEN 1 ELSE counters.n + 1 END,
+       expires_at = CASE WHEN counters.expires_at < ?3 THEN ?2 ELSE counters.expires_at END
+     RETURNING n`,
+  ).bind(`rl:${key}`, now + ttl * 1000, now).first<{ n: number }>();
+  return (row?.n ?? 1) <= limit;
 }

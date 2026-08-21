@@ -4,7 +4,7 @@ import * as schedule from "./schedule";
 import * as db from "./db";
 import * as team from "./team";
 import { LANGUAGES, DEFAULT_LANGUAGE, isSupportedLanguage, languageOf } from "./languages";
-import { session, sign, webhookToken, safeEqual, revokeSessions } from "./auth";
+import { session, sign, webhookToken, safeEqual } from "./auth";
 import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
 import {
   json,
@@ -16,9 +16,11 @@ import {
 } from "./util";
 
 export interface Env {
-  CALLS: KVNamespace;
-  /** Users, orgs, invites and the money ledger. Schema in ../schema.sql. */
+  /** All state: users, orgs, invites, ledger, calls, briefs, watchers,
+   *  outbox, codes and counters. Schema in ../schema.sql. */
   DB: D1Database;
+  /** Parked edition PDFs — the one thing too big for a database row. */
+  OUTBOX: R2Bucket;
   /** The landing page, served from site/public by the assets binding. */
   ASSETS: Fetcher;
 
@@ -65,16 +67,6 @@ export interface Env {
  * long life costs little — and `screenless logout` ends it immediately.
  */
 const SESSION_TTL_SECS = 365 * 24 * 60 * 60;
-/** Call records outlive the call itself so `screenless call` can be re-run against an id. */
-const CALL_TTL_SECS = 24 * 60 * 60;
-/**
- * A call waiting in a team's queue lives a week, not a day. The queue is the
- * promise that a request made while nobody's terminal was watching is still
- * there when the next watcher spawns — a weekend must not eat it.
- */
-const QUEUED_CALL_TTL_SECS = 7 * 24 * 60 * 60;
-/** How long a watcher heartbeat stays live. Watchers poll well inside this. */
-const WATCHER_TTL_SECS = 90;
 /** OTP sends allowed per phone number per hour. An SMS costs up to ~$0.09. */
 const OTP_RATE_LIMIT = 5;
 /**
@@ -90,75 +82,27 @@ const OTP_GLOBAL_HOURLY = 60;
 /** And a daily backstop, so a slow pump cannot run all night under the hourly cap. */
 const OTP_GLOBAL_DAILY = 300;
 
-interface TranscriptLine {
-  role: string;
-  text: string;
-  at?: string;
+type CallRecord = db.CallRecord;
+const saveCall = (env: Env, callId: string, record: CallRecord) => db.putCall(env, callId, record);
+const loadCall = (env: Env, callId: string) => db.getCall(env, callId);
+
+/** A verified CLI session whose tokens have not been revoked since minting. */
+async function authed(req: Request, env: Env) {
+  const s = await session(req, env.SESSION_SECRET);
+  if (!s) return null;
+  // A token with no `iat` predates revocation, so any revocation voids it.
+  return (s.iat ?? 0) >= (await db.revokedBefore(env, s.phone)) ? s : null;
 }
-
-interface CallRecord {
-  phone: string;
-  /** Who this call belongs to, for billing attribution and watcher routing. */
-  userId?: string;
-  orgId?: string;
-  /** Empty for a recorded-request call — no assistant was ever on the line. */
-  assistantId: string;
-  /**
-   * Copied off Telnyx once the call ends, so the conversation there can be
-   * deleted. For a recorded request this is the transcription, one user line.
-   */
-  transcript?: TranscriptLine[];
-  /** The app Telnyx auto-provisioned for this assistant; deleted alongside it. */
-  texmlAppId?: string;
-  status: "initiated" | "ringing" | "answered" | "completed" | "failed";
-  /** Answered by a machine. The call was hung up, the brief re-parked held,
-   *  and nothing here is a conversation worth collecting. */
-  voicemail?: boolean;
-  /** The user rang in. Its end is reported by the TeXML application's status
-   *  callback, not per call — see finishInbound. */
-  inbound?: boolean;
-  /** brief = a conversation about the parked brief; request = a ring-in that
-   *  recorded an ask for the agent instead of talking to the assistant. */
-  kind?: "brief" | "request";
-  /** The recorded ask, transcribed. */
-  requestText?: string;
-  /** Where Telnyx keeps the audio — stored before transcription is attempted,
-   *  so a failed transcription still leaves something to listen to. */
-  recordingUrl?: string;
-  /** Whether this call goes to the team's watcher queue when it finishes. */
-  queued?: boolean;
-  /** User id of whoever's watcher took it. Set once; queue skips it after. */
-  handledBy?: string;
-  /** Guards the ledger against a duplicated end-of-call webhook. */
-  debited?: boolean;
-  conversationId?: string;
-  createdAt: number;
-  endedAt?: number;
-}
-
-const saveCall = (env: Env, callId: string, record: CallRecord) =>
-  env.CALLS.put(`call:${callId}`, JSON.stringify(record), {
-    expirationTtl: record.queued ? QUEUED_CALL_TTL_SECS : CALL_TTL_SECS,
-  });
-
-const loadCall = async (env: Env, callId: string): Promise<CallRecord | null> => {
-  const raw = await env.CALLS.get(`call:${callId}`);
-  return raw ? (JSON.parse(raw) as CallRecord) : null;
-};
 
 /* ---------------------------------------------------------------- identity */
 
 const teamUrl = (env: Env) => `${env.SITE_URL || "https://screenless.sh"}/team`;
 
 /**
- * The user and org behind a verified phone, creating both on first sight —
- * with the free credit — and syncing a confirmed email onto the user row.
+ * The user and org behind a verified phone, created on first sight — with the
+ * free credit. The email needs no syncing any more: settings live on the user.
  */
-async function identify(env: Env, phone: string): Promise<{ user: db.User; org: db.Org }> {
-  const settings = await schedule.loadSettings(env, phone);
-  const email = settings.emailVerifiedAt && settings.email ? settings.email : undefined;
-  return db.ensureUserForPhone(env, phone, email);
-}
+const identify = (env: Env, phone: string) => db.ensureUserForPhone(env, phone);
 
 /**
  * Blocks anything that costs money when the caller's org has no credit left,
@@ -311,33 +255,7 @@ async function captureTranscript(env: Env, callId: string, record: CallRecord): 
   }
 }
 
-/* ------------------------------------------------------------ team queue */
-
-const queueKey = (orgId: string) => `orgq:${orgId}`;
-
-async function loadQueue(env: Env, orgId: string): Promise<string[]> {
-  const raw = await env.CALLS.get(queueKey(orgId));
-  try {
-    const list = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Puts a finished call where the team's watchers will find it. The queue is an
- * id list; the truth about each call — including whether someone already took
- * it — lives on the call record, so pruning the list is always safe.
- */
-async function enqueueOrgCall(env: Env, orgId: string, callId: string): Promise<void> {
-  const list = await loadQueue(env, orgId);
-  if (!list.includes(callId)) list.push(callId);
-  while (list.length > 50) list.shift();
-  await env.CALLS.put(queueKey(orgId), JSON.stringify(list), {
-    expirationTtl: QUEUED_CALL_TTL_SECS,
-  });
-}
+/* ---------------------------------------------------------- end of call */
 
 /**
  * Everything that happens when a call is over, wherever its end was reported
@@ -355,9 +273,8 @@ async function afterCallEnded(env: Env, callId: string, record: CallRecord): Pro
     await saveCall(env, callId, record);
   }
 
-  if (record.orgId && record.queued && record.status === "completed" && !record.voicemail) {
-    await enqueueOrgCall(env, record.orgId, callId);
-  }
+  // Nothing to enqueue: the team's queue is a query over calls, and this call
+  // already carries its `queued` flag.
 }
 
 type Lang = string;
@@ -476,19 +393,15 @@ async function startCall(
     });
   } catch (err) {
     await cleanupAssistant(env, record);
-    await env.CALLS.delete(`call:${callId}`);
+    await db.deleteCall(env, callId);
     return { ok: false, status: 502, error: `failed to place call: ${(err as Error).message}` };
   }
-
-  // Lets the loop find the transcript of a call it never initiated — the 07:00
-  // one it was asleep for.
-  await env.CALLS.put(`last:${phone}`, callId, { expirationTtl: CALL_TTL_SECS });
 
   return { ok: true, callId };
 }
 
 async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
   const gate = await requireCredit(env, s.phone);
@@ -608,7 +521,6 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
-  await env.CALLS.put(`last:${from}`, callId, { expirationTtl: CALL_TTL_SECS });
 
   const t = await webhookToken("inbound", env.SESSION_SECRET);
   const choiceUrl = `${origin}/texml/inbound/choice?t=${t}&amp;call=${callId}`;
@@ -769,10 +681,9 @@ async function inboundRecorded(req: Request, env: Env): Promise<Response> {
  * it had happened.
  */
 async function finishInbound(env: Env, phone: string, why: string, force = false): Promise<string | null> {
-  const callId = await env.CALLS.get(`last:${phone}`);
-  if (!callId) return null;
-  const record = await loadCall(env, callId);
-  if (!record) return null;
+  const latest = await db.latestCallFor(env, phone);
+  if (!latest) return null;
+  const { id: callId, record } = latest;
   if (record.status === "completed" || record.status === "failed") return null;
   // Only a ring-in is closed from the application-level callback or the
   // sweep; an outbound call has its own per-call status callback. The admin
@@ -815,19 +726,9 @@ async function inboundStatus(req: Request, env: Env): Promise<Response> {
  */
 async function sweepStaleInbound(env: Env): Promise<number> {
   let n = 0;
-  let cursor: string | undefined;
-  do {
-    const page = await env.CALLS.list({ prefix: "call:", cursor, limit: 200 });
-    cursor = page.list_complete ? undefined : page.cursor;
-    for (const key of page.keys) {
-      const raw = await env.CALLS.get(key.name);
-      if (!raw) continue;
-      const record = JSON.parse(raw) as CallRecord;
-      if (!record.inbound || record.status !== "answered") continue;
-      if (Date.now() - record.createdAt < 60 * 60 * 1000) continue;
-      if (await finishInbound(env, record.phone, "stale sweep")) n += 1;
-    }
-  } while (cursor);
+  for (const { record } of await db.staleInboundCalls(env, Date.now() - 60 * 60 * 1000)) {
+    if (await finishInbound(env, record.phone, "stale sweep")) n += 1;
+  }
   return n;
 }
 
@@ -846,7 +747,7 @@ function callPayload(callId: string, record: CallRecord) {
 }
 
 async function getCall(callId: string, req: Request, env: Env): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated");
 
   const record = await loadCall(env, callId);
@@ -863,35 +764,6 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
 
 /* ---------------------------------------------------------------- watchers */
 
-interface WatcherInfo {
-  watcherId: string;
-  userId: string;
-  startedAt: number;
-  repo?: string;
-}
-
-const watcherKey = (orgId: string, watcherId: string) => `watcher:${orgId}:${watcherId}`;
-
-async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo[]> {
-  const watchers: WatcherInfo[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await env.CALLS.list({ prefix: `watcher:${orgId}:`, cursor, limit: 100 });
-    cursor = page.list_complete ? undefined : page.cursor;
-    for (const key of page.keys) {
-      const raw = await env.CALLS.get(key.name);
-      if (!raw) continue;
-      try {
-        const info = JSON.parse(raw) as Omit<WatcherInfo, "watcherId">;
-        watchers.push({ ...info, watcherId: key.name.slice(`watcher:${orgId}:`.length) });
-      } catch {
-        /* stale junk */
-      }
-    }
-  } while (cursor);
-  return watchers;
-}
-
 /**
  * Which watcher a call belongs to, decided at poll time against whoever is
  * alive right now: the caller's own terminal first (their earliest, if they
@@ -899,9 +771,9 @@ async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo[]> {
  * call time is what makes the queue survivable — a call that ends into an
  * empty room is simply assigned to the first watcher that shows up.
  */
-function assignee(record: CallRecord, watchers: WatcherInfo[]): WatcherInfo | null {
+function assignee(record: CallRecord, watchers: db.WatcherInfo[]): db.WatcherInfo | null {
   if (!watchers.length) return null;
-  const byStart = (a: WatcherInfo, b: WatcherInfo) =>
+  const byStart = (a: db.WatcherInfo, b: db.WatcherInfo) =>
     a.startedAt - b.startedAt || a.watcherId.localeCompare(b.watcherId);
   const own = watchers.filter((w) => w.userId === record.userId).sort(byStart);
   if (own.length) return own[0];
@@ -910,12 +782,13 @@ function assignee(record: CallRecord, watchers: WatcherInfo[]): WatcherInfo | nu
 
 /**
  * The watcher's one poll: registers the heartbeat, then answers "is there a
- * finished call for *this* terminal?". Handled and expired entries are pruned
- * in passing; calls assigned to another live watcher are left for it, so two
- * watchers drain a backlog in parallel without ever taking the same call.
+ * finished call for *this* terminal?". The queue is a query over calls, so
+ * there is nothing to prune; calls assigned to another live watcher are left
+ * for it, which is how two watchers drain a backlog in parallel without ever
+ * taking the same call.
  */
 async function watchNext(req: Request, env: Env): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated — run `screenless setup`");
   const { user, org } = await identify(env, s.phone);
 
@@ -925,48 +798,21 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   const repo = url.searchParams.get("repo") ?? "";
   if (!/^[\w-]{6,64}$/.test(watcherId)) return fail(400, "watcher id required");
 
-  await env.CALLS.put(
-    watcherKey(org.id, watcherId),
-    JSON.stringify({ userId: user.id, startedAt, repo }),
-    { expirationTtl: WATCHER_TTL_SECS },
-  );
+  await db.heartbeatWatcher(env, org.id, { watcherId, userId: user.id, startedAt, repo });
+  const watchers = await db.liveWatchers(env, org.id);
 
-  const watchers = await liveWatchers(env, org.id);
-  // KV lists are eventually consistent; the terminal that just heartbeat must
-  // exist in its own view of the room whatever the edge cache says.
-  if (!watchers.some((w) => w.watcherId === watcherId)) {
-    watchers.push({ watcherId, userId: user.id, startedAt, repo });
-  }
+  const queue = await db.queuedCalls(env, org.id);
+  const found = queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
-  const queue = await loadQueue(env, org.id);
-  const keep: string[] = [];
-  let found: { callId: string; record: CallRecord } | null = null;
-
-  for (const callId of queue) {
-    const record = await loadCall(env, callId);
-    if (!record || record.handledBy) continue; // expired or done — prune
-    keep.push(callId);
-    if (record.status !== "completed") continue;
-    if (found) continue;
-    const who = assignee(record, watchers);
-    if (who && who.watcherId === watcherId) found = { callId, record };
-  }
-
-  if (keep.length !== queue.length) {
-    await env.CALLS.put(queueKey(org.id), JSON.stringify(keep), {
-      expirationTtl: QUEUED_CALL_TTL_SECS,
-    });
-  }
-
-  if (!found) return json({ ready: false, watchers: watchers.length, queued: keep.length });
+  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   return json({
     ready: true,
     watchers: watchers.length,
-    queued: keep.length,
+    queued: queue.length,
     call: {
-      ...callPayload(found.callId, found.record),
+      ...callPayload(found.id, found.record),
       caller: {
         name: caller?.name ?? "",
         email: caller?.email ?? null,
@@ -980,7 +826,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
 
 /** Marks a queued call as taken, so no other watcher ever sees it again. */
 async function watchDone(req: Request, env: Env): Promise<Response> {
-  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated");
   const { user, org } = await identify(env, s.phone);
 
@@ -989,18 +835,8 @@ async function watchDone(req: Request, env: Env): Promise<Response> {
 
   const record = await loadCall(env, callId);
   if (!record || record.orgId !== org.id) return fail(404, "unknown call id");
-  if (!record.handledBy) {
-    record.handledBy = user.id;
-    await saveCall(env, callId, record);
-  }
-  const queue = await loadQueue(env, org.id);
-  const keep = queue.filter((id) => id !== callId);
-  if (keep.length !== queue.length) {
-    await env.CALLS.put(queueKey(org.id), JSON.stringify(keep), {
-      expirationTtl: QUEUED_CALL_TTL_SECS,
-    });
-  }
-  return json({ ok: true, handledBy: record.handledBy });
+  await db.markHandled(env, org.id, callId, user.id);
+  return json({ ok: true, handledBy: record.handledBy ?? user.id });
 }
 
 /* ---------------------------------------------------------------- webhooks */
@@ -1242,11 +1078,11 @@ export default {
       // Who am I, org-wise. Also what `screenless team` prints before it
       // opens the page.
       if (method === "GET" && path === "/org/me") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         const { user, org } = await identify(env, s.phone);
         const roster = await db.members(env, org.id);
-        const watchers = await liveWatchers(env, org.id);
+        const watchers = await db.liveWatchers(env, org.id);
         return json({
           user: { name: user.name, email: user.email, role: user.role, phone: user.phone },
           org: { name: org.name, creditCents: org.credit_cents, members: roster.length },
@@ -1259,7 +1095,7 @@ export default {
       /* --------------------------------------------------------- settings */
 
       if (path === "/settings" && (method === "GET" || method === "POST")) {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
         if (method === "POST") {
@@ -1275,7 +1111,7 @@ export default {
       // What is queued, and when it will ring. The loop reads this to decide
       // whether it still has time to park tonight's brief.
       if (method === "GET" && path === "/brief") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         const brief = await schedule.loadBrief(env, s.phone);
         return json(
@@ -1293,7 +1129,7 @@ export default {
       }
 
       if (method === "DELETE" && path === "/brief") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         await schedule.clearBrief(env, s.phone);
         return json({ cleared: true });
@@ -1303,18 +1139,14 @@ export default {
       // call is the only handle the loop ever gets — it was asleep when the
       // call id was minted.
       if (method === "GET" && path === "/calls/latest") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated");
-        const latest = await env.CALLS.get(`last:${s.phone}`);
+        // The old `?since` dedupe protocol died with `screenless collect`:
+        // the watcher is the one channel work arrives on now, and this
+        // endpoint only serves `screenless transcript`.
+        const latest = await db.latestCallFor(env, s.phone);
         if (!latest) return fail(404, "no calls yet");
-
-        // `since` is what makes a five-minute poll affordable: the collector
-        // asks "anything newer than the one I already acted on?" and almost
-        // always gets an empty 204 back. Without it every laptop would pull a
-        // full transcript 288 times a day to learn nothing.
-        if (url.searchParams.get("since") === latest) return new Response(null, { status: 204 });
-
-        return await getCall(latest, req, env);
+        return await getCall(latest.id, req, env);
       }
 
       /* ------------------------------------------------------------ email */
@@ -1323,7 +1155,7 @@ export default {
       // recipient is bound to the account, so nobody can point our verified
       // sending domain at a stranger's inbox.
       if (method === "POST" && path === "/email/start") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         if (!env.RESEND_API_KEY) return fail(503, "mail is not configured on this Worker");
 
@@ -1335,19 +1167,17 @@ export default {
         const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
         // Keyed by phone, not by address, so a code cannot be redeemed against
         // an address other than the one it was sent to.
-        await env.CALLS.put(`emailcode:${s.phone}`, JSON.stringify({ email, code }), {
-          expirationTtl: 900,
-        });
+        await db.stashPut(env, `emailcode:${s.phone}`, JSON.stringify({ email, code }), 900);
         await sendEmailCode(env, email, code);
         return json({ sent: true, email });
       }
 
       if (method === "POST" && path === "/email/verify") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
         const { code } = (await req.json().catch(() => ({}))) as { code?: string };
-        const raw = await env.CALLS.get(`emailcode:${s.phone}`);
+        const raw = await db.stashGet(env, `emailcode:${s.phone}`);
         if (!raw) return fail(410, "no pending confirmation — start again");
 
         const pending = JSON.parse(raw) as { email: string; code: string };
@@ -1359,20 +1189,16 @@ export default {
           emailVerifiedAt: Date.now(),
         });
         if (!result.ok) return fail(400, result.error);
-        await env.CALLS.delete(`emailcode:${s.phone}`);
-        // The confirmed address is also this user's sign-in for the team page.
-        await db
-          .ensureUserForPhone(env, s.phone, pending.email)
-          .catch((err) => console.error("email sync to D1 failed", (err as Error).message));
+        await db.stashDelete(env, `emailcode:${s.phone}`);
         return json({ verified: true, email: pending.email });
       }
 
       // Withdraws every token minted for this number. The CLI deleting its own
       // config file is housekeeping, not revocation.
       if (method === "POST" && path === "/auth/logout") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return json({ revoked: true });
-        await revokeSessions(env.CALLS, s.phone);
+        await db.revokeTokens(env, s.phone);
         return json({ revoked: true });
       }
 
@@ -1386,7 +1212,7 @@ export default {
 
       // The CLI's view of the money: a balance, not a subscription.
       if (method === "GET" && path === "/billing/status") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         const { user, org } = await identify(env, s.phone);
         return json({
@@ -1406,7 +1232,7 @@ export default {
       // Parks an edition for delivery at wake-up. Same session auth as calls:
       // whoever holds the token gets to mail themselves a PDF, nothing more.
       if (method === "POST" && path === "/mail") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
         // Deliberately not gated on credit. The paper is the free surface:
         // it is what someone can have working tonight, and it is what earns
@@ -1473,6 +1299,10 @@ export default {
     await sweepBriefs(env);
     const stale = await sweepStaleInbound(env).catch(() => 0);
     if (stale) console.log(`closed ${stale} stale inbound call(s)`);
+    // KV gave TTLs for free; in D1 they are this one broom.
+    await db.cleanupExpired(env).catch((err) =>
+      console.error("cleanup sweep failed", (err as Error).message),
+    );
   },
 };
 

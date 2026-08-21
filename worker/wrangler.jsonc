@@ -87,16 +87,17 @@
     "FREE_CREDIT_CENTS": "1000"
   },
 
-  // Stores call records, settings, parked briefs, the watcher heartbeats and
-  // team call queues, and OTP rate-limit counters.
-  // Create with: wrangler kv namespace create CALLS
-  "kv_namespaces": [{ "binding": "CALLS", "id": "1f4267f254c74f82a24737a84070f991" }],
-
-  // Users, orgs, invites and the money ledger. Schema in schema.sql:
+  // All state: users, orgs, invites, ledger, calls, briefs, watchers, outbox,
+  // codes and rate-limit counters. Schema in schema.sql:
   //   wrangler d1 execute screenless --remote --file=schema.sql
+  // (There used to be a KV namespace beside this; it was folded in here so the
+  // Worker has one store with one consistency model.)
   "d1_databases": [
     { "binding": "DB", "database_name": "screenless", "database_id": "641fe5a5-3d8e-41c1-8e27-d6f8c47e3f43" }
   ],
+
+  // Parked edition PDFs, keyed outbox/<id> — the one thing too big for a row.
+  "r2_buckets": [{ "binding": "OUTBOX", "bucket_name": "screenless-outbox" }],
 
   // Places any brief whose call time has come, drains the mail outbox, and
   // sends the verify-your-phone reminders. Five minutes is well inside what a
