@@ -18,7 +18,7 @@ pull requests than they want to read on a laptop.
 
 | | **the call** | **the paper** |
 | --- | --- | --- |
-| What | A 30-minute morning call that walks your open PRs and takes your decisions | A daily printable PDF in your inbox — visual, almost no text |
+| What | A morning call that walks your open PRs and takes your decisions | A weekly printable PDF, landing Saturday — visual, almost no text |
 | Answers | *What do I need to decide today?* | *What is my product actually becoming?* |
 | Shape | Interruptible conversation, CLI-triggered | One-way, glanceable, printable |
 | Screen time | Zero — it is a phone call | Zero, if you print it |
@@ -71,8 +71,8 @@ pressing you for an answer while you are walking the dog.
 
 ### the paper
 
-A single daily PDF, mailed to land at wake-up, built to be printed and read
-with coffee:
+A weekly PDF, mailed to land on Saturday morning, built to be printed and
+read with coffee — the state of the product after a week of agent work:
 
 - **One page per ticket in flight**, mostly picture: what surface it touches,
   a screenshot of that surface as it looks today, and what will look different
@@ -337,13 +337,12 @@ curl https://api.screenless.sh/admin/inbound-url -H "X-Admin-Secret: <ADMIN_SECR
 ```
 
 In the Telnyx portal, set that as the Voice URL (POST) of a TeXML application
-and assign `TELNYX_FROM_NUMBER` to it. Whoever rings in gets a plain robot
-voice: *"Press 1 to speak to the assistant, or start talking to make your
-request after the tone."* Press 1 and it is the brief already parked for their
-number — the same conversation the 07:00 call would have been. Say something
-instead, and the recording is transcribed and routed to whichever teammate's
-terminal is running `screenless watch` — the caller's own first, anyone's
-otherwise, and a queue that holds up to a week when nobody is.
+and assign `TELNYX_FROM_NUMBER` to it. A team member who rings in hears no
+voice at all — just a beep: say what you need, hang up, and the recording is
+transcribed and routed to whichever teammate's terminal is running
+`screenless watch` — the caller's own first, anyone's otherwise, and a queue
+that holds up to a week when nobody is. A caller who is not on any team gets
+a short robot voice pointing them at screenless.sh.
 
 ### The team
 
@@ -449,7 +448,7 @@ screenless done <callId>
 The assistant on the phone has no tools and takes no action — it collects
 decisions and hangs up. Everything that merges, comments or closes runs on your
 machine, with the access you already gave it. Decline the call and ring the
-number back whenever suits: same brief, same conversation.
+line whenever suits to leave your decisions or a request as a voice note.
 
 `mail` hands the PDF to the Worker, which parks it in KV and sends it on a
 five-minute cron sweep once it comes due. The Worker holds it rather than your
@@ -598,7 +597,7 @@ worker/                 shared backend — telephony + scheduled mail
   src/mail.ts             outbox, wake-up scheduling, delivery
   src/telnyx.ts           Telnyx API client
   wrangler.toml           all tunable defaults
-press/                  the nightly paper — built, see press/README.md
+press/                  the weekly paper — built, see press/README.md
   SKILL.md                the loop Claude Code runs
   bin/collect.mjs         deterministic facts from git + gh
   bin/render.mjs          edition.json -> HTML -> PDF

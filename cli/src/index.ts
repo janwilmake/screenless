@@ -694,7 +694,7 @@ interface Settings {
   languages?: Array<{ code: string; label: string }>;
   /** Next actual ring, ms since epoch. */
   nextCallAt: number;
-  /** The number to ring back on, to take the call early or late. */
+  /** The team line — ring it any time to leave a spoken request. */
   inboundNumber: string;
 }
 
@@ -711,7 +711,7 @@ function showSettings(s: Settings): void {
   );
   const lang = s.languages?.find((l) => l.code === s.language);
   console.log(`${c.bold("language")}    ${lang?.label ?? s.language}`);
-  console.log(`${c.bold("ring back")}   ${s.inboundNumber} ${c.dim("— take the call early or late")}`);
+  console.log(`${c.bold("team line")}   ${s.inboundNumber} ${c.dim("— ring it, talk after the beep, hang up")}`);
 }
 
 async function settings(args: string[]): Promise<void> {
@@ -810,7 +810,7 @@ async function call(args: string[]): Promise<void> {
         : `${c.green("✓")} parked — held until you ring in`,
     );
     console.log(
-      c.dim(`  decline it and ring ${parked.inboundNumber} whenever suits — same brief, same call.`),
+      c.dim(`  decline it and it rolls forward; ring ${parked.inboundNumber} any time to leave a spoken request.`),
     );
     return;
   }
@@ -853,7 +853,7 @@ async function call(args: string[]): Promise<void> {
   }
 
   if (result.voicemail) {
-    console.log(`\n${c.red("✗")} voicemail answered — hung up, nothing said; the brief is parked held, ring in when it suits`);
+    console.log(`\n${c.red("✗")} voicemail answered — hung up, nothing said; the brief is back on the shelf and tonight's run refreshes it`);
     exit(1);
   }
   if (result.status === "failed") {
@@ -912,7 +912,7 @@ async function transcript(args: string[]): Promise<void> {
       }
       if (result.status === "failed") {
         console.log(`${c.red("✗")} the last call did not connect`);
-        console.log(c.dim(`  the brief is still parked — ring in when it suits`));
+        console.log(c.dim(`  the brief is back on the shelf — tomorrow's call covers it`));
         exit(1);
       }
       printTranscript(result.transcript ?? []);
@@ -1116,12 +1116,12 @@ ${c.bold("Settings options")}
   Your timezone is not a setting — it is read from this machine every time,
   so moving country fixes the schedule by itself.
 
-${c.bold("Taking the call on your terms")}
-  Decline the morning call and ring the number back whenever suits — press 1
-  and it is the same brief, same conversation. ${c.dim("screenless settings")} prints the
-  number. Or don't press anything: say what you need after the tone, and the
-  recording lands — transcribed — in whichever teammate's terminal is running
-  ${c.dim("screenless watch")}. Nothing watching? It waits in the queue up to a week.
+${c.bold("The line")}
+  Ring ${c.dim("screenless settings")}' number any time: no menu, no voice — a beep,
+  you talk, you hang up. The recording lands — transcribed — in whichever
+  teammate's terminal is running ${c.dim("screenless watch")}. Nothing watching? It
+  waits in the queue up to a week. A declined morning call goes back on the
+  shelf; the loop re-parks it for tomorrow.
 
 ${c.bold("Watch options")}
   (none)               block until one call or spoken request is delivered,

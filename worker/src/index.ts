@@ -484,12 +484,11 @@ async function inboundBody(req: Request): Promise<Record<string, string>> {
 /**
  * Answers a call *to* our number.
  *
- * Not the assistant — the assistant is who calls *you*. A ring-in gets a plain
- * robot voice: press 1 for the assistant (the parked brief, same conversation
- * you would have got at your call time), or just talk, and the recording is
- * transcribed and routed to whichever teammate's terminal is watching. The
- * caller must be a verified member of a team with credit; both are checked
- * before a second of anyone's time is spent.
+ * A known caller hears no voice at all — just the record beep, talk, hang up;
+ * the transcription lands in the team's watching terminal. The menu this
+ * replaced ("press 1 for the assistant") read as friction: the assistant is
+ * who calls *you*, and a ring-in is always a request. Only a stranger gets a
+ * voice, telling them how to become a caller.
  */
 async function answerInbound(req: Request, env: Env, origin: string): Promise<Response> {
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
@@ -501,7 +500,7 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   const user = await db.userByPhone(env, from);
   if (!user || !user.phone_verified_at) {
     return sayHangup(
-      "This number is not on a screenless team yet. Ask your admin for an invite, or run screenless setup. Goodbye.",
+      "This is a screenless line for teams. To use it, install screenless from screenless dot s h, or ask your team for an invite. Goodbye.",
     );
   }
   const org = await db.orgById(env, user.org_id);
@@ -517,73 +516,12 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     assistantId: "",
     status: "answered",
     inbound: true,
+    kind: "request",
     queued: true,
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
 
-  const t = await webhookToken("inbound", env.SESSION_SECRET);
-  const choiceUrl = `${origin}/texml/inbound/choice?t=${t}&amp;call=${callId}`;
-  const recordUrl = `${origin}/texml/inbound/record?t=${t}&amp;call=${callId}`;
-
-  return xml(
-    `<Gather action="${choiceUrl}" method="POST" numDigits="1" timeout="3">` +
-      sayXml("screenless. Press 1 to speak to the assistant, or start talking to make your request after the tone.") +
-      `</Gather><Redirect method="POST">${recordUrl}</Redirect>`,
-  );
-}
-
-/** The keypress: 1 connects the parked brief's assistant, anything else records. */
-async function inboundChoice(req: Request, env: Env, origin: string): Promise<Response> {
-  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
-
-  const url = new URL(req.url);
-  const callId = url.searchParams.get("call") ?? "";
-  const record = await loadCall(env, callId);
-  if (!record) return sayHangup("Sorry, something went wrong. Goodbye.");
-
-  const params = await inboundBody(req);
-  const t = await webhookToken("inbound", env.SESSION_SECRET);
-  const recordUrl = `${origin}/texml/inbound/record?t=${t}&amp;call=${callId}`;
-  console.log("inbound choice", callId, `digits=${params.Digits ?? "(none)"}`);
-
-  if ((params.Digits ?? "") === "1") {
-    const brief = await schedule.loadBrief(env, record.phone);
-    if (!brief) {
-      return xml(
-        sayXml("There is no briefing waiting for you right now. Tell me what you need after the tone.") +
-          `<Redirect method="POST">${recordUrl}</Redirect>`,
-      );
-    }
-
-    const lang = asLang(brief.language);
-    const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-in-${Date.now()}`, {
-      instructions: instructionsFor(brief.prompt),
-      model: env.ASSISTANT_MODEL,
-      voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
-      language: lang,
-      greeting: languageOf(lang).greeting,
-    });
-
-    record.assistantId = assistant.id;
-    record.texmlAppId = assistant.telephony_settings?.default_texml_app_id;
-    record.kind = "brief";
-    await saveCall(env, callId, record);
-
-    // Delivered — so the morning sweep does not ring them about it again.
-    brief.status = "placed";
-    brief.callId = callId;
-    await schedule.saveBrief(env, record.phone, brief);
-
-    return xml(`<Connect><AIAssistant id="${assistant.id}"></AIAssistant></Connect>`);
-  }
-
-  return xml(`<Redirect method="POST">${recordUrl}</Redirect>`);
-}
-
-async function inboundRecord(req: Request, env: Env, origin: string): Promise<Response> {
-  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
-  const callId = new URL(req.url).searchParams.get("call") ?? "";
   const t = await webhookToken("inbound", env.SESSION_SECRET);
   const doneUrl = `${origin}/texml/inbound/recorded?t=${t}&amp;call=${callId}`;
   // Both callbacks, because they cover different endings. `action` fires when
@@ -1030,10 +968,6 @@ export default {
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
         return await answerInbound(req, env, origin);
-      if (path === "/texml/inbound/choice" && method === "POST")
-        return await inboundChoice(req, env, origin);
-      if (path === "/texml/inbound/record" && method === "POST")
-        return await inboundRecord(req, env, origin);
       if (path === "/texml/inbound/recorded" && method === "POST")
         return await inboundRecorded(req, env);
 

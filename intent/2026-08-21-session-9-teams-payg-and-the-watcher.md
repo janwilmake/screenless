@@ -113,3 +113,14 @@ a wrongly-typed number can never receive its own verification text.
 - 22:34 — `i dont like our html doesnt allow 'enter' for forms. fix that`
 - 22:36 — `what is the cost per minute for calls for me?`
   *(30 cents per minute, billed per second on completed calls only)*
+- 22:40 — `whats the COST at telnyx?`
+- 22:44 — `think how much this would be used for a software dev te and how much the 30c/min could be`
+- 22:50 — `i think this is fine for my aipilled target  audience.
+
+  some big changes: i want the newspaper just once a week. it should land on saturday and should contain some changes from different team members and also looking ahead to open prs and things in the backlog. just giving an idea of the state of the product`
+  *(the paper goes weekly: built on Saturday's run, landing Saturday morning; team-wide — who shipped what, by member — and forward-looking — open PRs and the backlog. The call brief stays nightly.)*
+
+- 22:56 — `also i want the call if users cal screenless to not have the robotic voice, ever, just start recording immediately.
+
+  if someone calls screeenless that isnt a user yet, they should get a robotvoice saying to install screenless first`
+  *(reverses the press-1 menu from 18:12/18:20: a known caller hears only the record beep — the brief-by-ring-back path goes away with the menu — and only a stranger hears a voice, told to install screenless)*

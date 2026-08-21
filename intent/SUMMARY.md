@@ -24,8 +24,8 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | Intent | Status |
 |---|---|
 | Get the decisions coding agents are blocked on out of a screen and into a phone call | not built — `rounds` does not exist |
-| A nightly printable paper about your own product | built, unrun end to end |
-| The paper and the call built together from one reading *(was: two loops)* | built, unrun |
+| A **weekly** paper, landing **Saturday morning** — the team's week by member, the week ahead (open PRs and the top of the backlog), the state of the product *(was: nightly, single-person)* | built — skill cadence split (brief nightly, edition Saturdays), collector emits per-author facts; first Saturday edition unrun |
+| The call brief nightly and the edition weekly from the same Saturday sitting *(was: both nightly from one reading; before that, two loops)* | built, unrun |
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
 | The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
@@ -62,8 +62,8 @@ watching. The assistant on the phone still takes no action; the terminal does.
 
 | Intent | Status |
 |---|---|
-| A ring-in gets a robot voice, not the assistant: "Press 1 to speak to the assistant or start talking to make your request." *(was: ring-ins always answered by the assistant)* | **built and proven** — three real ring-ins on 21 Aug; the first two found the bug (TeXML never calls a Record's action URL on hangup; the recording only arrives via recordingStatusCallback) |
-| Press 1 = the assistant with the parked brief, the same context as the morning call | **built and proven** — a 21:38 ring-in pressed 1, got the parked Hyre brief in Dutch, and the conversation landed in the watcher |
+| A known caller who rings in hears **no voice at all** — straight to the record beep; only a stranger gets a robot voice, told to install screenless *(was: a "press 1 for the assistant" menu; before that, ring-ins always answered by the assistant)* | built — menu removed at 22:56; the recording path underneath it is **proven** by three real ring-ins, which also found the hangup/recordingStatusCallback bug |
+| ~~Press 1 = the assistant with the parked brief~~ — removed with the menu; ring-ins are always requests now, and a declined morning call's items roll into tomorrow's brief | proven once (21:38, in Dutch) before its removal |
 | No keypress = a recording, transcribed, delivered as a request to the team's terminal — not a conversation | **built and proven** — two spoken requests transcribed by Telnyx Whisper and delivered |
 | Requests route to the right terminal: your own first (earliest if you have two), else any teammate's watcher | **built and proven** — synthetic call exercised own-first, standby and dead-watcher failover; two real requests then routed live |
 | Nothing gets lost when no watcher is up: the next watcher to spawn drains the backlog, one by one or in parallel as the agent chooses | built — queue holds seven days; `--gate` leaves a call unacked until `screenless done`, so it is re-handed rather than dropped |

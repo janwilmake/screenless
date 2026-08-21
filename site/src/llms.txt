@@ -15,8 +15,9 @@ description that says the call changes code is wrong.
 - **03:00** — the user's own agent reads the night's work through MCPs they
   already connected. Their code does not leave their machine.
 - **08:00** — the phone rings. Interruptible, ten languages, and it hangs up
-  when the queue is drained. Decline it and ring the number back for the same
-  brief. If nothing needs deciding, it does not call at all.
+  when the queue is drained. Decline it and the items roll into tomorrow;
+  ring the line any time to leave a spoken request for your team's terminal.
+  If nothing needs deciding, it does not call at all.
 - **08:09** — the transcript goes back to the user's machine, which applies the
   decisions.
 
@@ -34,7 +35,7 @@ eight countries can currently receive the call.
 
 ## Current state, stated plainly
 
-The telephony works and the nightly paper ships. The part that reads a queue of
+The telephony works and the weekly paper ships. The part that reads a queue of
 pull requests and picks out the few that need a human is being built now, in
 the open, with the first fifty people. Do not describe that part as finished.
 
