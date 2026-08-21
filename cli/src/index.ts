@@ -784,7 +784,7 @@ async function call(args: string[]): Promise<void> {
   if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `screenless setup` again");
 
   const prompt = args.find((a) => !a.startsWith("--"));
-  if (!prompt) die('usage: screenless call "your prompt here" [--at HH:MM] [--lang en|nl|multi]');
+  if (!prompt) die('usage: screenless call "your prompt here" [--to <email|all>] [--at HH:MM] [--lang en|nl|multi]');
 
   // No default: unset means the account's language, which the Worker holds.
   // Defaulting to "en" here silently overrode a Dutch account on every call
@@ -793,6 +793,36 @@ async function call(args: string[]): Promise<void> {
   const asJson = args.includes("--json");
   const at = argFlag(args, "--at");
   const hold = args.includes("--hold");
+  // --to <email|phone|all>, comma-separated or repeated, calls teammates
+  // instead of yourself: any, some, or all. Each is dialled and its transcript
+  // routes to whoever's watching — the initiator does not wait.
+  const toFlag = args.filter((a, i) => args[i - 1] === "--to").flatMap((v) => v.split(","));
+  const toAll = args.includes("--all");
+  const to = toAll ? ["all"] : toFlag.map((s) => s.trim()).filter(Boolean);
+
+  if (to.length) {
+    const res = await api<{
+      dispatched: boolean;
+      placed: Array<{ callId: string; to: string; name: string }>;
+      failed: Array<{ to: string; error: string }>;
+    }>(cfg.apiUrl, "/calls", {
+      method: "POST",
+      body: { prompt, ...(language === undefined ? {} : { language }), to },
+      token: cfg.token,
+    });
+    if (asJson) {
+      console.log(JSON.stringify(res, null, 2));
+      return;
+    }
+    for (const p of res.placed)
+      console.log(`${c.green("→")} calling ${c.bold(p.name)} ${c.dim(`(${p.callId.slice(0, 8)})`)}`);
+    for (const f of res.failed) console.log(`${c.red("✗")} ${f.to}: ${f.error}`);
+    console.log(
+      c.dim(`\n  ${res.placed.length} call${res.placed.length === 1 ? "" : "s"} placed — each transcript lands in a watching terminal (${"screenless watch"}).`),
+    );
+    return;
+  }
+
   // --at without a value means "my configured call time", which is the flag
   // the nightly loop actually wants: it knows when it finished, not when the
   // person it is briefing wakes up. It is sent as "" — present, empty — and
@@ -1122,6 +1152,10 @@ ${c.bold("Usage")}
   screenless logout                          discard the local session
 
 ${c.bold("Call options")}
+  --to <who>           call teammates instead of yourself — an email or phone,
+                       comma-separated for several; each is dialled and its
+                       transcript lands in a watching terminal
+  --all                call every teammate with a verified phone
   --at [HH:MM]         park the brief instead of dialling now. Bare --at uses
                        your configured call time
   --hold               park it with no time at all — it waits until you ring in
@@ -1129,6 +1163,9 @@ ${c.bold("Call options")}
                        en nl fr de hi it ja pt ru es, or "multi" to follow
                        code-switching mid-sentence
   --json               emit the raw result instead of a formatted transcript
+
+  With no --to, the call is to your own verified number. Teammate calls only
+  ever reach verified numbers on your own team.
 
 ${c.bold("Settings options")}
   --at HH:MM           local time of the morning call, 24-hour (default 08:00)

@@ -93,6 +93,35 @@ export async function members(env: Env, orgId: string): Promise<User[]> {
   return res.results ?? [];
 }
 
+/**
+ * Resolves call targets — "all", or a list of emails/phones — to the org
+ * members who can actually be dialled: same org, phone verified. This is the
+ * widened invariant. `screenless call` used to only ever dial the caller's own
+ * verified number; it can now dial teammates, but *only* verified numbers on
+ * the caller's own team, so a stolen token still cannot reach a stranger.
+ */
+export async function resolveTargets(
+  env: Env,
+  orgId: string,
+  targets: string[],
+): Promise<{ members: User[]; unknown: string[] }> {
+  const roster = (await members(env, orgId)).filter((m) => m.phone && m.phone_verified_at);
+
+  if (targets.some((t) => t.toLowerCase() === "all")) {
+    return { members: roster, unknown: [] };
+  }
+
+  const found: User[] = [];
+  const unknown: string[] = [];
+  for (const raw of targets) {
+    const t = raw.trim().toLowerCase();
+    const m = roster.find((u) => u.email?.toLowerCase() === t || u.phone === raw.trim());
+    if (m && !found.some((f) => f.id === m.id)) found.push(m);
+    else if (!m) unknown.push(raw.trim());
+  }
+  return { members: found, unknown };
+}
+
 /** Open invites, expired ones included — the page shows both. */
 export async function invitesFor(env: Env, orgId: string): Promise<Invite[]> {
   const res = await env.DB.prepare(

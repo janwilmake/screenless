@@ -407,11 +407,13 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   const gate = await requireCredit(env, s.phone);
   if (gate instanceof Response) return gate;
 
-  const { prompt, language, at, hold } = (await req.json().catch(() => ({}))) as {
+  const { prompt, language, at, hold, to } = (await req.json().catch(() => ({}))) as {
     prompt?: string;
     language?: string;
     at?: string;
     hold?: boolean;
+    /** Teammate targets: emails, phones, or ["all"]. Absent means call yourself. */
+    to?: string[];
   };
   if (typeof prompt !== "string" || !prompt.trim()) return fail(400, "prompt is required");
   // Three items with enough background to answer questions from is longer
@@ -421,6 +423,36 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
 
   const settings = await schedule.loadSettings(env, s.phone);
   const lang = language === undefined ? asLang(settings.language) : asLang(language);
+
+  /* ---- calling teammates: any, some, or all ---- */
+
+  // A `to` list turns this from a self-call into a dispatch. Each target must
+  // be a verified number on the caller's own team, and each call is queued so
+  // its transcript routes to whoever is watching — the initiator does not
+  // block on N conversations. This is the tooling the branded skills sit on.
+  if (Array.isArray(to) && to.length) {
+    const { members, unknown } = await db.resolveTargets(env, gate.org.id, to);
+    if (unknown.length)
+      return fail(404, `not on your team, or no verified phone: ${unknown.join(", ")}`);
+    if (!members.length) return fail(400, "no teammates with a verified phone to call");
+    if (!(await rateLimit(env, `dispatch:${s.phone}`, 10)))
+      return fail(429, "too many team calls this hour, try again shortly");
+
+    const placed: Array<{ callId: string; to: string; name: string }> = [];
+    const failed: Array<{ to: string; error: string }> = [];
+    for (const m of members) {
+      const r = await startCall(env, m.phone!, prompt, lang, origin, {
+        userId: m.id,
+        orgId: gate.org.id,
+        queued: true,
+      });
+      if (r.ok) placed.push({ callId: r.callId, to: m.phone!, name: m.name || m.email || m.phone! });
+      else failed.push({ to: m.phone!, error: r.error });
+    }
+    return json({ dispatched: true, placed, failed });
+  }
+
+  /* ---- self-call: park, or dial now and block ---- */
 
   // Parked rather than placed: the loop finishes at 03:00 and the call is
   // wanted at 07:00, so the Worker holds the brief in between. It is also what
