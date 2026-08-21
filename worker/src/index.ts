@@ -122,6 +122,9 @@ interface CallRecord {
   kind?: "brief" | "request";
   /** The recorded ask, transcribed. */
   requestText?: string;
+  /** Where Telnyx keeps the audio — stored before transcription is attempted,
+   *  so a failed transcription still leaves something to listen to. */
+  recordingUrl?: string;
   /** Whether this call goes to the team's watcher queue when it finishes. */
   queued?: boolean;
   /** User id of whoever's watcher took it. Set once; queue skips it after. */
@@ -630,6 +633,7 @@ async function inboundChoice(req: Request, env: Env, origin: string): Promise<Re
   const params = await inboundBody(req);
   const t = await webhookToken("inbound", env.SESSION_SECRET);
   const recordUrl = `${origin}/texml/inbound/record?t=${t}&amp;call=${callId}`;
+  console.log("inbound choice", callId, `digits=${params.Digits ?? "(none)"}`);
 
   if ((params.Digits ?? "") === "1") {
     const brief = await schedule.loadBrief(env, record.phone);
@@ -670,8 +674,15 @@ async function inboundRecord(req: Request, env: Env, origin: string): Promise<Re
   const callId = new URL(req.url).searchParams.get("call") ?? "";
   const t = await webhookToken("inbound", env.SESSION_SECRET);
   const doneUrl = `${origin}/texml/inbound/recorded?t=${t}&amp;call=${callId}`;
+  // Both callbacks, because they cover different endings. `action` fires when
+  // the recording ends inside the call — # pressed, silence, maxLength — and
+  // its response is what the caller hears next. `recordingStatusCallback` is
+  // the only one that fires on the common ending, hanging up: the action URL
+  // is deliberately never requested then (Twilio semantics, which TeXML
+  // follows), which is exactly how the first two real ring-ins produced a
+  // recording nothing ever collected.
   return xml(
-    `<Record action="${doneUrl}" method="POST" maxLength="300" timeout="6" finishOnKey="#" playBeep="true"/>` +
+    `<Record action="${doneUrl}" method="POST" maxLength="300" timeout="6" finishOnKey="#" playBeep="true" recordingStatusCallback="${doneUrl}" recordingStatusCallbackMethod="POST"/>` +
       sayXml("I did not catch anything. Goodbye.") +
       `<Hangup/>`,
   );
@@ -680,9 +691,16 @@ async function inboundRecord(req: Request, env: Env, origin: string): Promise<Re
 /**
  * The recording is in: transcribe it and make it the call's transcript, so a
  * spoken request and an assistant conversation are the same shape to the
- * watcher that collects them. Transcription is inline — the caller hears a
- * beat of silence and then the confirmation, which is also the guarantee that
- * a request confirmed is a request stored.
+ * watcher that collects them.
+ *
+ * The common way to end a recording is to hang up — which means the call's
+ * hangup status callback races this one and usually wins, closing the call as
+ * "nothing said" before the transcription exists. So this handler is the
+ * authority for request calls: it stores the recording URL first (a request
+ * with audio must never be losable to a transcription hiccup), transcribes,
+ * and then *upgrades* an already-closed call back to completed, re-running the
+ * end-of-call work — the debit is keyed by call id and the queue dedupes, so
+ * running it twice changes nothing.
  */
 async function inboundRecorded(req: Request, env: Env): Promise<Response> {
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
@@ -691,12 +709,29 @@ async function inboundRecorded(req: Request, env: Env): Promise<Response> {
   const record = await loadCall(env, callId);
   if (!record) return sayHangup("Sorry, something went wrong. Goodbye.");
 
+  // Both the action and the recording-status callback point here, and a
+  // #-terminated recording triggers both. The second arrival has nothing to
+  // add.
+  if (record.requestText && record.status === "completed") {
+    return sayHangup("Got it. Your team's terminal picks this up next. Goodbye.");
+  }
+
   const params = await inboundBody(req);
-  const recordingUrl = params.RecordingUrl ?? "";
-  const duration = parseInt(params.RecordingDuration ?? "0", 10);
-  if (!recordingUrl || duration < 1) {
+  const recordingUrl = params.RecordingUrl ?? params.recording_url ?? "";
+  console.log(
+    "inbound recorded",
+    callId,
+    `url=${recordingUrl ? "yes" : "no"}`,
+    `duration=${params.RecordingDuration ?? "?"}`,
+    `keys=${Object.keys(params).join(",")}`,
+  );
+  if (!recordingUrl) {
     return sayHangup("Nothing recorded. Call again whenever you are ready. Goodbye.");
   }
+
+  record.kind = "request";
+  record.recordingUrl = recordingUrl;
+  await saveCall(env, callId, record);
 
   let text = "";
   try {
@@ -704,14 +739,20 @@ async function inboundRecorded(req: Request, env: Env): Promise<Response> {
   } catch (err) {
     console.error("transcription failed", callId, (err as Error).message);
   }
-  if (!text) {
-    return sayHangup("Sorry, I could not make that out. Please try again. Goodbye.");
-  }
+  record.requestText =
+    text || `(the recording could not be transcribed — listen to it at ${recordingUrl})`;
+  record.transcript = [{ role: "user", text: record.requestText, at: new Date().toISOString() }];
 
-  record.kind = "request";
-  record.requestText = text;
-  record.transcript = [{ role: "user", text, at: new Date().toISOString() }];
-  await saveCall(env, callId, record);
+  if (record.status === "completed" || record.status === "failed") {
+    // The hangup already closed this call without its request; reopen and
+    // finish it properly now that the request exists.
+    record.status = "completed";
+    record.endedAt = record.endedAt ?? Date.now();
+    await saveCall(env, callId, record);
+    await afterCallEnded(env, callId, record);
+  } else {
+    await saveCall(env, callId, record);
+  }
 
   return sayHangup("Got it. Your team's terminal picks this up next. Goodbye.");
 }
@@ -740,7 +781,10 @@ async function finishInbound(env: Env, phone: string, why: string, force = false
 
   // A ring-in that never got as far as leaving a request or meeting the
   // assistant is a hang-up during the menu: nothing to collect, nothing owed.
-  const substantial = record.kind === "brief" ? Boolean(record.assistantId) : Boolean(record.requestText);
+  // A request whose transcription is still in flight lands here as failed
+  // too — deliberately: the recorded-callback upgrades it to completed the
+  // moment the text exists, and until then it must not reach a watcher.
+  const substantial = record.assistantId ? true : Boolean(record.requestText);
   record.status = substantial ? "completed" : "failed";
   record.endedAt = Date.now();
   await saveCall(env, callId, record);

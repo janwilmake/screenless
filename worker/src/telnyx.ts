@@ -289,9 +289,17 @@ export function hangupTexmlCall(apiKey: string, accountSid: string, callSid: str
  * cannot present our API key to fetch one.
  */
 export async function transcribeAudio(apiKey: string, audioUrl: string): Promise<string> {
-  let res = await fetch(audioUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
-  if (!res.ok) res = await fetch(audioUrl);
-  if (!res.ok) throw new TelnyxError(res.status, audioUrl, "could not fetch recording");
+  // The recording URL arrives in the callback a beat before the file itself
+  // is fetchable, so a miss is retried rather than trusted.
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 2000));
+    res = await fetch(audioUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (res.ok) break;
+    res = await fetch(audioUrl);
+    if (res.ok) break;
+  }
+  if (!res || !res.ok) throw new TelnyxError(res?.status ?? 0, audioUrl, "could not fetch recording");
   const blob = await res.blob();
 
   const form = new FormData();
