@@ -51,6 +51,20 @@ same contract as the orchestrator, and the one thing the user has to know.
    by it, read what it printed and go to *Mode: tick, step 2*. It gives up after
    40 minutes and exits with `re-arm` — when that is what woke you, arm it
    again and say nothing else.
+
+   **Arm the watcher beside it**, same flags, second background command:
+
+   ```
+   screenless watch --gate
+   ```
+
+   This is the team line: a teammate rings the number and speaks a request, or
+   finishes a briefing call of their own, and the Worker routes it to exactly
+   one watching terminal — this one, if it is the caller's own or the only one
+   up. The watcher exits after printing the call and a `WORK <callId>` line;
+   that exit is a tick too. Calls that end while no terminal watches wait in
+   the team's queue up to a week, so arming this is also what drains a
+   backlog.
 3. **Add the heartbeat**, because a waiter that dies takes the night with it.
    Invoke the `loop` skill with:
 
@@ -87,12 +101,21 @@ the user can interrupt it.
      to this file), then `screenless applied <callId>`. Mark it only when the
      apply actually ran; a failed apply is retried on the next probe, not
      written off.
+   - `WORK <callId>` — printed by the watcher, with the call above it. A
+     `request` is a teammate's spoken instruction, transcribed: treat the text
+     as a prompt from them, do the work in this repo, and reply the way the
+     repo's conventions want (a PR, a comment, a ticket). A `brief` call is a
+     teammate's morning conversation: apply it like `APPLY`, using the
+     transcript printed. Either way, finish with `screenless done <callId>` —
+     only after the work actually ran. Left unmarked, the same call is handed
+     out again rather than lost.
 
    `NIGHTLY` before `APPLY` when both appear: the call being applied was
    briefed from last night's manifest, and tonight's run writes a new one.
 
-3. If you were woken by the waiter, re-arm it (*start*, step 2) before you
-   finish the turn. A tick that does not re-arm is the loop ending quietly.
+3. If you were woken by the waiter or the watcher, re-arm whichever exited
+   (*start*, step 2) before you finish the turn. A tick that does not re-arm
+   is the loop ending quietly.
 
 ### Mode: status
 
@@ -101,10 +124,12 @@ the user can interrupt it.
 
 ### Mode: stop
 
-Stop the backgrounded `screenless wait` (TaskStop on its task) and end the
-`/loop` heartbeat. Say that tonight's run will not happen until the loop is
-armed again. Nothing parked with the Worker is touched: a brief already parked
-still rings, a paper already mailed still lands.
+Stop the backgrounded `screenless wait` and `screenless watch --gate`
+(TaskStop on their tasks) and end the `/loop` heartbeat. Say that tonight's
+run will not happen until the loop is armed again, and that calls to the team
+line will queue for the next watcher rather than land here. Nothing parked
+with the Worker is touched: a brief already parked still rings, a paper
+already mailed still lands.
 
 ## Where the settings come from
 

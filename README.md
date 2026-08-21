@@ -93,9 +93,10 @@ curl -fsSL https://screenless.sh/install | bash
 ```
 
 One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH, and
-goes straight into `screenless setup` — phone verification by SMS, then a 7-day
-free trial ($99/month after, card up front). Node 20+ required and never
-installed for you.
+goes straight into `screenless setup` — phone verification by SMS, no card. Every
+new team starts with **$10 of free call credit**; after that calls bill
+pay-as-you-go at ~30¢/minute from the team's shared balance. Node 20+ required
+and never installed for you.
 
 Both surfaces are built by a **loop armed inside a Claude Code session on your
 own machine**:
@@ -212,18 +213,19 @@ Telnyx bills roughly **$0.056–0.07/minute** all-in ($0.05 voice AI + ~$0.004 L
 | 15 min/day  | 330                      | $18–23  |
 | 10 min/day  | 220                      | $12–15  |
 
-At the target price of **$99/month**, a 30-minute daily call is a 54–63% gross
-margin. That is below the usual SaaS 70–80%, and it inverts the normal incentive:
-heavy users cost real money. Three consequences worth designing around:
+Pricing is **pay-as-you-go at 30¢/minute** — roughly double the COGS, so every
+minute carries a ~50–60% gross margin and heavy users pay in proportion instead
+of inverting the incentive the way a flat subscription did *(was: $99/month with
+a 7-day trial, where a 30-minute daily caller ate most of the price in
+telephony)*. Every org starts with $10 of credit free — about half an hour of
+call — and tops up from the billing tab when it runs out.
 
-- **Sell a minute ceiling, not "unlimited."** 30 min/day is the plan, not the
-  target — the product should hang up as soon as the queue is drained.
-- **The COGS is also the moat.** No first-party vendor will bundle $40/month of
-  telephony into a subscription, which is exactly why the notification tier got
-  commoditised and this one will not.
+- **The COGS is also the moat.** No first-party vendor will bundle real
+  telephony into a flat subscription, which is exactly why the notification tier
+  got commoditised and this one will not.
 - **The paper carries almost no COGS**, since it runs on your machine against
-  your own Claude subscription. It is the margin ballast for the bundle, and it
-  can ship without waiting on Telnyx.
+  your own Claude subscription. It is the free surface, and it can ship without
+  waiting on Telnyx.
 
 Verification is charged separately: **$0.03 per successful verify plus $0.091 per
 SMS to a Dutch number** — billed even on failed attempts, which is why
@@ -260,14 +262,17 @@ as `api_key_ref`).
 cd worker
 npm install
 
-# KV stores call records and OTP rate-limit counters
+# KV stores call records, briefs, watcher heartbeats, rate-limit counters
 npx wrangler kv namespace create CALLS
-# paste the returned id into wrangler.toml
+
+# D1 stores users, orgs, invites and the money ledger
+npx wrangler d1 create screenless
+npx wrangler d1 execute screenless --remote --file=schema.sql
 ```
 
-Edit `wrangler.toml`: set `TELNYX_FROM_NUMBER` to the number you bought, the KV
-`id`, and — see the warning in that file — an `ASSISTANT_VOICE` matching your
-default language.
+Edit `wrangler.jsonc`: set `TELNYX_FROM_NUMBER` to the number you bought, the
+KV and D1 ids, and — see the warning in that file — an `ASSISTANT_VOICE`
+matching your default language.
 
 ```bash
 npx wrangler secret put TELNYX_API_KEY      # from step 1
@@ -294,27 +299,22 @@ npx wrangler secret put TELNYX_VERIFY_PROFILE_ID
 npx wrangler deploy
 ```
 
-### 4. Stripe: the paywall
+### 4. Stripe: topping up
 
 Billing stays inert while `STRIPE_SECRET_KEY` is unset, so skip this section
-entirely if you are running your own Worker for yourself — every verified number
-is then entitled.
+entirely if you are running your own Worker for yourself — every org is then
+entitled whatever its balance says.
+
+Pay-as-you-go needs no product or price objects: a topup is a one-time Checkout
+payment with the amount set per session, credited to the org by the webhook (or
+by the billing page's own poll, if the webhook never lands).
 
 ```bash
-stripe products create --name="screenless"
-stripe prices create --product=<product id> --unit-amount=9900 \
-  --currency=usd -d "recurring[interval]=month"
-
 stripe webhook_endpoints create \
-  --url="https://api.screenless.sh/stripe/webhook" \
+  --url="https://screenless.sh/stripe/webhook" \
   --enabled-events=checkout.session.completed \
-  --enabled-events=customer.subscription.created \
-  --enabled-events=customer.subscription.updated \
-  --enabled-events=customer.subscription.deleted \
-  --enabled-events=customer.subscription.trial_will_end
+  --enabled-events=checkout.session.async_payment_succeeded
 ```
-
-Put the price id in `wrangler.jsonc` as `STRIPE_PRICE_ID`, then:
 
 ```bash
 npx wrangler secret put STRIPE_SECRET_KEY      # sk_test_… or sk_live_…
@@ -322,9 +322,10 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET  # whsec_… from the command abov
 npx wrangler deploy
 ```
 
-The trial is 7 days with the card taken up front, and a number that has held a
-subscription before does not get a second one. Going live is those three values
-swapped for their live-mode equivalents — there is no code path that differs.
+Every new org is granted `FREE_CREDIT_CENTS` (default $10) exactly once, calls
+debit `PRICE_PER_MINUTE_CENTS` (default 30¢) per minute, and both are plain vars
+in `wrangler.jsonc`. Going live is the two secrets swapped for their live-mode
+equivalents — there is no code path that differs.
 
 ### 5. Inbound: let people ring back
 
@@ -336,8 +337,21 @@ curl https://api.screenless.sh/admin/inbound-url -H "X-Admin-Secret: <ADMIN_SECR
 ```
 
 In the Telnyx portal, set that as the Voice URL (POST) of a TeXML application
-and assign `TELNYX_FROM_NUMBER` to it. Whoever rings in gets the brief already
-parked for their number — the same conversation the 07:00 call would have been.
+and assign `TELNYX_FROM_NUMBER` to it. Whoever rings in gets a plain robot
+voice: *"Press 1 to speak to the assistant, or start talking to make your
+request after the tone."* Press 1 and it is the brief already parked for their
+number — the same conversation the 07:00 call would have been. Say something
+instead, and the recording is transcribed and routed to whichever teammate's
+terminal is running `screenless watch` — the caller's own first, anyone's
+otherwise, and a queue that holds up to a week when nobody is.
+
+### The team
+
+One org per user, billing per org. `screenless team` (or screenless.sh/team)
+opens the page: invite by email only — the invitee verifies their own phone on
+accept, and can re-enter it any time if it was typed wrong — with roles, an
+invite list that shows pending and expired, and an admin-only billing tab with
+the balance, topups, per-day usage and who-costs-what.
 
 ### 6. Install the CLI
 
@@ -354,20 +368,21 @@ the machine itself on every settings call — there is no timezone to configure,
 and moving country corrects the schedule on its own.
 
 Setup asks `Self-hosted Worker? y/N` first. Answering no — the default — points
-at `https://api.screenless.sh`. Answering yes prompts for your own Worker URL,
-and `--api <url>` skips the question entirely.
+at `https://screenless.sh` (`api.screenless.sh` still answers for older
+configs). Answering yes prompts for your own Worker URL, and `--api <url>`
+skips the question entirely.
 
 Working on the CLI itself:
 
 ```bash
 cd ../cli
 npm install && npm run build && npm link
-screenless setup --api https://api.screenless.sh
+screenless setup --api https://screenless.sh
 ```
 
 Either way you'll get an SMS with a code (`--voice` gets you a phone call
-instead). Enter it, start the trial, and you're done — the session lasts a week
-and lands in `~/.screenless/config.json` at mode 0600.
+instead). Enter it and you're done — the session lasts a year and lands in
+`~/.screenless/config.json` at mode 0600.
 
 Publishing anything — a CLI change, a page edit, a change to the loop skills —
 is one command:
@@ -401,8 +416,13 @@ screenless settings                       # call time, timezone, ring-back numbe
 screenless settings --at 08:00            # when the morning call goes out (default 08:00)
 screenless settings --pause               # stop the scheduled call
 
-screenless billing            # trial status
-screenless billing --manage   # Stripe's portal: change card, cancel
+screenless billing            # credit left, and the price per minute
+screenless billing --manage   # open the team billing tab (admins top up there)
+
+screenless team               # your team: members, credit, the page
+screenless watch              # the terminal the team's calls land in
+screenless watch --gate       # agent mode: exit on the first call, ack with…
+screenless done <callId>      # …this, once the work actually ran
 
 screenless whoami
 screenless logout
