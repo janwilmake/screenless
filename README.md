@@ -57,7 +57,7 @@ you    Split it, and hold the export PR until that's gone.
 
 ✓ 3 decisions · 9m10s · nothing changed yet
 
-08:09  --- woke after 5h9m ---  APPLY 5ef8e342
+08:09  --- woke after 5h9m ---  WORK 5ef8e342
        $ screenless transcript --json
        ✓ 4 merged · 1 split · 1 comment · 1 left for your eyes
 ```
@@ -436,14 +436,14 @@ time; the loop reads back what you decided and is the thing that acts on it.
 rest in-session, but the primitives are plain commands:
 
 ```bash
-screenless wait                    # blocks; prints NIGHTLY <repo> or APPLY <id>
+screenless wait                    # blocks until tonight's run; prints NIGHTLY <repo>
+screenless watch                   # blocks until a call lands; prints WORK <id>
 
 # 03:00, when your agents are done — the agent builds the brief, then:
 screenless call "<brief>" --at     # parked for your call time
 
-# 08:09, after the call — the agent reads it and acts:
-screenless transcript --json
-screenless applied <callId>
+# 08:09, after the call — the watcher hands it over, the agent acts:
+screenless done <callId>
 ```
 
 The assistant on the phone has no tools and takes no action — it collects

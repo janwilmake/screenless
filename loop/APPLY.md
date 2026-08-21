@@ -1,6 +1,6 @@
 ---
 name: screenless-apply
-description: Applies the decisions taken on a screenless call. Reads the call transcript and the decisions manifest written when the brief was built, then carries out what was decided — comments, labels, merges, splits, follow-up tickets — using the repo and tracker MCPs on this machine. Use when a call has just finished, when the user says "apply the decisions", "action my call", or after `screenless collect` reports a call.
+description: Applies the decisions taken on a screenless call. Reads the call transcript and the decisions manifest written when the brief was built, then carries out what was decided — comments, labels, merges, splits, follow-up tickets — using the repo and tracker MCPs on this machine. Use when a call has just finished, when the user says "apply the decisions", "action my call", or after `screenless watch` hands over a finished call.
 ---
 
 # screenless — applying what was decided
@@ -10,7 +10,7 @@ is where they take effect, on the user's own machine, with the access the user
 already granted.
 
 Run it after a call. The armed loop gets here by itself — `screenless wait`
-prints `APPLY <callId>` within a minute of the call ending — but it is equally
+prints `WORK <callId>` within a minute of the call ending — but it is equally
 valid to run by hand.
 
 ## What you are working from
@@ -138,7 +138,7 @@ inbox is the screen the product exists to remove. What they want is what was
 the four lists above, quote their words where a decision was theirs, and say
 plainly what needs their eyes.
 
-Then `screenless applied <callId>`, so the next probe does not hand you the
+Then `screenless done <callId>`, so the next watcher is not handed the
 same call again — and only then, so an apply that failed is retried rather
 than written off.
 

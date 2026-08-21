@@ -406,113 +406,10 @@ async function test(args: string[]): Promise<void> {
   await call([DEMO_BRIEF, ...args.filter((a) => a.startsWith("--"))]);
 }
 
-/* ---------------------------------------------------------------- collect */
-
-/**
- * Local record of which call's decisions have already been acted on.
- *
- * Exactly one field, on purpose. An earlier design also tracked what the
- * machine was *expecting*, which broke the moment a call arrived that nothing
- * had scheduled — you ring the number back at two in the afternoon, and a
- * collector waiting for the morning's call ignores it forever. "Newer than the
- * last one I applied" needs no expectation and covers every case: scheduled,
- * rung back, second call of the day, placed from another machine.
- */
-interface LocalState {
-  applied?: string;
-}
-
-async function readState(): Promise<LocalState> {
-  const { readFile } = await import("node:fs/promises");
-  try {
-    return JSON.parse(await readFile(statePath(), "utf8")) as LocalState;
-  } catch {
-    return {};
-  }
-}
-
-async function writeState(next: LocalState): Promise<void> {
-  const { writeFile, mkdir } = await import("node:fs/promises");
-  const { dirname } = await import("node:path");
-  await mkdir(dirname(statePath()), { recursive: true, mode: 0o700 });
-  await writeFile(statePath(), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
-}
-
-function statePath(): string {
-  return `${process.env.HOME}/.screenless/state.json`;
-}
-
-/**
- * The one question behind both `collect` and `wait`: is there a finished call
- * newer than the last one applied? Null means no — including offline, a
- * Worker hiccup, or no session at all, because none of those is worth waking
- * anyone for and the next probe retries.
- */
-async function unappliedCall(): Promise<CallStatus | null> {
-  const cfg = await config.load();
-  if (!cfg) return null;
-
-  const state = await readState();
-  const since = state.applied ? `?since=${encodeURIComponent(state.applied)}` : "";
-
-  let res: Response;
-  try {
-    res = await fetch(`${cfg.apiUrl}/calls/latest${since}`, {
-      headers: { Authorization: `Bearer ${cfg.token}` },
-    });
-  } catch {
-    return null;
-  }
-  // 204 is the Worker's "nothing newer than what you applied" — the usual
-  // answer, with no body to parse.
-  if (res.status === 204 || !res.ok) return null;
-
-  let call: CallStatus;
-  try {
-    call = (await res.json()) as CallStatus;
-  } catch {
-    return null;
-  }
-  if (!call?.done || call.callId === state.applied) return null;
-  // A voicemail is not a conversation: nothing was decided, nothing to apply,
-  // and the brief is back on the shelf held.
-  if (call.voicemail) return null;
-  return call;
-}
-
-/**
- * Is there a finished call whose decisions have not been acted on?
- *
- * The quiet path is the fast one: the Worker answers 204 when nothing is newer
- * than what we have, and this exits 3 without allocating anything worth
- * mentioning. `wait` is the usual caller; this stays for scripts and by hand.
- *
- * Exit codes: 0 there is work, 3 there is not.
- */
-async function collect(args: string[]): Promise<void> {
-  const call = await unappliedCall();
-  if (!call) exit(3);
-  const out = { ready: true, callId: call.callId, status: call.status, transcript: call.transcript ?? [] };
-  console.log(args.includes("--json") ? JSON.stringify(out, null, 2) : call.callId);
-}
-
-/**
- * Marks a call's decisions as acted on.
- *
- * Separate from `collect` so the thing in between — the agent that actually
- * applies them — can fail without the call being written off as done.
- */
-async function applied(args: string[]): Promise<void> {
-  const callId = args.find((a) => !a.startsWith("--"));
-  if (!callId) die("usage: screenless applied <callId>");
-  await writeState({ ...(await readState()), applied: callId });
-  console.log(`${c.green("✓")} ${callId} marked applied`);
-}
-
 /* ------------------------------------------------------------------- wait */
 
 /**
- * The gate the armed session blocks on.
+ * The gate the armed session blocks on for the nightly run.
  *
  * `screenless wait` probes every minute, in this process and without a model,
  * and exits the moment there is something for the agent to do. It is run as a
@@ -522,13 +419,15 @@ async function applied(args: string[]): Promise<void> {
  * there is no launchd job and no `claude -p` any more — a scheduler outside
  * the session had none of those, and four nights of it produced nothing.
  *
- * Two reasons to wake, printed one per line:
+ * One reason to wake, printed one line per repo:
  *
  *   NIGHTLY <repo>     it is past the nightly hour and no edition has been
- *                      stamped for today; one line per registered repo. This
- *                      is also the catch-up: a laptop shut at 03:00 and opened
- *                      at 08:40 wakes into exactly this line.
- *   APPLY <callId>     a call finished and nobody has applied its decisions.
+ *                      stamped for today. This is also the catch-up: a laptop
+ *                      shut at 03:00 and opened at 08:40 wakes into exactly
+ *                      this line.
+ *
+ * Finished calls are not this gate's business any more: they arrive through
+ * `screenless watch`, armed beside this, which the Worker routes team-wide.
  *
  * The stamp is written here, when NIGHTLY is handed over, not when the run
  * finishes. A crash mid-run must not become four more attempts over breakfast;
@@ -603,11 +502,6 @@ async function probe(): Promise<Probe> {
   else if (stamp >= now.date && !forced) quiet.push(`tonight's run already done (${stamp})`);
   else if (now.minute < dueMinute && !forced) quiet.push(`nightly at ${NIGHTLY_AT}, it is ${now.clock}`);
   else for (const p of projects) work.push(`NIGHTLY ${p}`);
-
-  // --- a call to act on ---
-  const call = await unappliedCall();
-  if (call) work.push(`APPLY ${call.callId}`);
-  else quiet.push("no unapplied call");
 
   return { work, quiet: quiet.join("; "), nightly: work.some((l) => l.startsWith("NIGHTLY ")) };
 }
@@ -1195,9 +1089,7 @@ ${c.bold("Usage")}
   screenless done <callId>                   mark a watched call as handled
   screenless team                            your team: members, credit, the page
   screenless transcript [--wait] [--json]    what was decided on the last call
-  screenless wait [--once|--peek]            block until there is work for the agent
-  screenless collect [--json]                is there a call not yet acted on?
-  screenless applied <callId>                mark a call's decisions as done
+  screenless wait [--once|--peek]            block until tonight's run is due
   screenless settings [--at HH:MM]           when the morning call goes out
   screenless init [path]                     configure a repo for the loop
   screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
@@ -1245,8 +1137,9 @@ ${c.bold("What the call does not do")}
   and is what actually merges, comments and closes.
 
 ${c.bold("Wait options")}
-  (none)               block until tonight's run is due or a call has finished,
-                       probing every 60s; prints NIGHTLY <repo> / APPLY <id>
+  (none)               block until tonight's run is due, probing every 60s;
+                       prints NIGHTLY <repo>. Finished calls arrive through
+                       ${c.dim("screenless watch")}, not here
   --once               one probe, print, exit — the tick of the hourly loop
   --peek               like --once, but never marks tonight's run as taken
   --max <secs>         exit anyway after this long so the session re-arms
@@ -1286,8 +1179,6 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   done: doneCmd,
   team: teamCmd,
   transcript,
-  collect,
-  applied,
   wait,
   settings,
   init,

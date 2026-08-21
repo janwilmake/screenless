@@ -98,21 +98,16 @@ the user can interrupt it.
    - `NIGHTLY <repo>` — run **one night** (below) for that repo, `cd` there
      first. Several lines means several repos; do them one after another, and
      one failing must not cost the others their paper.
-   - `APPLY <callId>` — follow the `screenless-apply` skill (`APPLY.md` next
-     to this file), then `screenless applied <callId>`. Mark it only when the
-     apply actually ran; a failed apply is retried on the next probe, not
-     written off.
    - `WORK <callId>` — printed by the watcher, with the call above it. A
      `request` is a teammate's spoken instruction, transcribed: treat the text
      as a prompt from them, do the work in this repo, and reply the way the
      repo's conventions want (a PR, a comment, a ticket). A `brief` call is a
-     teammate's morning conversation: apply it like `APPLY`, using the
+     morning conversation — yours or a teammate's: follow the
+     `screenless-apply` skill (`APPLY.md` next to this file) with the
      transcript printed. Either way, finish with `screenless done <callId>` —
      only after the work actually ran. Left unmarked, the same call is handed
-     out again rather than lost.
-
-   `NIGHTLY` before `APPLY` when both appear: the call being applied was
-   briefed from last night's manifest, and tonight's run writes a new one.
+     out again rather than lost. (This is the one channel finished calls
+     arrive on; the old `APPLY` line from `screenless wait` is gone.)
 
 3. If you were woken by the waiter or the watcher, re-arm whichever exited
    (*start*, step 2) before you finish the turn. A tick that does not re-arm
