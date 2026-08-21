@@ -117,15 +117,16 @@ ${codeBlock(code)}
 export async function scheduleMail(
   body: unknown,
   env: Env,
-  recipient: string,
-): Promise<{ ok: true; id: string; sendAt: string } | { ok: false; status: number; error: string }> {
+  recipients: string[],
+): Promise<{ ok: true; id: string; sendAt: string; recipients: number } | { ok: false; status: number; error: string }> {
   const b = (body ?? {}) as Record<string, unknown>;
 
-  // The caller does not choose the recipient. `to` is whatever address this
-  // account confirmed at setup — see the note on Settings.email. A body-chosen
-  // recipient on a free endpoint is how a sending domain gets blacklisted.
-  const to = recipient;
-  if (!to || !isEmail(to))
+  // The caller does not choose the recipients. They are the verified addresses
+  // on the account — or, for a team send, on the whole roster; every one was
+  // proven by a code or an invite click. A body-chosen recipient on a free
+  // endpoint is how a sending domain gets blacklisted.
+  const to = recipients.filter(isEmail);
+  if (!to.length)
     return { ok: false, status: 412, error: "no confirmed email — run `screenless email`" };
 
   // Either an attachment (the paper) or a text body (the loop's report after
@@ -152,7 +153,7 @@ export async function scheduleMail(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id,
-    to,
+    to.join(","),
     typeof b.subject === "string" && b.subject ? b.subject : "screenless",
     typeof b.filename === "string" && b.filename ? b.filename : "edition.pdf",
     contentBase64 ? 1 : 0,
@@ -161,7 +162,7 @@ export async function scheduleMail(
     Date.now(),
   ).run();
 
-  return { ok: true, id, sendAt: new Date(sendAt * 1000).toISOString() };
+  return { ok: true, id, sendAt: new Date(sendAt * 1000).toISOString(), recipients: to.length };
 }
 
 /**
@@ -236,7 +237,9 @@ async function send(item: OutboxItem, contentBase64: string, env: Env): Promise<
     },
     body: JSON.stringify({
       from: env.MAIL_FROM || "screenless <press@screenless.sh>",
-      to: [item.to],
+      // Comma-joined in the row; the whole team on one send. Teammates seeing
+      // each other in the To line is a feature of a team paper, not a leak.
+      to: item.to.split(","),
       subject: item.subject,
       html,
       text,

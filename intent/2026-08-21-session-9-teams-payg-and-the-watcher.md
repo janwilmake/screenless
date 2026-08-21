@@ -124,3 +124,6 @@ a wrongly-typed number can never receive its own verification text.
 
   if someone calls screeenless that isnt a user yet, they should get a robotvoice saying to install screenless first`
   *(reverses the press-1 menu from 18:12/18:20: a known caller hears only the record beep — the brief-by-ring-back path goes away with the menu — and only a stranger hears a voice, told to install screenless)*
+
+- 23:12 — `the paper should be sent to the whole team`
+  *(the weekly edition mails every member with a verified email — one send, all recipients; the post-call report stays personal)*

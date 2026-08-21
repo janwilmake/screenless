@@ -981,6 +981,7 @@ async function mail(args: string[]): Promise<void> {
   }
 
   const at = argFlag(args, "--at") || "";
+  const team = args.includes("--team");
   const subject =
     argFlag(args, "--subject") || (file ? `screenless · ${basename(file, ".pdf")}` : "screenless · what you decided");
 
@@ -989,12 +990,13 @@ async function mail(args: string[]): Promise<void> {
   // is the opposite sign of what everyone expects — negate it here, once.
   const offsetMinutes = -new Date().getTimezoneOffset();
 
-  const res = await api<{ id: string; sendAt: string }>(cfg.apiUrl, "/mail", {
+  const res = await api<{ id: string; sendAt: string; recipients?: number }>(cfg.apiUrl, "/mail", {
     method: "POST",
     token: cfg.token,
     body: {
       ...(content && file ? { filename: basename(file), contentBase64: content.toString("base64") } : {}),
       ...(text ? { text } : {}),
+      ...(team ? { team: true } : {}),
       subject,
       at,
       offsetMinutes,
@@ -1003,7 +1005,8 @@ async function mail(args: string[]): Promise<void> {
 
   const when = new Date(res.sendAt);
   const what = file ? `${c.bold(basename(file))} ${c.dim(`(${((content?.length ?? 0) / 1024).toFixed(0)} KB)`)}` : c.bold(subject);
-  console.log(`${c.green("✓")} queued ${what} → ${when.toLocaleString()} ${c.dim(`· ${res.id.slice(0, 8)}`)}`);
+  const who = team ? ` to ${res.recipients ?? "?"} teammate${res.recipients === 1 ? "" : "s"}` : "";
+  console.log(`${c.green("✓")} queued ${what}${who} → ${when.toLocaleString()} ${c.dim(`· ${res.id.slice(0, 8)}`)}`);
 }
 
 /**
@@ -1092,7 +1095,7 @@ ${c.bold("Usage")}
   screenless wait [--once|--peek]            block until tonight's run is due
   screenless settings [--at HH:MM]           when the morning call goes out
   screenless init [path]                     configure a repo for the loop
-  screenless mail <file.pdf> [--at HH:MM]    schedule an edition for wake-up
+  screenless mail <file.pdf> [--at] [--team] schedule an edition for delivery
   screenless mail --body <file.md>           mail a text report (what was applied)
   screenless email                           confirm where the paper is sent
   screenless whoami                          show the verified number
@@ -1147,6 +1150,8 @@ ${c.bold("Wait options")}
 
 ${c.bold("Mail options")}
   --at HH:MM           next occurrence of that local time (default: now)
+  --team               send to every team member with a verified email —
+                       the weekly edition is the team's paper
   --subject <text>     override the subject line
   --body <file>        send this text as the mail body instead of a PDF
   --text "<string>"    same, inline

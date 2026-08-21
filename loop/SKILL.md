@@ -412,9 +412,12 @@ the return leg applies from; an item the brief skipped must not appear here.
 
 ```bash
 screenless settings --json          # callAt, and the machine's timezone
-screenless mail <outDir>/<date>.pdf --at <that callAt, or a little before> \
+screenless mail <outDir>/<date>.pdf --team --at <that callAt, or a little before> \
   --subject "screenless · <repo> · week of <date>"
 ```
+
+`--team` sends it to every member with a verified email — the edition is the
+team's paper. The post-call report stays personal: no flag there.
 
 This step runs on the edition night only — which *is* Saturday's run, so the
 next occurrence of that wall-clock time is Saturday morning. On a late

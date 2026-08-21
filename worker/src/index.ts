@@ -1179,10 +1179,23 @@ export default {
         if (!settings.emailVerifiedAt || !settings.email)
           return fail(412, "no confirmed email — run `screenless email`");
 
-        const body = await req.json().catch(() => null);
-        const result = await scheduleMail(body, env, settings.email);
+        const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+
+        // `team: true` mails every member with a verified address — the weekly
+        // edition is the team's paper. Each address was proven by a code or an
+        // invite click, so this stays a closed list, never an open relay.
+        let recipients = [settings.email];
+        if (body?.team === true) {
+          const { org } = await identify(env, s.phone);
+          const roster = await db.members(env, org.id);
+          recipients = roster
+            .filter((m) => m.email && m.email_verified_at)
+            .map((m) => m.email as string);
+        }
+
+        const result = await scheduleMail(body, env, recipients);
         return result.ok
-          ? json({ id: result.id, sendAt: result.sendAt })
+          ? json({ id: result.id, sendAt: result.sendAt, recipients: result.recipients })
           : fail(result.status, result.error);
       }
 
