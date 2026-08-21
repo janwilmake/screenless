@@ -26,8 +26,9 @@ function machineTimezone(): string | null {
   }
 }
 
-/** The hosted API. Self-hosting is a supported detour, not the default path. */
-const HOSTED_API = "https://api.screenless.sh";
+/** The hosted API — same origin as the site since the workers merged.
+ *  api.screenless.sh still answers, for configs saved before the merge. */
+const HOSTED_API = "https://screenless.sh";
 const SITE = "https://screenless.sh";
 
 /* ------------------------------------------------------------------ output */
@@ -72,24 +73,22 @@ async function api<T>(base: string, path: string, o: ApiOptions = {}): Promise<T
   const text = await res.text();
   const parsed = text ? JSON.parse(text) : {};
   if (!res.ok) {
-    const body = parsed as { error?: string; checkoutUrl?: string };
-    // 402 is the paywall. It is answered here rather than by sending someone
-    // to a web page to work out what went wrong: the server hands back the
-    // exact link, so the terminal that hit the wall also gets past it.
-    if (res.status === 402) return paywall(body.error, body.checkoutUrl);
+    const body = parsed as { error?: string; teamUrl?: string };
+    // 402 is the paywall — the org's credit ran out. It is answered here
+    // rather than by sending someone off to work out what went wrong: the
+    // server hands back the billing page, so the terminal that hit the wall
+    // also says where to get past it.
+    if (res.status === 402) return paywall(body.error, body.teamUrl);
     return die(body.error ?? `HTTP ${res.status}`);
   }
   return parsed as T;
 }
 
-function paywall(message?: string, url?: string): never {
-  console.error(`\n${c.red("✗")} ${message ?? "subscription required"}`);
-  if (url) {
-    console.error(`\n  Start your 7-day free trial:\n  ${c.cyan(url)}\n`);
-    void openInBrowser(url);
-  } else {
-    console.error(`\n  Run ${c.cyan("screenless billing")} to sort it out.\n`);
-  }
+function paywall(message?: string, teamUrl?: string): never {
+  console.error(`\n${c.red("✗")} ${message ?? "your team is out of screenless credit"}`);
+  console.error(
+    `\n  An admin can top up on the billing tab:\n  ${c.cyan(teamUrl ?? `${SITE}/team`)}\n`,
+  );
   exit(1);
 }
 
@@ -115,73 +114,39 @@ async function openInBrowser(url: string): Promise<void> {
 interface BillingStatus {
   active: boolean;
   status: string;
-  trialEnd?: number;
-  currentPeriodEnd?: number;
-  cancelAtPeriodEnd?: boolean;
+  balanceCents: number;
+  priceCentsPerMinute: number;
+  isAdmin: boolean;
+  orgName: string;
+  teamUrl: string;
 }
 
-const dateOf = (secs?: number) => (secs ? new Date(secs * 1000).toLocaleDateString() : null);
+const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 function describe(status: BillingStatus): string {
-  switch (status.status) {
-    case "trialing": {
-      const until = dateOf(status.trialEnd);
-      return `free trial${until ? `, first charge ${until}` : ""}`;
-    }
-    case "active": {
-      const renews = dateOf(status.currentPeriodEnd);
-      return status.cancelAtPeriodEnd
-        ? `active, ends ${renews ?? "at period end"}`
-        : `active${renews ? `, renews ${renews}` : ""}`;
-    }
-    case "unmetered":
-      return "no billing configured on this Worker";
-    case "past_due":
-      return "payment failed — update your card";
-    case "none":
-      return "no subscription";
-    default:
-      return status.status;
-  }
+  if (status.status === "unmetered") return "no billing configured on this Worker";
+  return status.active
+    ? `${money(status.balanceCents)} credit left · calls bill ${money(status.priceCentsPerMinute)}/min`
+    : `out of credit`;
 }
 
 /**
- * Walks an unsubscribed user through Checkout and waits for Stripe to confirm.
- *
- * Polling rather than a callback because there is nothing to call back to: the
- * CLI is a process on someone's laptop, and the Worker learns about the
- * payment from Stripe either way.
+ * Says where the money stands. Pay-as-you-go has no Checkout to walk through
+ * at setup: every new team starts with free credit, and topping up later is
+ * the billing tab's job, not the terminal's.
  */
-async function ensureSubscription(base: string, token: string): Promise<boolean> {
+async function showCredit(base: string, token: string): Promise<boolean> {
   const status = await api<BillingStatus>(base, "/billing/status", { token });
   if (status.active) {
-    console.log(`${c.green("✓")} subscription ${c.dim(`(${describe(status)})`)}`);
+    console.log(`${c.green("✓")} ${describe(status)} ${c.dim(`· team "${status.orgName}"`)}`);
     return true;
   }
-
-  const { url } = await api<{ url: string }>(base, "/billing/checkout", {
-    method: "POST",
-    token,
-  });
-
-  console.log(`\n${c.bold("One more step — start your free trial.")}`);
-  console.log(`  7 days free, then $99/month. Card required, cancel any time.\n`);
-  console.log(`  ${c.cyan(url)}\n`);
-  await openInBrowser(url);
-  console.log(c.dim("  waiting for payment... (ctrl-c to finish this later)"));
-
-  const deadline = Date.now() + 20 * 60 * 1000;
-  while (Date.now() < deadline) {
-    await sleep(3000);
-    const now = await api<BillingStatus>(base, "/billing/status", { token });
-    if (now.active) {
-      console.log(`\n${c.green("✓")} ${describe(now)}`);
-      return true;
-    }
-  }
-
-  console.log(`\n${c.red("✗")} timed out waiting for payment.`);
-  console.log(c.dim(`  Run ${"screenless billing"} when you're ready — nothing was lost.`));
+  console.log(`${c.red("✗")} ${c.bold("your team is out of screenless credit")}`);
+  console.log(
+    status.isAdmin
+      ? `  Top up on the billing tab: ${c.cyan(status.teamUrl)}`
+      : `  Ask a team admin to top up: ${c.cyan(status.teamUrl)}`,
+  );
   return false;
 }
 
@@ -189,23 +154,38 @@ async function billing(args: string[]): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
 
-  // Managing an existing subscription is Stripe's job, not ours: we never see
-  // the card, so "change it" can only ever mean "here is their portal".
-  if (args.includes("--manage")) {
-    const { url } = await api<{ url: string }>(cfg.apiUrl, "/billing/portal", {
-      method: "POST",
-      token: cfg.token,
-    });
-    console.log(`${c.cyan(url)}`);
-    await openInBrowser(url);
-    return;
-  }
-
   const status = await api<BillingStatus>(cfg.apiUrl, "/billing/status", { token: cfg.token });
   console.log(
-    `${status.active ? c.green("✓") : c.red("✗")} ${c.bold(describe(status))} ${c.dim(`· ${cfg.phone}`)}`,
+    `${status.active ? c.green("✓") : c.red("✗")} ${c.bold(describe(status))} ${c.dim(`· ${cfg.phone} · team "${status.orgName}"`)}`,
   );
-  if (!status.active) await ensureSubscription(cfg.apiUrl, cfg.token);
+  // Topping up, statistics, who-costs-what: all on the billing tab, which is
+  // admin-only — the terminal only ever points there.
+  if (args.includes("--manage") || !status.active) {
+    console.log(`  ${c.cyan(status.teamUrl)}`);
+    if (args.includes("--manage")) await openInBrowser(status.teamUrl);
+  }
+}
+
+/* -------------------------------------------------------------------- team */
+
+interface OrgMe {
+  user: { name: string; email: string | null; role: string; phone: string };
+  org: { name: string; creditCents: number; members: number };
+  watchers: number;
+  teamUrl: string;
+  inboundNumber: string;
+}
+
+/** Where the team lives: prints the essentials, opens the page. */
+async function teamCmd(): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
+  console.log(`${c.bold(me.org.name)} ${c.dim(`· ${me.org.members} member${me.org.members === 1 ? "" : "s"} · ${money(me.org.creditCents)} credit · you are ${me.user.role}`)}`);
+  console.log(`${c.bold("team line")}   ${me.inboundNumber}`);
+  console.log(`${c.bold("watching")}    ${me.watchers} terminal${me.watchers === 1 ? "" : "s"}`);
+  console.log(`\n  ${c.cyan(me.teamUrl)} ${c.dim("— invite people, roles, billing")}`);
+  await openInBrowser(me.teamUrl);
 }
 
 /* ------------------------------------------------------------------- setup */
@@ -265,9 +245,6 @@ async function setup(args: string[]): Promise<void> {
     console.log(`${c.green("✓")} verified as ${c.bold(result.phone)}`);
     console.log(c.dim(`  saved to ${path} (0600)`));
 
-    // The subscription is checked here, while the user is already in a setup
-    // frame of mind, rather than at the first call — where a paywall would
-    // land as a failure instead of a step.
     // Terms before anything is charged or dialled. Refusing is a valid answer
     // and leaves the verified session in place, so nothing is lost by saying
     // no and coming back.
@@ -296,13 +273,15 @@ async function setup(args: string[]): Promise<void> {
     });
     console.log(`${c.green("✓")} ${chosen.label}\n`);
 
-    // The paper is the free half and works without a subscription, so this is
-    // asked before the trial rather than after it.
+    // The paper is free and the address doubles as the team-page sign-in, so
+    // it is confirmed before anything that costs credit.
     await confirmEmail(base, result.token, rl);
 
 
-    const subscribed = await ensureSubscription(base, result.token);
-    if (!subscribed) return;
+    // Pay-as-you-go: a fresh team starts with free credit, so there is no
+    // payment step here — just say where the balance stands.
+    const funded = await showCredit(base, result.token);
+    if (!funded) return;
 
     // The machine already knows its timezone, so nobody is ever asked for it.
     const detected = machineTimezone();
@@ -688,6 +667,132 @@ async function wait(args: string[]): Promise<void> {
     }
     await sleep(interval);
   }
+}
+
+/* ------------------------------------------------------------------- watch */
+
+interface WatchCall {
+  callId: string;
+  status: string;
+  kind: string;
+  requestText?: string;
+  durationSecs?: number | null;
+  transcript?: Array<{ role: string; text: string; at?: string }>;
+  caller: { name: string; email: string | null; phone: string; you: boolean };
+  createdAt: number;
+}
+interface WatchNext {
+  ready: boolean;
+  watchers: number;
+  queued: number;
+  call?: WatchCall;
+}
+
+function printWatchCall(call: WatchCall, asJson: boolean): void {
+  if (asJson) {
+    console.log(JSON.stringify(call, null, 2));
+    return;
+  }
+  const who = call.caller.you ? "you" : call.caller.name || call.caller.email || call.caller.phone;
+  const at = new Date(call.createdAt).toLocaleTimeString();
+  console.log(`\n${c.green("☎")} ${c.bold(String(who))} ${c.dim(`· ${at} · ${call.kind} · ${call.callId.slice(0, 8)}`)}`);
+  if (call.kind === "request" && call.requestText) {
+    console.log(`${c.bold("request")}  ${call.requestText}`);
+  } else {
+    printTranscript(call.transcript ?? []);
+  }
+}
+
+/**
+ * The terminal the team's phone calls land in. Never exits on its own.
+ *
+ * Every poll doubles as a heartbeat, which is how the Worker knows this
+ * terminal exists: your own calls route to your own terminal (the earliest
+ * one, if you have two), a teammate's calls go wherever someone is watching,
+ * and a call that ends while nobody watches waits in the team queue — up to a
+ * week — for the next watcher to spawn and drain it.
+ *
+ * Two modes, one contract:
+ *   (default)   print each call as it lands and mark it handled — the display
+ *   --gate      exit after printing the first call, *without* marking it, and
+ *               say so with a `WORK <callId>` line. For agent loops: do the
+ *               work, `screenless done <callId>`, re-arm. Left unmarked, the
+ *               same call is handed out again — at-least-once, never lost.
+ */
+async function watch(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const gate = args.includes("--gate");
+  const asJson = args.includes("--json");
+  const interval = Math.max(3, Number(argFlag(args, "--interval") ?? 10)) * 1000;
+
+  const { randomBytes } = await import("node:crypto");
+  const { basename } = await import("node:path");
+  const watcherId = `w-${randomBytes(6).toString("hex")}`;
+  const startedAt = Date.now();
+  const repo = basename(process.cwd());
+
+  if (!asJson) {
+    try {
+      const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
+      console.log(`${c.bold(me.org.name)} ${c.dim(`· watching from ${repo} · team line ${me.inboundNumber}`)}`);
+      console.log(c.dim("  calls and spoken requests to the team line land here — ctrl-c to stop"));
+    } catch {
+      /* the banner is decoration; the loop below is the product */
+    }
+  }
+
+  const nextUrl =
+    `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
+    `&repo=${encodeURIComponent(repo)}`;
+  let offline = false;
+
+  for (;;) {
+    let next: WatchNext | null = null;
+    try {
+      const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${cfg.token}` } });
+      if (res.status === 401) die("session expired — run `screenless setup` again");
+      if (res.ok) {
+        next = (await res.json()) as WatchNext;
+        if (offline && !asJson) console.log(c.dim("  back online"));
+        offline = false;
+      }
+    } catch {
+      // Offline is a state, not an error: laptops sleep, wifi drops. Say it
+      // once and keep probing — the queue upstream is what makes this safe.
+      if (!offline && !asJson) console.log(c.dim("  can't reach the worker; retrying quietly"));
+      offline = true;
+    }
+
+    if (next?.ready && next.call) {
+      printWatchCall(next.call, asJson);
+      if (gate) {
+        console.log(`WORK ${next.call.callId}`);
+        if (!asJson) console.log(c.dim(`  when applied: screenless done ${next.call.callId}`));
+        return;
+      }
+      // Displayed is delivered, in display mode. An agent that must not lose
+      // work uses --gate, where nothing is marked until `screenless done`.
+      await fetch(`${cfg.apiUrl}/watch/done`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
+        body: JSON.stringify({ callId: next.call.callId }),
+      }).catch(() => {});
+      continue; // drain the backlog without waiting out the interval
+    }
+
+    await sleep(interval);
+  }
+}
+
+/** Marks a watched call as handled, so no terminal is ever handed it again. */
+async function doneCmd(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const callId = args.find((a) => !a.startsWith("--"));
+  if (!callId) die("usage: screenless done <callId>");
+  await api(cfg.apiUrl, "/watch/done", { method: "POST", token: cfg.token, body: { callId } });
+  console.log(`${c.green("✓")} ${callId} handled`);
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -1094,6 +1199,9 @@ ${c.bold("Usage")}
   screenless setup [--api <url>] [--voice]   verify your phone number by OTP
   screenless call "<prompt>" [options]       call now, or park it for later
   screenless test                            ring me now with a demo call
+  screenless watch [--gate]                  the terminal the team's calls land in
+  screenless done <callId>                   mark a watched call as handled
+  screenless team                            your team: members, credit, the page
   screenless transcript [--wait] [--json]    what was decided on the last call
   screenless wait [--once|--peek]            block until there is work for the agent
   screenless collect [--json]                is there a call not yet acted on?
@@ -1104,7 +1212,7 @@ ${c.bold("Usage")}
   screenless mail --body <file.md>           mail a text report (what was applied)
   screenless email                           confirm where the paper is sent
   screenless whoami                          show the verified number
-  screenless billing [--manage]              trial status, or Stripe's portal
+  screenless billing [--manage]              credit left, and the billing page
   screenless logout                          discard the local session
 
 ${c.bold("Call options")}
@@ -1125,8 +1233,20 @@ ${c.bold("Settings options")}
   so moving country fixes the schedule by itself.
 
 ${c.bold("Taking the call on your terms")}
-  Decline the morning call and ring the number back whenever suits — same
-  brief, same conversation. ${c.dim("screenless settings")} prints the number.
+  Decline the morning call and ring the number back whenever suits — press 1
+  and it is the same brief, same conversation. ${c.dim("screenless settings")} prints the
+  number. Or don't press anything: say what you need after the tone, and the
+  recording lands — transcribed — in whichever teammate's terminal is running
+  ${c.dim("screenless watch")}. Nothing watching? It waits in the queue up to a week.
+
+${c.bold("Watch options")}
+  (none)               never exits; prints each call or spoken request as it
+                       arrives and marks it handled
+  --gate               exit after printing the first one, unmarked, with a
+                       ${c.dim("WORK <callId>")} line — for agent loops, which apply it
+                       and then run ${c.dim("screenless done <callId>")}
+  --interval <secs>    seconds between polls (default 10)
+  --json               machine-readable calls
 
 ${c.bold("What the call does not do")}
   The assistant on the phone has no tools and takes no action. It collects
@@ -1171,6 +1291,9 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   setup,
   call,
   test,
+  watch,
+  done: doneCmd,
+  team: teamCmd,
   transcript,
   collect,
   applied,
