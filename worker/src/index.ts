@@ -1,12 +1,26 @@
 import * as telnyx from "./telnyx";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
-import { LANGUAGES, DEFAULT_LANGUAGE, MULTI, isSupportedLanguage, languageOf } from "./languages";
+import * as db from "./db";
+import * as team from "./team";
+import { LANGUAGES, DEFAULT_LANGUAGE, isSupportedLanguage, languageOf } from "./languages";
 import { session, sign, webhookToken, safeEqual, revokeSessions } from "./auth";
 import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
+import {
+  json,
+  fail,
+  isE164,
+  normalizeCallerId,
+  destinationAllowed,
+  rateLimit,
+} from "./util";
 
 export interface Env {
   CALLS: KVNamespace;
+  /** Users, orgs, invites and the money ledger. Schema in ../schema.sql. */
+  DB: D1Database;
+  /** The landing page, served from site/public by the assets binding. */
+  ASSETS: Fetcher;
 
   // secrets — set with `wrangler secret put <NAME>`
   TELNYX_API_KEY: string;
@@ -14,8 +28,8 @@ export interface Env {
   SESSION_SECRET: string;
   ADMIN_SECRET: string;
   /**
-   * Optional. While unset the paywall is inert and every verified number is
-   * entitled, which is what keeps `wrangler dev` usable.
+   * Optional. While unset billing is inert: every org is entitled whatever its
+   * balance says, which is what keeps `wrangler dev` usable.
    */
   STRIPE_SECRET_KEY: string;
   /** Signing secret for the Stripe webhook endpoint. */
@@ -23,31 +37,23 @@ export interface Env {
   /** Sends the nightly edition. Without it the outbox fills and never drains. */
   RESEND_API_KEY: string;
 
-  // vars — set in wrangler.toml
+  // vars — set in wrangler.jsonc
   TELNYX_FROM_NUMBER: string;
-  /**
-   * Region to pin each call's media to, e.g. "Amsterdam, Netherlands".
-   * Applied to the assistant's auto-created TeXML app, which would otherwise
-   * default to "Latency".
-   */
   TELNYX_ANCHORSITE: string;
   ASSISTANT_MODEL: string;
-  /**
-   * Optional override. Normally empty: the voice follows the caller's chosen
-   * language, and pinning one here gives every language the same accent.
-   */
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
-  /** Recurring price the trial converts to. Falls back to $99/month if unset. */
-  STRIPE_PRICE_ID: string;
-  /** Landing page, used for Checkout's success and cancel redirects. */
+  /** Landing page origin; also the base for /team links in emails. */
   SITE_URL: string;
   /** This Worker's own hostname. Cron has no request to infer it from. */
   API_HOST: string;
-  /** Envelope sender for the edition. The domain must be verified in Resend. */
+  /** Envelope sender for everything mailed. Domain must be verified in Resend. */
   MAIL_FROM: string;
-  /** Default recipient, so the nightly loop needs no --to. */
   MAIL_TO: string;
+  /** What a minute of call bills an org, in cents. Roughly double our cost. */
+  PRICE_PER_MINUTE_CENTS: string;
+  /** What a fresh org starts with, in cents. The free plan. */
+  FREE_CREDIT_CENTS: string;
 }
 
 /**
@@ -61,6 +67,14 @@ export interface Env {
 const SESSION_TTL_SECS = 365 * 24 * 60 * 60;
 /** Call records outlive the call itself so `screenless call` can be re-run against an id. */
 const CALL_TTL_SECS = 24 * 60 * 60;
+/**
+ * A call waiting in a team's queue lives a week, not a day. The queue is the
+ * promise that a request made while nobody's terminal was watching is still
+ * there when the next watcher spawns — a weekend must not eat it.
+ */
+const QUEUED_CALL_TTL_SECS = 7 * 24 * 60 * 60;
+/** How long a watcher heartbeat stays live. Watchers poll well inside this. */
+const WATCHER_TTL_SECS = 90;
 /** OTP sends allowed per phone number per hour. An SMS costs up to ~$0.09. */
 const OTP_RATE_LIMIT = 5;
 /**
@@ -84,11 +98,14 @@ interface TranscriptLine {
 
 interface CallRecord {
   phone: string;
+  /** Who this call belongs to, for billing attribution and watcher routing. */
+  userId?: string;
+  orgId?: string;
+  /** Empty for a recorded-request call — no assistant was ever on the line. */
   assistantId: string;
   /**
    * Copied off Telnyx once the call ends, so the conversation there can be
-   * deleted. Expires with the record, which is what makes the 24-hour
-   * retention promise on the privacy page true rather than aspirational.
+   * deleted. For a recorded request this is the transcription, one user line.
    */
   transcript?: TranscriptLine[];
   /** The app Telnyx auto-provisioned for this assistant; deleted alongside it. */
@@ -100,151 +117,67 @@ interface CallRecord {
   /** The user rang in. Its end is reported by the TeXML application's status
    *  callback, not per call — see finishInbound. */
   inbound?: boolean;
+  /** brief = a conversation about the parked brief; request = a ring-in that
+   *  recorded an ask for the agent instead of talking to the assistant. */
+  kind?: "brief" | "request";
+  /** The recorded ask, transcribed. */
+  requestText?: string;
+  /** Whether this call goes to the team's watcher queue when it finishes. */
+  queued?: boolean;
+  /** User id of whoever's watcher took it. Set once; queue skips it after. */
+  handledBy?: string;
+  /** Guards the ledger against a duplicated end-of-call webhook. */
+  debited?: boolean;
   conversationId?: string;
   createdAt: number;
   endedAt?: number;
 }
 
-/* ------------------------------------------------------------------ helpers */
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
+const saveCall = (env: Env, callId: string, record: CallRecord) =>
+  env.CALLS.put(`call:${callId}`, JSON.stringify(record), {
+    expirationTtl: record.queued ? QUEUED_CALL_TTL_SECS : CALL_TTL_SECS,
   });
 
-const fail = (status: number, message: string) => json({ error: message }, status);
+const loadCall = async (env: Env, callId: string): Promise<CallRecord | null> => {
+  const raw = await env.CALLS.get(`call:${callId}`);
+  return raw ? (JSON.parse(raw) as CallRecord) : null;
+};
 
-/** E.164: leading +, country code, 7–14 more digits. */
-const isE164 = (s: unknown): s is string =>
-  typeof s === "string" && /^\+[1-9]\d{7,14}$/.test(s);
+/* ---------------------------------------------------------------- identity */
+
+const teamUrl = (env: Env) => `${env.SITE_URL || "https://screenless.sh"}/team`;
 
 /**
- * Repairs a caller id arriving in a form-encoded webhook body.
- *
- * `application/x-www-form-urlencoded` decodes `+` as a space, so a `From` of
- * `+31612345678` sent as a literal plus arrives as ` 31612345678` and fails
- * every E.164 check. Providers disagree about whether to percent-encode it, and
- * the cost of guessing wrong is that inbound calls are answered with "I could
- * not read your number" — a failure that only shows up on a real call.
+ * The user and org behind a verified phone, creating both on first sight —
+ * with the free credit — and syncing a confirmed email onto the user row.
  */
-function normalizeCallerId(raw: string): string {
-  const trimmed = raw.trim();
-  return /^\d{8,15}$/.test(trimmed) ? `+${trimmed}` : trimmed;
+async function identify(env: Env, phone: string): Promise<{ user: db.User; org: db.Org }> {
+  const settings = await schedule.loadSettings(env, phone);
+  const email = settings.emailVerifiedAt && settings.email ? settings.email : undefined;
+  return db.ensureUserForPhone(env, phone, email);
 }
 
 /**
- * Dialling codes that are blocked regardless of the allowlist.
- *
- * This is a fraud control, not a policy one. SMS pumping works by driving
- * verification traffic at ranges where the carrier shares revenue with the
- * fraudster, so the expensive destinations and the abused ones are the same
- * list. Satellite ranges are here because a single message can cost more than
- * a month of subscription.
- *
- * Everything else on earth is fine: an OTP to a normal mobile is cents, and
- * refusing the world to save them is how you end up with a product only Dutch
- * people can buy.
+ * Blocks anything that costs money when the caller's org has no credit left,
+ * and says where the money is added. Replaces the old subscription paywall:
+ * there is no trial clock any more, only a balance.
  */
-const BLOCKED_PREFIXES = [
-  "+881", "+882", "+883", // satellite and international networks
-  "+870",                  // Inmarsat
-  "+808",                  // shared-cost international
-  "+979",                  // international premium rate
-  "+888",                  // OCHA
-  // Ranges with a long history of SMS-pumping fraud and high termination fees.
-  "+252", "+253", "+257", "+265", "+269", "+290", "+291",
-  "+297", "+298", "+299", "+373", "+375",
-  "+509", "+590", "+592", "+594", "+596", "+597", "+599",
-  "+670", "+672", "+673", "+674", "+675", "+676", "+677",
-  "+678", "+679", "+680", "+681", "+682", "+683", "+685",
-  "+686", "+687", "+688", "+689", "+690", "+691", "+692",
-  "+850", "+963", "+964", "+967", "+98",
-];
-
-/**
- * Whether a number may be verified and dialled.
- *
- * `ALLOWED_DESTINATIONS` is "*" for worldwide, or a comma-separated list of
- * ISO country codes to narrow it. The block list applies either way — it is a
- * spend guard, and a spend guard you can switch off in config is decoration.
- */
-function destinationAllowed(phone: string, allowed: string): boolean {
-  if (BLOCKED_PREFIXES.some((p) => phone.startsWith(p))) return false;
-
-  const list = allowed.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean);
-  if (!list.length || list.includes("*")) return true;
-
-  // Must stay a superset of the outbound voice profile's whitelist. Telnyx
-  // rejects a call to a country the profile does not list with D13, after the
-  // call is already placed — so anything missing here fails late and opaquely
-  // instead of failing here with a sentence the caller can act on.
-  const prefixes: Record<string, string> = {
-    NL: "+31", BE: "+32", DE: "+49", GB: "+44", US: "+1", CA: "+1",
-    FR: "+33", ES: "+34", IT: "+39", PT: "+351", IE: "+353", DK: "+45",
-    SE: "+46", NO: "+47", PL: "+48", CH: "+41", AT: "+43", AU: "+61",
-    NZ: "+64", SG: "+65", JP: "+81", IN: "+91", BR: "+55", ZA: "+27",
-    FI: "+358", CZ: "+420", LU: "+352", MX: "+52",
-  };
-  return list.some((c) => prefixes[c] && phone.startsWith(prefixes[c]));
-}
-
-async function rateLimit(env: Env, key: string, limit: number, ttl = 3600): Promise<boolean> {
-  const k = `rl:${key}`;
-  const current = parseInt((await env.CALLS.get(k)) ?? "0", 10);
-  if (current >= limit) return false;
-  await env.CALLS.put(k, String(current + 1), { expirationTtl: ttl });
-  return true;
-}
-
-/**
- * Settings as the CLI wants them: the stored values plus the two things that
- * are derived from them and awkward to compute on a laptop — the next actual
- * ring time, and the number to ring back on.
- */
-function withNextCall(settings: schedule.Settings, env: Env) {
-  return {
-    ...settings,
-    nextCallAt: schedule.nextCallTime(settings),
-    inboundNumber: env.TELNYX_FROM_NUMBER,
-    // Sent so the CLI never hard-codes a language list that can drift from
-    // what the Worker will actually accept.
-    languages: LANGUAGES.map((l) => ({ code: l.code, label: l.label })),
-  };
-}
-
-/**
- * Blocks anything that costs money to run when the caller has no live
- * subscription, and hands back the link that fixes it.
- *
- * Returns null when the caller may proceed. The 402 carries a checkout URL so
- * the CLI never has to send anyone to a web page to find out how to pay — the
- * paywall is answered in the same terminal that hit it.
- */
-async function requireSubscription(env: Env, phone: string): Promise<Response | null> {
-  if (!billing.billingEnabled(env)) return null;
-
-  const status = await billing.status(env, phone);
-  if (status.active) return null;
-
-  let checkoutUrl: string | undefined;
-  try {
-    checkoutUrl = (await billing.createCheckout(env, phone, "")).url;
-  } catch (err) {
-    console.error("checkout for gated request failed", (err as Error).message);
+async function requireCredit(
+  env: Env,
+  phone: string,
+): Promise<{ user: db.User; org: db.Org } | Response> {
+  const { user, org } = await identify(env, phone);
+  if (!billing.entitled(env, org)) {
+    return json(
+      {
+        error: "your team is out of screenless credit — an admin can top up on the billing tab",
+        balanceCents: org.credit_cents,
+        teamUrl: teamUrl(env),
+      },
+      402,
+    );
   }
-
-  return json(
-    {
-      error:
-        status.status === "none"
-          ? "no subscription — start your 7-day free trial"
-          : `subscription is ${status.status}`,
-      status: status.status,
-      checkoutUrl,
-    },
-    402,
-  );
+  return { user, org };
 }
 
 /* -------------------------------------------------------------------- auth */
@@ -300,6 +233,13 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
   // deliberately, so we do not leak whether the number had a pending code.
   if (!ok) return fail(401, "code rejected or expired");
 
+  // A verified phone is a screenless identity: make sure the user and their
+  // org exist, which is also where a first-timer's free credit is granted.
+  // Best-effort — a D1 hiccup must not fail a login the OTP already proved.
+  await identify(env, phone).catch((err) =>
+    console.error("identify on verify failed", (err as Error).message),
+  );
+
   // Deliberately reads nothing: see the note on SessionPayload.iat.
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + SESSION_TTL_SECS;
@@ -309,12 +249,30 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
 /* ------------------------------------------------------------------- calls */
 
 /**
+ * Settings as the CLI wants them: the stored values plus the two things that
+ * are derived from them and awkward to compute on a laptop — the next actual
+ * ring time, and the number to ring back on.
+ */
+function withNextCall(settings: schedule.Settings, env: Env) {
+  return {
+    ...settings,
+    nextCallAt: schedule.nextCallTime(settings),
+    inboundNumber: env.TELNYX_FROM_NUMBER,
+    // Sent so the CLI never hard-codes a language list that can drift from
+    // what the Worker will actually accept.
+    languages: LANGUAGES.map((l) => ({ code: l.code, label: l.label })),
+  };
+}
+
+/**
  * Tears down the per-call assistant and the TeXML app Telnyx created with it.
  * Best-effort: a failure here must never surface to the caller, but skipping
- * the app leaves one orphan per call.
+ * the app leaves one orphan per call. A recorded request has neither.
  */
 async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
-  await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
+  if (record.assistantId) {
+    await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
+  }
   if (record.texmlAppId) {
     await telnyx.deleteTexmlApplication(env.TELNYX_API_KEY, record.texmlAppId).catch(() => {});
   }
@@ -329,6 +287,7 @@ async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
  * than a call that errors after the fact.
  */
 async function captureTranscript(env: Env, callId: string, record: CallRecord): Promise<void> {
+  if (!record.assistantId) return; // a recorded request carries its own text
   try {
     const conversationId =
       record.conversationId ??
@@ -341,7 +300,7 @@ async function captureTranscript(env: Env, callId: string, record: CallRecord): 
       .filter((m) => m.text && (m.role === "user" || m.role === "assistant"))
       .map((m) => ({ role: m.role, text: m.text ?? "", at: m.sent_at ?? m.created_at }));
     record.conversationId = conversationId;
-    await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+    await saveCall(env, callId, record);
 
     await telnyx.deleteConversation(env.TELNYX_API_KEY, conversationId).catch(() => {});
   } catch (err) {
@@ -349,14 +308,54 @@ async function captureTranscript(env: Env, callId: string, record: CallRecord): 
   }
 }
 
-// The Worker used to email the raw transcript here, as the copy that survived
-// a laptop shut over a weekend. The first person to receive one did not want
-// it: a transcript in the inbox is the screen the product exists to remove.
-// What arrives instead is written by the loop after it has applied the
-// decisions — what was decided, what was done, what was left — and is sent
-// through /mail like the paper. Nothing is lost: the Worker keeps the
-// transcript for 24 hours and the armed session collects it within a minute
-// of waking.
+/* ------------------------------------------------------------ team queue */
+
+const queueKey = (orgId: string) => `orgq:${orgId}`;
+
+async function loadQueue(env: Env, orgId: string): Promise<string[]> {
+  const raw = await env.CALLS.get(queueKey(orgId));
+  try {
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Puts a finished call where the team's watchers will find it. The queue is an
+ * id list; the truth about each call — including whether someone already took
+ * it — lives on the call record, so pruning the list is always safe.
+ */
+async function enqueueOrgCall(env: Env, orgId: string, callId: string): Promise<void> {
+  const list = await loadQueue(env, orgId);
+  if (!list.includes(callId)) list.push(callId);
+  while (list.length > 50) list.shift();
+  await env.CALLS.put(queueKey(orgId), JSON.stringify(list), {
+    expirationTtl: QUEUED_CALL_TTL_SECS,
+  });
+}
+
+/**
+ * Everything that happens when a call is over, wherever its end was reported
+ * from: bill the org for the minutes, and hand the call to the watchers.
+ * Idempotent — the debit is keyed by call id and the queue dedupes.
+ */
+async function afterCallEnded(env: Env, callId: string, record: CallRecord): Promise<void> {
+  if (record.orgId && record.status === "completed" && !record.debited && record.endedAt) {
+    const seconds = Math.max(1, Math.round((record.endedAt - record.createdAt) / 1000));
+    const cents = Math.ceil((seconds * db.priceCentsPerMinute(env)) / 60);
+    await db
+      .debitCall(env, record.orgId, record.userId ?? null, callId, seconds, cents)
+      .catch((err) => console.error("debit failed", callId, (err as Error).message));
+    record.debited = true;
+    await saveCall(env, callId, record);
+  }
+
+  if (record.orgId && record.queued && record.status === "completed" && !record.voicemail) {
+    await enqueueOrgCall(env, record.orgId, callId);
+  }
+}
 
 type Lang = string;
 
@@ -421,6 +420,7 @@ async function startCall(
   prompt: string,
   lang: Lang,
   origin: string,
+  opts: { userId?: string; orgId?: string; queued?: boolean } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   const callId = crypto.randomUUID();
   const wToken = await webhookToken(callId, env.SESSION_SECRET);
@@ -449,12 +449,16 @@ async function startCall(
 
   const record: CallRecord = {
     phone,
+    userId: opts.userId,
+    orgId: opts.orgId,
     assistantId: assistant.id,
     texmlAppId: connectionId,
     status: "initiated",
+    kind: "brief",
+    queued: opts.queued,
     createdAt: Date.now(),
   };
-  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await saveCall(env, callId, record);
 
   try {
     await telnyx.initiateAiCall(env.TELNYX_API_KEY, connectionId, {
@@ -484,8 +488,8 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   const s = await session(req, env.SESSION_SECRET, env.CALLS);
   if (!s) return fail(401, "not authenticated — run `screenless setup`");
 
-  const unpaid = await requireSubscription(env, s.phone);
-  if (unpaid) return unpaid;
+  const gate = await requireCredit(env, s.phone);
+  if (gate instanceof Response) return gate;
 
   const { prompt, language, at, hold } = (await req.json().catch(() => ({}))) as {
     prompt?: string;
@@ -523,7 +527,13 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   if (!(await rateLimit(env, `call:${s.phone}`, 20)))
     return fail(429, "call limit reached for this number, try again in an hour");
 
-  const result = await startCall(env, s.phone, prompt, lang, origin);
+  // Not queued: this CLI process is already blocking on the transcript, so
+  // handing the call to a watcher too would apply it twice.
+  const result = await startCall(env, s.phone, prompt, lang, origin, {
+    userId: gate.user.id,
+    orgId: gate.org.id,
+    queued: false,
+  });
   if (!result.ok) return fail(result.status, result.error);
 
   return json({ callId: result.callId, to: s.phone, status: "initiated" });
@@ -531,85 +541,179 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
 
 /* ---------------------------------------------------------------- inbound */
 
-/**
- * Answers a call *to* our number with the brief already waiting for that
- * caller.
- *
- * This is the "not now, I'll ring you back" path, and it matters more than it
- * looks: an outbound-only service has to be answered on its terms, at its
- * time. Because the brief is stored rather than held in the outbound call, the
- * conversation someone gets at 06:40 by dialling in is the same conversation
- * they would have got at 07:00.
- */
-async function answerInbound(req: Request, env: Env): Promise<Response> {
+const xml = (body: string) =>
+  new Response(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`, {
+    headers: { "Content-Type": "application/xml" },
+  });
+
+const sayXml = (text: string) => `<Say voice="female" language="en-US">${text}</Say>`;
+const sayHangup = (text: string) => xml(`${sayXml(text)}<Hangup/>`);
+
+async function inboundToken(req: Request, env: Env): Promise<boolean> {
   const provided = new URL(req.url).searchParams.get("t") ?? "";
   const expected = await webhookToken("inbound", env.SESSION_SECRET);
-  if (!safeEqual(provided, expected)) return fail(403, "bad webhook token");
+  return safeEqual(provided, expected);
+}
 
-  const say = (text: string) =>
-    new Response(
-      `<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="female" language="en-US">${text}</Say><Hangup/></Response>`,
-      { headers: { "Content-Type": "application/xml" } },
-    );
-
+async function inboundBody(req: Request): Promise<Record<string, string>> {
   const body = await req.text();
-  const params = new URLSearchParams(body);
-  // Telnyx posts TeXML callbacks form-encoded, but accept JSON rather than
-  // depend on that.
-  let from = params.get("From") ?? "";
-  if (!from) {
-    try {
-      const parsed = JSON.parse(body) as { From?: string; from?: string };
-      from = parsed.From ?? parsed.from ?? "";
-    } catch {
-      /* form-encoded after all, and From really is absent */
-    }
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v ?? "")]));
+  } catch {
+    return Object.fromEntries(new URLSearchParams(body));
   }
-  from = normalizeCallerId(from);
-  if (!isE164(from)) return say("Sorry, I could not read your number. Goodbye.");
+}
 
-  const brief = await schedule.loadBrief(env, from);
-  if (!brief) {
-    return say(
-      "There is nothing queued for this number right now. Your agent will park a brief tonight. Goodbye.",
+/**
+ * Answers a call *to* our number.
+ *
+ * Not the assistant — the assistant is who calls *you*. A ring-in gets a plain
+ * robot voice: press 1 for the assistant (the parked brief, same conversation
+ * you would have got at your call time), or just talk, and the recording is
+ * transcribed and routed to whichever teammate's terminal is watching. The
+ * caller must be a verified member of a team with credit; both are checked
+ * before a second of anyone's time is spent.
+ */
+async function answerInbound(req: Request, env: Env, origin: string): Promise<Response> {
+  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
+
+  const params = await inboundBody(req);
+  const from = normalizeCallerId(params.From ?? params.from ?? "");
+  if (!isE164(from)) return sayHangup("Sorry, I could not read your number. Goodbye.");
+
+  const user = await db.userByPhone(env, from);
+  if (!user || !user.phone_verified_at) {
+    return sayHangup(
+      "This number is not on a screenless team yet. Ask your admin for an invite, or run screenless setup. Goodbye.",
     );
   }
-
-  const status = await billing.status(env, from);
-  if (!status.active) {
-    return say("This number does not have an active subscription. Check your terminal. Goodbye.");
+  const org = await db.orgById(env, user.org_id);
+  if (!org || !billing.entitled(env, org)) {
+    return sayHangup("Your team is out of screenless credit. An admin can top it up on the billing page. Goodbye.");
   }
-
-  const lang = asLang(brief.language);
-  const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-in-${Date.now()}`, {
-    instructions: instructionsFor(brief.prompt),
-    model: env.ASSISTANT_MODEL,
-    voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
-    language: lang,
-    greeting: languageOf(lang).greeting,
-  });
 
   const callId = crypto.randomUUID();
   const record: CallRecord = {
     phone: from,
-    assistantId: assistant.id,
-    texmlAppId: assistant.telephony_settings?.default_texml_app_id,
+    userId: user.id,
+    orgId: org.id,
+    assistantId: "",
     status: "answered",
     inbound: true,
+    queued: true,
     createdAt: Date.now(),
   };
-  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await saveCall(env, callId, record);
   await env.CALLS.put(`last:${from}`, callId, { expirationTtl: CALL_TTL_SECS });
 
-  // Delivered — so the 07:00 sweep does not ring them about it again.
-  brief.status = "placed";
-  brief.callId = callId;
-  await schedule.saveBrief(env, from, brief);
+  const t = await webhookToken("inbound", env.SESSION_SECRET);
+  const choiceUrl = `${origin}/texml/inbound/choice?t=${t}&amp;call=${callId}`;
+  const recordUrl = `${origin}/texml/inbound/record?t=${t}&amp;call=${callId}`;
 
-  return new Response(
-    `<?xml version="1.0" encoding="UTF-8"?><Response><Connect><AIAssistant id="${assistant.id}"></AIAssistant></Connect></Response>`,
-    { headers: { "Content-Type": "application/xml" } },
+  return xml(
+    `<Gather action="${choiceUrl}" method="POST" numDigits="1" timeout="3">` +
+      sayXml("screenless. Press 1 to speak to the assistant, or start talking to make your request after the tone.") +
+      `</Gather><Redirect method="POST">${recordUrl}</Redirect>`,
   );
+}
+
+/** The keypress: 1 connects the parked brief's assistant, anything else records. */
+async function inboundChoice(req: Request, env: Env, origin: string): Promise<Response> {
+  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
+
+  const url = new URL(req.url);
+  const callId = url.searchParams.get("call") ?? "";
+  const record = await loadCall(env, callId);
+  if (!record) return sayHangup("Sorry, something went wrong. Goodbye.");
+
+  const params = await inboundBody(req);
+  const t = await webhookToken("inbound", env.SESSION_SECRET);
+  const recordUrl = `${origin}/texml/inbound/record?t=${t}&amp;call=${callId}`;
+
+  if ((params.Digits ?? "") === "1") {
+    const brief = await schedule.loadBrief(env, record.phone);
+    if (!brief) {
+      return xml(
+        sayXml("There is no briefing waiting for you right now. Tell me what you need after the tone.") +
+          `<Redirect method="POST">${recordUrl}</Redirect>`,
+      );
+    }
+
+    const lang = asLang(brief.language);
+    const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-in-${Date.now()}`, {
+      instructions: instructionsFor(brief.prompt),
+      model: env.ASSISTANT_MODEL,
+      voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
+      language: lang,
+      greeting: languageOf(lang).greeting,
+    });
+
+    record.assistantId = assistant.id;
+    record.texmlAppId = assistant.telephony_settings?.default_texml_app_id;
+    record.kind = "brief";
+    await saveCall(env, callId, record);
+
+    // Delivered — so the morning sweep does not ring them about it again.
+    brief.status = "placed";
+    brief.callId = callId;
+    await schedule.saveBrief(env, record.phone, brief);
+
+    return xml(`<Connect><AIAssistant id="${assistant.id}"></AIAssistant></Connect>`);
+  }
+
+  return xml(`<Redirect method="POST">${recordUrl}</Redirect>`);
+}
+
+async function inboundRecord(req: Request, env: Env, origin: string): Promise<Response> {
+  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
+  const callId = new URL(req.url).searchParams.get("call") ?? "";
+  const t = await webhookToken("inbound", env.SESSION_SECRET);
+  const doneUrl = `${origin}/texml/inbound/recorded?t=${t}&amp;call=${callId}`;
+  return xml(
+    `<Record action="${doneUrl}" method="POST" maxLength="300" timeout="6" finishOnKey="#" playBeep="true"/>` +
+      sayXml("I did not catch anything. Goodbye.") +
+      `<Hangup/>`,
+  );
+}
+
+/**
+ * The recording is in: transcribe it and make it the call's transcript, so a
+ * spoken request and an assistant conversation are the same shape to the
+ * watcher that collects them. Transcription is inline — the caller hears a
+ * beat of silence and then the confirmation, which is also the guarantee that
+ * a request confirmed is a request stored.
+ */
+async function inboundRecorded(req: Request, env: Env): Promise<Response> {
+  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
+
+  const callId = new URL(req.url).searchParams.get("call") ?? "";
+  const record = await loadCall(env, callId);
+  if (!record) return sayHangup("Sorry, something went wrong. Goodbye.");
+
+  const params = await inboundBody(req);
+  const recordingUrl = params.RecordingUrl ?? "";
+  const duration = parseInt(params.RecordingDuration ?? "0", 10);
+  if (!recordingUrl || duration < 1) {
+    return sayHangup("Nothing recorded. Call again whenever you are ready. Goodbye.");
+  }
+
+  let text = "";
+  try {
+    text = await telnyx.transcribeAudio(env.TELNYX_API_KEY, recordingUrl);
+  } catch (err) {
+    console.error("transcription failed", callId, (err as Error).message);
+  }
+  if (!text) {
+    return sayHangup("Sorry, I could not make that out. Please try again. Goodbye.");
+  }
+
+  record.kind = "request";
+  record.requestText = text;
+  record.transcript = [{ role: "user", text, at: new Date().toISOString() }];
+  await saveCall(env, callId, record);
+
+  return sayHangup("Got it. Your team's terminal picks this up next. Goodbye.");
 }
 
 /**
@@ -626,36 +730,31 @@ async function answerInbound(req: Request, env: Env): Promise<Response> {
 async function finishInbound(env: Env, phone: string, why: string, force = false): Promise<string | null> {
   const callId = await env.CALLS.get(`last:${phone}`);
   if (!callId) return null;
-  const raw = await env.CALLS.get(`call:${callId}`);
-  if (!raw) return null;
-  const record = JSON.parse(raw) as CallRecord;
+  const record = await loadCall(env, callId);
+  if (!record) return null;
   if (record.status === "completed" || record.status === "failed") return null;
   // Only a ring-in is closed from the application-level callback or the
   // sweep; an outbound call has its own per-call status callback. The admin
   // path may force it, for records that predate the flag.
   if (!record.inbound && !force) return null;
 
-  record.status = "completed";
+  // A ring-in that never got as far as leaving a request or meeting the
+  // assistant is a hang-up during the menu: nothing to collect, nothing owed.
+  const substantial = record.kind === "brief" ? Boolean(record.assistantId) : Boolean(record.requestText);
+  record.status = substantial ? "completed" : "failed";
   record.endedAt = Date.now();
-  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await saveCall(env, callId, record);
   await captureTranscript(env, callId, record);
   await cleanupAssistant(env, record);
+  await afterCallEnded(env, callId, record);
   console.log("inbound call finished", callId, why);
   return callId;
 }
 
 async function inboundStatus(req: Request, env: Env): Promise<Response> {
-  const provided = new URL(req.url).searchParams.get("t") ?? "";
-  const expected = await webhookToken("inbound", env.SESSION_SECRET);
-  if (!safeEqual(provided, expected)) return fail(403, "bad webhook token");
+  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
 
-  const body = await req.text();
-  let payload: Record<string, unknown> = {};
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    payload = Object.fromEntries(new URLSearchParams(body));
-  }
+  const payload = await inboundBody(req);
   const status = String(payload.CallStatus ?? payload.call_status ?? "").toLowerCase();
   if (!["completed", "failed", "busy", "no-answer", "canceled"].includes(status)) return json({ ok: true });
   const from = normalizeCallerId(String(payload.From ?? payload.from ?? ""));
@@ -688,13 +787,26 @@ async function sweepStaleInbound(env: Env): Promise<number> {
   return n;
 }
 
+function callPayload(callId: string, record: CallRecord) {
+  const done = record.status === "completed" || record.status === "failed";
+  return {
+    callId,
+    status: record.status,
+    done,
+    kind: record.kind ?? "brief",
+    ...(record.voicemail ? { voicemail: true } : {}),
+    ...(record.requestText ? { requestText: record.requestText } : {}),
+    durationSecs: record.endedAt ? Math.round((record.endedAt - record.createdAt) / 1000) : null,
+    transcript: done ? record.transcript ?? [] : undefined,
+  };
+}
+
 async function getCall(callId: string, req: Request, env: Env): Promise<Response> {
   const s = await session(req, env.SESSION_SECRET, env.CALLS);
   if (!s) return fail(401, "not authenticated");
 
-  const raw = await env.CALLS.get(`call:${callId}`);
-  if (!raw) return fail(404, "unknown call id");
-  const record = JSON.parse(raw) as CallRecord;
+  const record = await loadCall(env, callId);
+  if (!record) return fail(404, "unknown call id");
   if (record.phone !== s.phone) return fail(403, "not your call");
 
   const done = record.status === "completed" || record.status === "failed";
@@ -702,14 +814,149 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
 
   // Served from our own copy: the Telnyx conversation was deleted when the call
   // ended, so this record is the only transcript that still exists.
+  return json(callPayload(callId, record));
+}
+
+/* ---------------------------------------------------------------- watchers */
+
+interface WatcherInfo {
+  watcherId: string;
+  userId: string;
+  startedAt: number;
+  repo?: string;
+}
+
+const watcherKey = (orgId: string, watcherId: string) => `watcher:${orgId}:${watcherId}`;
+
+async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo[]> {
+  const watchers: WatcherInfo[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await env.CALLS.list({ prefix: `watcher:${orgId}:`, cursor, limit: 100 });
+    cursor = page.list_complete ? undefined : page.cursor;
+    for (const key of page.keys) {
+      const raw = await env.CALLS.get(key.name);
+      if (!raw) continue;
+      try {
+        const info = JSON.parse(raw) as Omit<WatcherInfo, "watcherId">;
+        watchers.push({ ...info, watcherId: key.name.slice(`watcher:${orgId}:`.length) });
+      } catch {
+        /* stale junk */
+      }
+    }
+  } while (cursor);
+  return watchers;
+}
+
+/**
+ * Which watcher a call belongs to, decided at poll time against whoever is
+ * alive right now: the caller's own terminal first (their earliest, if they
+ * have two), any teammate's otherwise. Deciding at poll time rather than at
+ * call time is what makes the queue survivable — a call that ends into an
+ * empty room is simply assigned to the first watcher that shows up.
+ */
+function assignee(record: CallRecord, watchers: WatcherInfo[]): WatcherInfo | null {
+  if (!watchers.length) return null;
+  const byStart = (a: WatcherInfo, b: WatcherInfo) =>
+    a.startedAt - b.startedAt || a.watcherId.localeCompare(b.watcherId);
+  const own = watchers.filter((w) => w.userId === record.userId).sort(byStart);
+  if (own.length) return own[0];
+  return [...watchers].sort(byStart)[0];
+}
+
+/**
+ * The watcher's one poll: registers the heartbeat, then answers "is there a
+ * finished call for *this* terminal?". Handled and expired entries are pruned
+ * in passing; calls assigned to another live watcher are left for it, so two
+ * watchers drain a backlog in parallel without ever taking the same call.
+ */
+async function watchNext(req: Request, env: Env): Promise<Response> {
+  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  if (!s) return fail(401, "not authenticated — run `screenless setup`");
+  const { user, org } = await identify(env, s.phone);
+
+  const url = new URL(req.url);
+  const watcherId = url.searchParams.get("watcher") ?? "";
+  const startedAt = Number(url.searchParams.get("started")) || Date.now();
+  const repo = url.searchParams.get("repo") ?? "";
+  if (!/^[\w-]{6,64}$/.test(watcherId)) return fail(400, "watcher id required");
+
+  await env.CALLS.put(
+    watcherKey(org.id, watcherId),
+    JSON.stringify({ userId: user.id, startedAt, repo }),
+    { expirationTtl: WATCHER_TTL_SECS },
+  );
+
+  const watchers = await liveWatchers(env, org.id);
+  // KV lists are eventually consistent; the terminal that just heartbeat must
+  // exist in its own view of the room whatever the edge cache says.
+  if (!watchers.some((w) => w.watcherId === watcherId)) {
+    watchers.push({ watcherId, userId: user.id, startedAt, repo });
+  }
+
+  const queue = await loadQueue(env, org.id);
+  const keep: string[] = [];
+  let found: { callId: string; record: CallRecord } | null = null;
+
+  for (const callId of queue) {
+    const record = await loadCall(env, callId);
+    if (!record || record.handledBy) continue; // expired or done — prune
+    keep.push(callId);
+    if (record.status !== "completed") continue;
+    if (found) continue;
+    const who = assignee(record, watchers);
+    if (who && who.watcherId === watcherId) found = { callId, record };
+  }
+
+  if (keep.length !== queue.length) {
+    await env.CALLS.put(queueKey(org.id), JSON.stringify(keep), {
+      expirationTtl: QUEUED_CALL_TTL_SECS,
+    });
+  }
+
+  if (!found) return json({ ready: false, watchers: watchers.length, queued: keep.length });
+
+  const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   return json({
-    callId,
-    status: record.status,
-    done: true,
-    ...(record.voicemail ? { voicemail: true } : {}),
-    durationSecs: record.endedAt ? Math.round((record.endedAt - record.createdAt) / 1000) : null,
-    transcript: record.transcript ?? [],
+    ready: true,
+    watchers: watchers.length,
+    queued: keep.length,
+    call: {
+      ...callPayload(found.callId, found.record),
+      caller: {
+        name: caller?.name ?? "",
+        email: caller?.email ?? null,
+        phone: found.record.phone,
+        you: caller?.id === user.id,
+      },
+      createdAt: found.record.createdAt,
+    },
   });
+}
+
+/** Marks a queued call as taken, so no other watcher ever sees it again. */
+async function watchDone(req: Request, env: Env): Promise<Response> {
+  const s = await session(req, env.SESSION_SECRET, env.CALLS);
+  if (!s) return fail(401, "not authenticated");
+  const { user, org } = await identify(env, s.phone);
+
+  const { callId } = (await req.json().catch(() => ({}))) as { callId?: string };
+  if (typeof callId !== "string" || !callId) return fail(400, "callId required");
+
+  const record = await loadCall(env, callId);
+  if (!record || record.orgId !== org.id) return fail(404, "unknown call id");
+  if (!record.handledBy) {
+    record.handledBy = user.id;
+    await saveCall(env, callId, record);
+  }
+  const queue = await loadQueue(env, org.id);
+  const keep = queue.filter((id) => id !== callId);
+  if (keep.length !== queue.length) {
+    await env.CALLS.put(queueKey(org.id), JSON.stringify(keep), {
+      expirationTtl: QUEUED_CALL_TTL_SECS,
+    });
+  }
+  return json({ ok: true, handledBy: record.handledBy });
 }
 
 /* ---------------------------------------------------------------- webhooks */
@@ -735,19 +982,12 @@ async function handleWebhook(
   const expected = await webhookToken(callId, env.SESSION_SECRET);
   if (!safeEqual(provided, expected)) return fail(403, "bad webhook token");
 
-  const raw = await env.CALLS.get(`call:${callId}`);
-  if (!raw) return json({ ok: true }); // call expired; nothing to update
-  const record = JSON.parse(raw) as CallRecord;
+  const record = await loadCall(env, callId);
+  if (!record) return json({ ok: true }); // call expired; nothing to update
 
   // Telnyx posts TeXML status callbacks as form-encoded, conversation
   // callbacks as JSON. Accept either without guessing from Content-Type.
-  const body = await req.text();
-  let payload: Record<string, unknown> = {};
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    payload = Object.fromEntries(new URLSearchParams(body));
-  }
+  const payload = await inboundBody(req);
 
   if (kind === "amd") {
     // machine_start | machine_end_beep | machine_end_silence | machine_end_other
@@ -759,7 +999,7 @@ async function handleWebhook(
       record.voicemail = true;
       record.status = "failed";
       record.endedAt = Date.now();
-      await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+      await saveCall(env, callId, record);
       await reparkHeld(env, record.phone, callId);
       const accountSid = String(payload.AccountSid ?? "");
       const callSid = String(payload.CallSid ?? "");
@@ -796,18 +1036,19 @@ async function handleWebhook(
       record.status = "ringing";
     }
   } else {
-    const data = (payload.data ?? payload) as Record<string, unknown>;
-    const id = data.conversation_id ?? data.id;
+    const data = (payload as Record<string, unknown>).data ?? payload;
+    const id = (data as Record<string, unknown>).conversation_id ?? (data as Record<string, unknown>).id;
     if (typeof id === "string") record.conversationId = id;
   }
 
-  await env.CALLS.put(`call:${callId}`, JSON.stringify(record), { expirationTtl: CALL_TTL_SECS });
+  await saveCall(env, callId, record);
 
   // Once the call is done and we have the transcript handle, the per-call
-  // assistant has served its purpose.
+  // assistant has served its purpose — and the org gets billed, the queue fed.
   if (record.status === "completed" || record.status === "failed") {
     if (record.status === "completed") await captureTranscript(env, callId, record);
     await cleanupAssistant(env, record);
+    await afterCallEnded(env, callId, record);
   }
 
   return json({ ok: true });
@@ -908,7 +1149,13 @@ export default {
       // Inbound: someone ringing the number back. Telnyx has been seen to use
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
-        return await answerInbound(req, env);
+        return await answerInbound(req, env, origin);
+      if (path === "/texml/inbound/choice" && method === "POST")
+        return await inboundChoice(req, env, origin);
+      if (path === "/texml/inbound/record" && method === "POST")
+        return await inboundRecord(req, env, origin);
+      if (path === "/texml/inbound/recorded" && method === "POST")
+        return await inboundRecorded(req, env);
 
       // Diagnostic: plain TeXML with no AI assistant involved. Lets us test the
       // telephony + TTS path in isolation when an assistant call goes silent.
@@ -931,6 +1178,10 @@ export default {
       if (blocking.length)
         return fail(503, `worker is not configured: missing ${blocking.join(", ")}`);
 
+      // The team page and its API — cookie-auth'd, one page, own module.
+      const teamRes = await team.handle(req, env, path, method);
+      if (teamRes) return teamRes;
+
       if (method === "POST" && path === "/auth/start") return await authStart(req, env);
       if (method === "POST" && path === "/auth/verify") return await authVerify(req, env);
       if (method === "POST" && path === "/calls") return await placeCall(req, env, origin);
@@ -938,6 +1189,28 @@ export default {
         return await createVerifyProfile(req, env);
       if (method === "GET" && path === "/admin/inbound-url")
         return await inboundUrl(req, env, origin);
+
+      /* --------------------------------------------------------- watchers */
+
+      if (method === "GET" && path === "/watch/next") return await watchNext(req, env);
+      if (method === "POST" && path === "/watch/done") return await watchDone(req, env);
+
+      // Who am I, org-wise. Also what `screenless team` prints before it
+      // opens the page.
+      if (method === "GET" && path === "/org/me") {
+        const s = await session(req, env.SESSION_SECRET, env.CALLS);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const { user, org } = await identify(env, s.phone);
+        const roster = await db.members(env, org.id);
+        const watchers = await liveWatchers(env, org.id);
+        return json({
+          user: { name: user.name, email: user.email, role: user.role, phone: user.phone },
+          org: { name: org.name, creditCents: org.credit_cents, members: roster.length },
+          watchers: watchers.length,
+          teamUrl: teamUrl(env),
+          inboundNumber: env.TELNYX_FROM_NUMBER,
+        });
+      }
 
       /* --------------------------------------------------------- settings */
 
@@ -1043,6 +1316,10 @@ export default {
         });
         if (!result.ok) return fail(400, result.error);
         await env.CALLS.delete(`emailcode:${s.phone}`);
+        // The confirmed address is also this user's sign-in for the team page.
+        await db
+          .ensureUserForPhone(env, s.phone, pending.email)
+          .catch((err) => console.error("email sync to D1 failed", (err as Error).message));
         return json({ verified: true, email: pending.email });
       }
 
@@ -1063,32 +1340,20 @@ export default {
       if (method === "POST" && path === "/stripe/webhook")
         return await billing.handleWebhook(req, env);
 
+      // The CLI's view of the money: a balance, not a subscription.
       if (method === "GET" && path === "/billing/status") {
         const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        return json(await billing.status(env, s.phone));
-      }
-
-      // Safe to call repeatedly: an already-subscribed caller gets their
-      // status back instead of a second Checkout Session.
-      if (method === "POST" && path === "/billing/checkout") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
-        if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        if (!billing.billingEnabled(env)) return fail(503, "billing is not configured");
-
-        const current = await billing.status(env, s.phone);
-        if (current.active) return json({ alreadyActive: true, ...current });
-
-        const { url } = await billing.createCheckout(env, s.phone, origin);
-        return json({ url });
-      }
-
-      // Changing the card, or cancelling, without us holding either.
-      if (method === "POST" && path === "/billing/portal") {
-        const s = await session(req, env.SESSION_SECRET, env.CALLS);
-        if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        const url = await billing.createPortal(env, s.phone);
-        return url ? json({ url }) : fail(404, "no subscription to manage");
+        const { user, org } = await identify(env, s.phone);
+        return json({
+          active: billing.entitled(env, org),
+          status: billing.billingEnabled(env) ? "payg" : "unmetered",
+          balanceCents: org.credit_cents,
+          priceCentsPerMinute: db.priceCentsPerMinute(env),
+          isAdmin: user.role === "admin",
+          orgName: org.name,
+          teamUrl: teamUrl(env),
+        });
       }
 
       const call = path.match(/^\/calls\/([\w-]+)$/);
@@ -1099,7 +1364,7 @@ export default {
       if (method === "POST" && path === "/mail") {
         const s = await session(req, env.SESSION_SECRET, env.CALLS);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        // Deliberately not behind the paywall. The paper is the free surface:
+        // Deliberately not gated on credit. The paper is the free surface:
         // it is what someone can have working tonight, and it is what earns
         // the right to sell them the call. The rate limit is the only guard it
         // needs, because a PDF costs a fraction of a phone call.
@@ -1150,18 +1415,37 @@ export default {
   /**
    * Cron sweep for parked briefs. Runs every 5 minutes, which is the
    * resolution a caller actually perceives — a call at 08:03 is a call at
-   * eight.
+   * eight. Also drains the mail outbox, closes stale ring-ins, and nudges
+   * members who joined a day ago and never verified a phone.
    */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     if (env.RESEND_API_KEY) {
       const { sent, failed } = await sweepOutbox(env);
       if (sent || failed) console.log(`outbox swept: ${sent} sent, ${failed} failed`);
+      await sweepPhoneReminders(env).catch((err) =>
+        console.error("phone reminder sweep failed", (err as Error).message),
+      );
     }
     await sweepBriefs(env);
     const stale = await sweepStaleInbound(env).catch(() => 0);
     if (stale) console.log(`closed ${stale} stale inbound call(s)`);
   },
 };
+
+/** The "please verify your phone" nudge, a day after joining, once ever. */
+async function sweepPhoneReminders(env: Env): Promise<void> {
+  const due = await db.usersNeedingPhoneReminder(env);
+  for (const user of due) {
+    // Marked before sending: a reminder that never arrives is annoying once,
+    // a reminder loop that fires every five minutes is a spam run.
+    await db.markPhoneReminderSent(env, user.id);
+    const org = await db.orgById(env, user.org_id);
+    if (!org) continue;
+    await team
+      .sendPhoneReminder(env, user, org)
+      .catch((err) => console.error("phone reminder failed", user.id, (err as Error).message));
+  }
+}
 
 /**
  * Places every brief whose time has come.
@@ -1177,14 +1461,14 @@ async function sweepBriefs(env: Env): Promise<void> {
 
   // Cron has no request to take an origin from, so the callback host has to be
   // configured rather than inferred.
-  const origin = `https://${env.API_HOST || "api.screenless.sh"}`;
+  const origin = `https://${env.API_HOST || "screenless.sh"}`;
 
   for (const { phone, brief } of due) {
-    const entitled = await billing.status(env, phone);
-    if (!entitled.active) {
-      // Not dropped: if they pay tomorrow, tomorrow's brief is what should
+    const { user, org } = await identify(env, phone);
+    if (!billing.entitled(env, org)) {
+      // Not dropped: if they top up tomorrow, tomorrow's brief is what should
       // ring, and this one will have aged out of KV by then anyway.
-      console.log(`brief skipped, subscription ${entitled.status}`, phone);
+      console.log(`brief skipped, org out of credit`, phone);
       continue;
     }
 
@@ -1195,7 +1479,13 @@ async function sweepBriefs(env: Env): Promise<void> {
     brief.attempts += 1;
     await schedule.saveBrief(env, phone, brief);
 
-    const result = await startCall(env, phone, brief.prompt, asLang(brief.language), origin);
+    // Queued: the loop that parked this brief may be asleep when the call
+    // ends, and the team's watcher is the thing that collects it.
+    const result = await startCall(env, phone, brief.prompt, asLang(brief.language), origin, {
+      userId: user.id,
+      orgId: org.id,
+      queued: true,
+    });
 
     if (result.ok) {
       brief.callId = result.callId;

@@ -277,6 +277,37 @@ export function hangupTexmlCall(apiKey: string, accountSid: string, callSid: str
   });
 }
 
+/* ----------------------------------------------------------- transcription */
+
+/**
+ * Turns a TeXML `<Record>`ing into text, for the ring-in "just say what you
+ * need" path — the caller talks at a beep, not to a model, so the speech has
+ * to be transcribed after the fact.
+ *
+ * The recording is downloaded and re-uploaded rather than passed by URL:
+ * recording URLs are sometimes authenticated, and the transcription service
+ * cannot present our API key to fetch one.
+ */
+export async function transcribeAudio(apiKey: string, audioUrl: string): Promise<string> {
+  let res = await fetch(audioUrl, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!res.ok) res = await fetch(audioUrl);
+  if (!res.ok) throw new TelnyxError(res.status, audioUrl, "could not fetch recording");
+  const blob = await res.blob();
+
+  const form = new FormData();
+  form.append("model", "distil-whisper/distil-large-v2");
+  form.append("file", new File([blob], "recording.mp3", { type: blob.type || "audio/mpeg" }));
+
+  const tr = await fetch(`${BASE}/ai/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  const parsed = (await tr.json().catch(() => null)) as { text?: string } | null;
+  if (!tr.ok) throw new TelnyxError(tr.status, "/ai/audio/transcriptions", parsed);
+  return (parsed?.text ?? "").trim();
+}
+
 /* ----------------------------------------------------------- conversations */
 
 export interface ConversationMessage {

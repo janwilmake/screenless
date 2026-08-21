@@ -1,16 +1,29 @@
 {
-  // The API the CLI talks to: telephony, verification, call records, billing,
-  // and the parked briefs the morning call is placed from.
+  // The one Worker: the landing page (static assets from site/public), the
+  // team page, and the whole API — telephony, verification, call records,
+  // teams, pay-as-you-go billing, and the parked briefs the morning call is
+  // placed from. There used to be a second assets-only Worker for the site;
+  // merging them put the frontend and the API it talks to on one origin.
   //
-  // Deploy:  cd worker && npx wrangler deploy
+  // Deploy:  cd site && ./build.sh && cd ../worker && npx wrangler deploy
+  //          (or `npm run deploy` here, which does exactly that)
   "name": "screenless",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "account_id": "080fd9e0587416d2fa30ed1f527e2323",
 
-  // The CLI's default endpoint. Kept on its own subdomain so the landing page
-  // and the API can be deployed, rolled back, and rate-limited independently.
-  "routes": [{ "pattern": "api.screenless.sh", "custom_domain": true }],
+  // Apex plus www for people, api.screenless.sh kept alive because every CLI
+  // installed before the merge has it saved in ~/.screenless as its endpoint.
+  "routes": [
+    { "pattern": "screenless.sh", "custom_domain": true },
+    { "pattern": "www.screenless.sh", "custom_domain": true },
+    { "pattern": "api.screenless.sh", "custom_domain": true }
+  ],
+
+  // The landing page. Requests that match a file are served from the edge
+  // cache without running the Worker; everything else (the API, /team) runs
+  // src/index.ts. Built by site/build.sh — never edit site/public by hand.
+  "assets": { "directory": "../site/public", "binding": "ASSETS" },
 
   "vars": {
     // The Telnyx number the call comes *from*, and the one the user rings back.
@@ -39,53 +52,55 @@
     // table in src/languages.ts. Set this only to force one voice everywhere.
     "ASSISTANT_VOICE": "",
 
-    // Worldwide. The real spend guard is BLOCKED_PREFIXES in src/index.ts,
+    // Worldwide. The real spend guard is BLOCKED_PREFIXES in src/util.ts,
     // which blocks satellite and SMS-pumping ranges regardless of this value.
     // Narrow to a comma-separated list of ISO codes ("NL,BE,DE") to restrict.
     "ALLOWED_DESTINATIONS": "US,CA,NL,BE,GB,IE,DE,AT,CH,FR,ES,PT,IT,SE,NO,DK,FI,PL,CZ,LU,IN,JP,BR,MX,AU,NZ,ZA,SG",
 
-    // Sender for the edition and for confirmation codes.
+    // Sender for every mail: codes, invites, reminders, the paper, reports.
     //
     // hello@ rather than press@ because this address can also *receive*:
     // Cloudflare Email Routing forwards it to a real mailbox. A From address
     // that bounces is bad manners — someone replies to the paper and it
     // vanishes — and a mildly negative signal to spam filters besides.
-    //
-    // Deliverability does not depend on the local part at all: Resend verifies
-    // the domain, and DKIM signs for screenless.sh however the mailbox is
-    // named. press@ can come back the moment it has a routing rule.
     "MAIL_FROM": "screenless <hello@screenless.sh>",
 
     // Default recipient, so the nightly loop needs no --to. Leave empty to
     // require --to on every send.
     "MAIL_TO": "",
 
-    // Where Checkout sends people when they finish or bail. Also the return
-    // target from the billing portal.
+    // The site's public origin: Checkout redirects, and the /team links in
+    // invite and reminder emails.
     "SITE_URL": "https://screenless.sh",
 
     // This Worker's own hostname. Used to build Telnyx callback URLs from the
     // cron sweep, which — unlike a fetch — has no request to read it from.
-    "API_HOST": "api.screenless.sh",
+    "API_HOST": "screenless.sh",
 
-    // The recurring price the 7-day trial converts to. Leave empty and the
-    // Worker inlines $99/month at Checkout instead — the paywall works either
-    // way, but a real price id is what makes Stripe's revenue reporting mean
-    // anything.
-    //
-    // TEST MODE. $99/month on product prod_V4pc9EmdyrVtBH. Going live means a
-    // live-mode product, price, and webhook, then swapping this id along with
-    // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET — no code changes.
-    "STRIPE_PRICE_ID": "price_1U4fwvCL0Yranfl4MDErDZbh"
+    // Pay-as-you-go pricing. A minute of call bills the org this many cents —
+    // set at roughly double what the minute costs us in telephony, ASR/TTS and
+    // the model. Change it here; nothing else encodes the price.
+    "PRICE_PER_MINUTE_CENTS": "30",
+
+    // What every new org starts with, in cents: the free plan. One grant per
+    // org, ever — removing and re-adding a member never mints a second one.
+    "FREE_CREDIT_CENTS": "1000"
   },
 
-  // Stores call records, settings, subscriptions, parked briefs, and OTP
-  // rate-limit counters.
+  // Stores call records, settings, parked briefs, the watcher heartbeats and
+  // team call queues, and OTP rate-limit counters.
   // Create with: wrangler kv namespace create CALLS
   "kv_namespaces": [{ "binding": "CALLS", "id": "1f4267f254c74f82a24737a84070f991" }],
 
-  // Places any brief whose call time has come. Five minutes is well inside
-  // what a caller perceives — a call at 08:03 is a call at eight.
+  // Users, orgs, invites and the money ledger. Schema in schema.sql:
+  //   wrangler d1 execute screenless --remote --file=schema.sql
+  "d1_databases": [
+    { "binding": "DB", "database_name": "screenless", "database_id": "641fe5a5-3d8e-41c1-8e27-d6f8c47e3f43" }
+  ],
+
+  // Places any brief whose call time has come, drains the mail outbox, and
+  // sends the verify-your-phone reminders. Five minutes is well inside what a
+  // caller perceives — a call at 08:03 is a call at eight.
   "triggers": { "crons": ["*/5 * * * *"] }
 
   // Secrets (never put these here — use `wrangler secret put NAME`):
@@ -93,7 +108,7 @@
   //   TELNYX_VERIFY_PROFILE_ID
   //   SESSION_SECRET
   //   ADMIN_SECRET
-  //   STRIPE_SECRET_KEY     — while unset, every verified number is entitled
+  //   STRIPE_SECRET_KEY     — while unset, billing is inert and every org is entitled
   //   STRIPE_WEBHOOK_SECRET — from `stripe webhook_endpoints create`
-  //   RESEND_API_KEY        — sends the nightly edition
+  //   RESEND_API_KEY        — sends every mail this Worker writes
 }
