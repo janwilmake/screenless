@@ -133,3 +133,6 @@ a wrongly-typed number can never receive its own verification text.
 
 - 23:34 — `2+3 pls`
   *(implement the hard never-list and loud attribution: the watcher marks a teammate request as untrusted with who sent it, and the skill forbids personal data, secrets, out-of-repo reads and unconfirmed irreversible ops for any routed request)*
+
+- 23:44 — `is there a max duration of the recording? there shouldnt be`
+  *(the Record ceiling was 5 minutes; raised to the platform max of one hour — effectively no limit, since a voice note ends on hang-up, #, or the silence timeout anyway)*

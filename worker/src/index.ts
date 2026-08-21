@@ -524,6 +524,11 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
 
   const t = await webhookToken("inbound", env.SESSION_SECRET);
   const doneUrl = `${origin}/texml/inbound/recorded?t=${t}&amp;call=${callId}`;
+  // maxLength is the ceiling, not the intended stop: a voice note ends when
+  // the caller hangs up, presses #, or falls silent for `timeout` seconds. So
+  // it is set to the platform maximum — an hour — to be effectively no limit,
+  // rather than a 5-minute cutoff that would truncate a long briefing dump.
+  //
   // Both callbacks, because they cover different endings. `action` fires when
   // the recording ends inside the call — # pressed, silence, maxLength — and
   // its response is what the caller hears next. `recordingStatusCallback` is
@@ -532,7 +537,7 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   // follows), which is exactly how the first two real ring-ins produced a
   // recording nothing ever collected.
   return xml(
-    `<Record action="${doneUrl}" method="POST" maxLength="300" timeout="6" finishOnKey="#" playBeep="true" recordingStatusCallback="${doneUrl}" recordingStatusCallbackMethod="POST"/>` +
+    `<Record action="${doneUrl}" method="POST" maxLength="3600" timeout="6" finishOnKey="#" playBeep="true" recordingStatusCallback="${doneUrl}" recordingStatusCallbackMethod="POST"/>` +
       sayXml("I did not catch anything. Goodbye.") +
       `<Hangup/>`,
   );
