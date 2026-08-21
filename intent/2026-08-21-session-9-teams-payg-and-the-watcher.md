@@ -127,3 +127,9 @@ a wrongly-typed number can never receive its own verification text.
 
 - 23:12 — `the paper should be sent to the whole team`
   *(the weekly edition mails every member with a verified email — one send, all recipients; the post-call report stays personal)*
+
+- 23:30 — `how can we make this secure? team members can now send instructions to the laptop running the listener, so its annoying if they get personal data to make fun or other things that might be annoying, abusing the system. what could they abuse? what might be a solution?`
+  *(threat model: a teammate's spoken request executes on another member's laptop with that member's MCPs, browser and credentials — a confused deputy that broke the product's "the phone takes no action" principle at multi-user. Assessed abuse: exfiltration of personal data/secrets, destructive ops, impersonation, cost griefing. Recommended layers: (1) treat a teammate's request as data to surface not a command to run, (2) a hard never-list regardless of who asks, (3) loud attribution, (4) per-member rate cap.)*
+
+- 23:34 — `2+3 pls`
+  *(implement the hard never-list and loud attribution: the watcher marks a teammate request as untrusted with who sent it, and the skill forbids personal data, secrets, out-of-repo reads and unconfirmed irreversible ops for any routed request)*
