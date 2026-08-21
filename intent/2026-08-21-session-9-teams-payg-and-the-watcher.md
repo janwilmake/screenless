@@ -64,3 +64,16 @@ a wrongly-typed number can never receive its own verification text.
 - 18:26 — `One other thing that's very important is that if there is nobody currently with a terminal in the team with a watcher in the terminal, it's important that the next time anyone spawns the watcher, it looks for previous requests, handles them, is able to then fetch the transcripts for them, and handle them one by one or in parallel. The agent can make that decision. We don't need to say anything about parallel or not, because otherwise they get lost. They shouldn't get lost. That's very important.`
 
 - 18:40 — `Another thing you can make part of the refactor: I don't really like that we have two workers, one api.screeners.sh and one screeners.sh. I think now that we also have actual frontend that is connected to the database, maybe we should just make it one worker and put the landing page in front. We can then have all the APIs on the same domain and subdomain, same subdomain, same domain with the main Apex screenless.sh, and then we can just remove the other worker, I guess, because everything lives there.`
+
+- 19:05 — `Update the privacy section. Just make it seven days instead of 24 hours and just explain why. Also, please test the product more. You can drive in my browser for screenless. Let me know if you need any help for testing.`
+
+- 19:35 — `when i tried changing the team name, i got 'admin only' is that a bug?`
+  *(not a bug — the browser was signed in as the invited test member at that moment; it exposed the missing sign-out link, which was added)*
+
+- 21:10 — `i just called the line and made a request, check the watcher`
+
+- 21:15 — `i called, u did nothing`
+  *(the two failed ring-ins found the real bug: TeXML never calls a Record's action URL when the caller hangs up — the recording is only announced via recordingStatusCallback, which was not set)*
+
+- 21:18 — `called again, check it now`
+  *(both post-fix calls transcribed, routed to the watcher, and billed — the inbound request path proven end to end)*

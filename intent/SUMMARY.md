@@ -27,7 +27,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | A nightly printable paper about your own product | built, unrun end to end |
 | The paper and the call built together from one reading *(was: two loops)* | built, unrun |
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
-| A watcher you run in a terminal that never ends, where the team's incoming calls land | built — `screenless watch`; polled live, no call routed through it yet |
+| A watcher you run in a terminal that never ends, where the team's incoming calls land | **built and proven** — two real spoken requests landed in it on 21 Aug |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
 
 ## Teams
@@ -53,16 +53,16 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | Price at roughly double the cost | built — 30¢/min (`PRICE_PER_MINUTE_CENTS`), against ~7–15¢ COGS |
 | Billing tab, visible to admins only: credit used and left, per-day statistics, who calls/costs most | built — rendered live with the grant; call stats have no calls to show yet |
 | Topping up | built — Stripe Checkout one-time payments; sandbox page reached, no payment completed; webhook + poll-reconcile both credit idempotently |
-| Calls debit the org by the minute when they complete | built, unrun — no billed call since deploy |
+| Calls debit the org by the minute when they complete | **built and proven** — a 50s demo call billed 25¢ and two ring-ins 11¢ and 8¢, all in the ledger |
 
 ## The call
 
 | Intent | Status |
 |---|---|
-| A ring-in gets a robot voice, not the assistant: "Press 1 to speak to the assistant or start talking to make your request." *(was: ring-ins always answered by the assistant)* | built, unrun — Gather/Record TeXML deployed, no real ring-in yet |
+| A ring-in gets a robot voice, not the assistant: "Press 1 to speak to the assistant or start talking to make your request." *(was: ring-ins always answered by the assistant)* | **built and proven** — three real ring-ins on 21 Aug; the first two found the bug (TeXML never calls a Record's action URL on hangup; the recording only arrives via recordingStatusCallback) |
 | Press 1 = the assistant with the parked brief, the same context as the morning call | built, unrun since the IVR rewrite |
-| No keypress = a recording, transcribed, delivered as a request to the team's terminal — not a conversation | built, unrun — Telnyx Whisper transcription untested against a real recording |
-| Requests route to the right terminal: your own first (earliest if you have two), else any teammate's watcher | built — assignment logic exercised via /watch/next; no real routed call yet |
+| No keypress = a recording, transcribed, delivered as a request to the team's terminal — not a conversation | **built and proven** — two spoken requests transcribed by Telnyx Whisper and delivered |
+| Requests route to the right terminal: your own first (earliest if you have two), else any teammate's watcher | **built and proven** — synthetic call exercised own-first, standby and dead-watcher failover; two real requests then routed live |
 | Nothing gets lost when no watcher is up: the next watcher to spawn drains the backlog, one by one or in parallel as the agent chooses | built — queue holds seven days; `--gate` leaves a call unacked until `screenless done`, so it is re-handed rather than dropped |
 | Three items per call, dossier-shaped; assistant answers from the brief and says when it cannot | **built and proven** — the 22:10 call on 19 Aug |
 | Hang up on voicemail rather than brief it | **built and proven** |
@@ -118,10 +118,11 @@ Things asked for that the product does not yet do, or has not yet proven.
 1. **`rounds` — the actual product.** Pull-request ingestion, cross-repo
    triage, the "this needs your eyes" router. Session 1's premise, still
    packaging ahead of product.
-2. **No end-to-end team call has happened.** The IVR, the recording, the
-   transcription, the routing, the debit and the watcher hand-off are all
-   deployed and all unrun against a real phone call. The next ring-in is the
-   test.
+2. **The press-1 assistant path is the last unrun leg of the line.** The
+   record-a-request path, transcription, routing, debit and the watcher
+   hand-off were all proven with real calls on 21 Aug; connecting a ring-in
+   to the parked brief's assistant has not run since the IVR rewrite, and the
+   first morning where someone declines the call and rings back is its test.
 3. **Stripe is in test mode**, so a topup cannot actually be paid. The old
    webhook endpoint also still subscribes to subscription events and may not
    subscribe to `checkout.session.completed` — unverified; the billing page's
