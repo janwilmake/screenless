@@ -8,7 +8,7 @@
 <!-- Apex and www are both live custom domains, so every page is reachable at
      two URLs and needs to name which one counts. -->
 <link rel="canonical" href="https://screenless.sh/terms">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
   :root {
     --ink:#14110f; --spot:#b4341f; --rule:#d6cfc7; --muted:#6f665e;
@@ -55,7 +55,7 @@
   <main>
 
     <h1>Terms of service</h1>
-    <p class="upd">Last updated 15 August 2026</p>
+    <p class="upd">Last updated 21 August 2026</p>
 
     <p class="lede">
       Plain terms for an early product. If something here reads as though it is
@@ -72,8 +72,8 @@
     <h2>It is early, and sold as such</h2>
     <p>
       Parts of what the marketing describes are still being built. You are
-      buying access to something in progress, at a price locked for as long as
-      you stay subscribed. If that is not what you want, do not subscribe.
+      buying access to something in progress, at a per-minute price locked for
+      as long as you stay. If that is not what you want, do not pay.
     </p>
 
     <h2>Your account is your phone number</h2>
@@ -84,21 +84,23 @@
       <code>screenless logout</code> ends the session.
     </p>
 
-    <h2>The paper is free; the call is paid</h2>
+    <h2>The paper is free; the call is pay-as-you-go</h2>
     <p>
-      Scheduling the nightly edition costs nothing. The call is $99 per month
-      after a 7-day free trial. Your card is collected at signup and first
-      charged at the end of the trial. Cancel any time with
-      <code>screenless billing --manage</code>; cancelling before day eight
-      costs nothing, and cancelling later ends the subscription at the end of
-      the paid period. Payments are handled by Stripe — we never see your card.
+      Scheduling the nightly edition costs nothing. Calls bill per minute —
+      30&cent; at the time of writing, stated on the pricing page — from your
+      team's credit balance. Every new team starts with $10 of credit, granted
+      once; when the balance runs out, calls stop until an admin tops up. There
+      is no subscription, nothing recurring, and no card until you choose to
+      top up. Credit is not refundable and does not expire. Payments are
+      handled by Stripe — we never see your card.
     </p>
 
     <h2>Fair use</h2>
     <p>
-      The call is intended for one person reviewing their own work. Rate limits
-      apply, and we may suspend an account that is placing calls automatically at
-      a volume the subscription does not cover. We will contact you before doing
+      The call is intended for a team reviewing its own work. Rate limits
+      apply, and we may suspend an account whose automated calling is running
+      faster than its credit — the balance is the throttle, and working around
+      it is the thing this clause forbids. We will contact you before doing
       so unless the cost is running away.
     </p>
 

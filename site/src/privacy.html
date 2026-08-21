@@ -8,7 +8,7 @@
 <!-- Apex and www are both live custom domains, so every page is reachable at
      two URLs and needs to name which one counts. -->
 <link rel="canonical" href="https://screenless.sh/privacy">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2314110f'/><rect x='5' y='9' width='22' height='3' fill='%23fdfcfa'/><rect x='5' y='15' width='22' height='2' fill='%23b4341f'/><rect x='5' y='20' width='14' height='2' fill='%238d837a'/></svg>">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>
   :root {
     --ink:#14110f; --spot:#b4341f; --rule:#d6cfc7; --muted:#6f665e;
@@ -55,7 +55,7 @@
   <main>
 
     <h1>Privacy</h1>
-    <p class="upd">Last updated 15 August 2026</p>
+    <p class="upd">Last updated 21 August 2026</p>
 
     <p class="lede">
       The short version: your phone number, your call transcripts, and a PDF
@@ -75,8 +75,13 @@
         <i>Basis: performance of the contract.</i></li>
       <li><b>Call records and transcripts</b> — so the call can be handed back
         to your own agent afterwards. The transcript is copied from Telnyx when
-        the call ends, deleted there, and expires from our storage 24 hours
-        later. <i>Basis: performance of the contract.</i></li>
+        the call ends, deleted there, and expires from our storage 7 days
+        later. Seven rather than 24 hours because calls are delivered to
+        whichever teammate's terminal is watching — and if nobody's terminal is
+        up when you ring in, your request waits for the next one rather than
+        being lost, which has to survive a weekend or a holiday. The moment a
+        terminal takes it, it stops being handed out; expiry is the backstop.
+        <i>Basis: performance of the contract.</i></li>
       <li><b>Your settings</b> — call time, timezone as reported by your machine,
         language, and one confirmed email address. The edition is only ever sent
         to that address. Kept while the account exists.</li>
@@ -84,8 +89,9 @@
         Deleted after 48 hours.</li>
       <li><b>A parked edition</b> — the PDF you asked us to mail, held until it
         is sent, then deleted.</li>
-      <li><b>Billing status</b> — whether you are subscribed. Card details are
-        held by Stripe and never by us.</li>
+      <li><b>Billing status</b> — your team's credit balance and a ledger of
+        topups and call minutes. Card details are held by Stripe and never by
+        us.</li>
     </ul>
 
     <h2>What we never hold</h2>
@@ -126,7 +132,9 @@
 
     <h2>Cookies</h2>
     <p>
-      This site sets none, and has no analytics on it.
+      The marketing pages set none, and there are no analytics anywhere.
+      Signing in on the team page sets one functional cookie that keeps you
+      signed in for 30 days; it identifies your account and does nothing else.
     </p>
   </main>
   <footer>screenless — a call and a paper for people whose agents write the code · <a href="mailto:hello@screenless.sh">hello@screenless.sh</a></footer>
