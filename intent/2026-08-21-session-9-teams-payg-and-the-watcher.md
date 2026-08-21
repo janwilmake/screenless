@@ -109,3 +109,7 @@ a wrongly-typed number can never receive its own verification text.
   *(~30–35 lines; the coercions and the INSERT column lists survive any naming, and the toll would move to the CLI's JSON API boundary rather than vanish)*
 - 22:26 — `no leave it, commit and push.`
   *(decision: the snake_case column convention stays, mapping toll accepted)*
+
+- 22:34 — `i dont like our html doesnt allow 'enter' for forms. fix that`
+- 22:36 — `what is the cost per minute for calls for me?`
+  *(30 cents per minute, billed per second on completed calls only)*

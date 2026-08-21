@@ -724,6 +724,18 @@ function phonePanel(isChange) {
     '<button class="act" id="checkotp">Verify</button></div>' +
     '<div class="err" id="perr"></div></div>';
 }
+/* Enter submits: the page has no <form>s, so pair each input with its action
+   button — the one sharing its row, or the mapped one where the button sits
+   outside the row (the invite-accept name field). */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || !e.target || e.target.tagName !== 'INPUT') return;
+  var pair = { name: 'accept', orgname: 'saveorg', invmail: 'sendinv', phone: 'sendotp', otp: 'checkotp' };
+  var row = e.target.closest ? e.target.closest('.form-inline') : null;
+  var btn = (row && row.querySelector('button.act')) ||
+            (pair[e.target.id] && document.getElementById(pair[e.target.id]));
+  if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+});
+
 document.addEventListener('click', function (e) {
   if (e.target && e.target.id === 'sendotp') {
     e.target.disabled = true;
