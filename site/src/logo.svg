@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 1 68 112" width="68" height="112">
+  <!-- The screenless mark: an S drawn as two tangent half circles, a dot in
+       the centre of each bowl. Ink and rust from the landing page palette. -->
+  <path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8"
+        fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="50" cy="35" r="7.5" fill="#b4341f"/>
+  <circle cx="50" cy="79" r="7.5" fill="#b4341f"/>
+</svg>
