@@ -4,6 +4,6 @@
   "private": true,
   "scripts": {
     "build": "./build.sh",
-    "deploy": "./build.sh && npx wrangler deploy"
+    "deploy": "./build.sh && npm --prefix ../worker run deploy"
   }
 }

@@ -13,7 +13,8 @@
 #   cli/dist/   the CLI, shipped as a tarball
 #
 #   ./build.sh          assemble
-#   npm run deploy      assemble, then wrangler deploy
+#   npm run deploy      assemble, then deploy the merged Worker (worker/),
+#                       which serves these files as its static assets
 
 set -euo pipefail
 
