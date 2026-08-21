@@ -420,9 +420,9 @@ screenless billing            # credit left, and the price per minute
 screenless billing --manage   # open the team billing tab (admins top up there)
 
 screenless team               # your team: members, credit, the page
-screenless watch              # the terminal the team's calls land in
-screenless watch --gate       # agent mode: exit on the first call, ack with…
-screenless done <callId>      # …this, once the work actually ran
+screenless watch              # block until a team call lands, print it, exit
+screenless done <callId>      # ack it once the work actually ran — undone
+                              # calls are re-delivered, never lost
 
 screenless whoami
 screenless logout

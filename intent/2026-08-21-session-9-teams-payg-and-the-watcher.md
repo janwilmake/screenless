@@ -77,3 +77,12 @@ a wrongly-typed number can never receive its own verification text.
 
 - 21:18 — `called again, check it now`
   *(both post-fix calls transcribed, routed to the watcher, and billed — the inbound request path proven end to end)*
+
+- 21:21 — `can yiu test if a proactive call lands in the watcher?`
+- 21:22 — *(interrupted, corrected)* `can yiu test if a call from me to screenless lands in the watcher?`
+- 21:24 — `i want u to wait for the watcher. that needs to be tested.`
+  *(the 21:23 call landed in the agent-side watcher with the recording-URL fallback — a transient transcription failure, retries added)*
+- 21:27 — `i already called but it didnt trigger the first watcher shell so smths's wrong`
+  *(the user's own shell ran the 19 Aug CLI, which predates `watch`; their install was updated in place)*
+- 21:33 — `I think you misunderstood me. I said at some point that the watcher should never stop, but of course that wouldn't bring it back to you. You should be activated when a new call enters. If it never stops, you will never be reactivated, right? This is a problem, and we should just go back to the old architecture where the watcher exits the moment it receives a transcript. That's the way it was, right?`
+  *(reverses the never-ending default: `screenless watch` now always blocks until one call is delivered, prints it with WORK, and exits — the loop re-arming it is what never stops. The display+auto-ack mode and the --gate flag are gone.)*

@@ -27,7 +27,7 @@ watching. The assistant on the phone still takes no action; the terminal does.
 | A nightly printable paper about your own product | built, unrun end to end |
 | The paper and the call built together from one reading *(was: two loops)* | built, unrun |
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
-| A watcher you run in a terminal that never ends, where the team's incoming calls land | **built and proven** — two real spoken requests landed in it on 21 Aug |
+| The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
 
 ## Teams
@@ -188,12 +188,12 @@ Decisions taken without a specific instruction, each reversible cheaply.
   stored.
 - Watcher heartbeats live 90 s; polls every 10 s double as heartbeats; ties in
   routing break by earliest start, then id.
-- Queued calls are capped at 50 per org and their records kept 7 days; the
-  plain `screenless watch` acks on display, `--gate` acks only via
-  `screenless done` — at-least-once for agents, at-most-once for humans.
-- The `WORK <callId>` line and the two-gate arming (`wait` + `watch --gate`)
-  in the loop skill are my wiring of the watcher into the existing session
-  contract.
+- Queued calls are capped at 50 per org and their records kept 7 days;
+  nothing is ever acked on display — only `screenless done` after the work
+  ran, so every call is at-least-once *(was: a display mode that acked on
+  print, dropped with the never-ending default)*.
+- The `WORK <callId>` line and the two-gate arming (`wait` + `watch`) in the
+  loop skill are my wiring of the watcher into the existing session contract.
 
 **Look and words**
 

@@ -302,18 +302,25 @@ export async function transcribeAudio(apiKey: string, audioUrl: string): Promise
   if (!res || !res.ok) throw new TelnyxError(res?.status ?? 0, audioUrl, "could not fetch recording");
   const blob = await res.blob();
 
-  const form = new FormData();
-  form.append("model", "distil-whisper/distil-large-v2");
-  form.append("file", new File([blob], "recording.mp3", { type: blob.type || "audio/mpeg" }));
-
-  const tr = await fetch(`${BASE}/ai/audio/transcriptions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
-  const parsed = (await tr.json().catch(() => null)) as { text?: string } | null;
-  if (!tr.ok) throw new TelnyxError(tr.status, "/ai/audio/transcriptions", parsed);
-  return (parsed?.text ?? "").trim();
+  // The transcription call gets the same benefit of the doubt as the fetch:
+  // a real ring-in failed here transiently on an audio file that was fine.
+  let lastErr: TelnyxError | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 2000));
+    const form = new FormData();
+    form.append("model", "distil-whisper/distil-large-v2");
+    form.append("file", new File([blob], "recording.mp3", { type: blob.type || "audio/mpeg" }));
+    const tr = await fetch(`${BASE}/ai/audio/transcriptions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    const parsed = (await tr.json().catch(() => null)) as { text?: string } | null;
+    if (tr.ok) return (parsed?.text ?? "").trim();
+    lastErr = new TelnyxError(tr.status, "/ai/audio/transcriptions", parsed);
+    console.error("transcription attempt failed", attempt + 1, tr.status, JSON.stringify(parsed));
+  }
+  throw lastErr ?? new TelnyxError(0, "/ai/audio/transcriptions", "no attempts ran");
 }
 
 /* ----------------------------------------------------------- conversations */

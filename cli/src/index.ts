@@ -704,7 +704,13 @@ function printWatchCall(call: WatchCall, asJson: boolean): void {
 }
 
 /**
- * The terminal the team's phone calls land in. Never exits on its own.
+ * The terminal the team's phone calls land in.
+ *
+ * Blocks until exactly one call is delivered, prints it, and exits — the exit
+ * is the point. The usual runner is an armed agent session, and a process
+ * that never returned could never wake the model that acts on the call; the
+ * "watcher that never stops" is the loop re-arming this after each handoff,
+ * not this process running forever.
  *
  * Every poll doubles as a heartbeat, which is how the Worker knows this
  * terminal exists: your own calls route to your own terminal (the earliest
@@ -712,17 +718,13 @@ function printWatchCall(call: WatchCall, asJson: boolean): void {
  * and a call that ends while nobody watches waits in the team queue — up to a
  * week — for the next watcher to spawn and drain it.
  *
- * Two modes, one contract:
- *   (default)   print each call as it lands and mark it handled — the display
- *   --gate      exit after printing the first call, *without* marking it, and
- *               say so with a `WORK <callId>` line. For agent loops: do the
- *               work, `screenless done <callId>`, re-arm. Left unmarked, the
- *               same call is handed out again — at-least-once, never lost.
+ * Nothing is marked handled here. The call is acked with
+ * `screenless done <callId>` after the work actually ran; left unmarked, it is
+ * handed out again on the next watch — at-least-once, never lost.
  */
 async function watch(args: string[]): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
-  const gate = args.includes("--gate");
   const asJson = args.includes("--json");
   const interval = Math.max(3, Number(argFlag(args, "--interval") ?? 10)) * 1000;
 
@@ -736,7 +738,7 @@ async function watch(args: string[]): Promise<void> {
     try {
       const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
       console.log(`${c.bold(me.org.name)} ${c.dim(`· watching from ${repo} · team line ${me.inboundNumber}`)}`);
-      console.log(c.dim("  calls and spoken requests to the team line land here — ctrl-c to stop"));
+      console.log(c.dim("  blocks until a call or spoken request lands, prints it, and exits"));
     } catch {
       /* the banner is decoration; the loop below is the product */
     }
@@ -766,19 +768,9 @@ async function watch(args: string[]): Promise<void> {
 
     if (next?.ready && next.call) {
       printWatchCall(next.call, asJson);
-      if (gate) {
-        console.log(`WORK ${next.call.callId}`);
-        if (!asJson) console.log(c.dim(`  when applied: screenless done ${next.call.callId}`));
-        return;
-      }
-      // Displayed is delivered, in display mode. An agent that must not lose
-      // work uses --gate, where nothing is marked until `screenless done`.
-      await fetch(`${cfg.apiUrl}/watch/done`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
-        body: JSON.stringify({ callId: next.call.callId }),
-      }).catch(() => {});
-      continue; // drain the backlog without waiting out the interval
+      console.log(`WORK ${next.call.callId}`);
+      if (!asJson) console.log(c.dim(`  when applied: screenless done ${next.call.callId} — then watch again`));
+      return;
     }
 
     await sleep(interval);
@@ -1199,7 +1191,7 @@ ${c.bold("Usage")}
   screenless setup [--api <url>] [--voice]   verify your phone number by OTP
   screenless call "<prompt>" [options]       call now, or park it for later
   screenless test                            ring me now with a demo call
-  screenless watch [--gate]                  the terminal the team's calls land in
+  screenless watch                           block until a team call lands, then exit
   screenless done <callId>                   mark a watched call as handled
   screenless team                            your team: members, credit, the page
   screenless transcript [--wait] [--json]    what was decided on the last call
@@ -1240,11 +1232,10 @@ ${c.bold("Taking the call on your terms")}
   ${c.dim("screenless watch")}. Nothing watching? It waits in the queue up to a week.
 
 ${c.bold("Watch options")}
-  (none)               never exits; prints each call or spoken request as it
-                       arrives and marks it handled
-  --gate               exit after printing the first one, unmarked, with a
-                       ${c.dim("WORK <callId>")} line — for agent loops, which apply it
-                       and then run ${c.dim("screenless done <callId>")}
+  (none)               block until one call or spoken request is delivered,
+                       print it with a ${c.dim("WORK <callId>")} line, and exit — do the
+                       work, run ${c.dim("screenless done <callId>")}, then watch again.
+                       Undone calls are re-delivered, never lost
   --interval <secs>    seconds between polls (default 10)
   --json               machine-readable calls
 

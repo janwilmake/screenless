@@ -55,16 +55,17 @@ same contract as the orchestrator, and the one thing the user has to know.
    **Arm the watcher beside it**, same flags, second background command:
 
    ```
-   screenless watch --gate
+   screenless watch
    ```
 
    This is the team line: a teammate rings the number and speaks a request, or
    finishes a briefing call of their own, and the Worker routes it to exactly
    one watching terminal — this one, if it is the caller's own or the only one
-   up. The watcher exits after printing the call and a `WORK <callId>` line;
-   that exit is a tick too. Calls that end while no terminal watches wait in
-   the team's queue up to a week, so arming this is also what drains a
-   backlog.
+   up. The watcher blocks until one call is delivered, prints it with a
+   `WORK <callId>` line, and exits; that exit is a tick too — the exit is how
+   the model gets woken, which is why the process must not run forever. Calls
+   that end while no terminal watches wait in the team's queue up to a week,
+   so arming this is also what drains a backlog, one call per arming.
 3. **Add the heartbeat**, because a waiter that dies takes the night with it.
    Invoke the `loop` skill with:
 
@@ -124,7 +125,7 @@ the user can interrupt it.
 
 ### Mode: stop
 
-Stop the backgrounded `screenless wait` and `screenless watch --gate`
+Stop the backgrounded `screenless wait` and `screenless watch`
 (TaskStop on their tasks) and end the `/loop` heartbeat. Say that tonight's
 run will not happen until the loop is armed again, and that calls to the team
 line will queue for the next watcher rather than land here. Nothing parked
