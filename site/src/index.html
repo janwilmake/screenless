@@ -10,7 +10,7 @@
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
-<meta property="og:title" content="Your agents write the code. Your team still makes the calls.">
+<meta property="og:title" content="Your agents get stuck. Let them call you.">
 <meta property="og:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh/">
@@ -21,7 +21,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="screenless, over the headline: your agents get stuck, let them call you — with an incoming-call line reading 'ringing you — legacy price rows: drop or migrate?'">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Your agents write the code. Your team still makes the calls.">
+<meta name="twitter:title" content="Your agents get stuck. Let them call you.">
 <meta name="twitter:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
 <meta name="twitter:image" content="https://screenless.sh/og.png">
 <!-- The mark: an S of two half circles, a dot centred in each bowl. -->
@@ -361,10 +361,9 @@
     <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
     <nav>
       <a href="#line">the line</a>
-      <a href="#skills">skills</a>
       <a href="#price">price</a>
       <a href="#faq">faq</a>
-      <a class="navcta" href="#try">Get started</a>
+      <a class="navcta" href="#start">Get started</a>
     </nav>
   </div>
 
@@ -487,170 +486,6 @@
           teammate's request arrives marked as theirs, weighed before it runs
           with your access.
         </p>
-      </div>
-    </div>
-  </section>
-
-  <section id="call">
-    <p class="kicker">a skill, live</p>
-    <h2>The morning PR briefing, for example.</h2>
-    <p class="lede">
-      One of the two skills we ship. Your agents opened thirty-five pull
-      requests overnight and recorded a hundred and ninety-three decisions they
-      made on your behalf. Three actually need a person. This is that call —
-      and it is just one thing the line can be pointed at.
-    </p>
-
-    <div class="call">
-      <p>
-        Good morning. Thirty-five pull requests overnight, and every one says no
-        human has read it. I have three that genuinely need you; the rest can
-        wait. Tell me to slow down whenever.
-      </p>
-      <p>
-        The first is the one I wouldn't leave. Two open pull requests fix the
-        same permissions bug — an org admin could manage every team, not just
-        their own — and they edit the same few lines, so they conflict. The
-        second one's own notes say the hole stays open until the first lands.
-        Is that clear so far, or do you want the background on how that check
-        works?
-      </p>
-      <p class="you">I have it. What do you need from me?</p>
-      <p>
-        Whether they land together today, ahead of the queue, or take their
-        turn.
-      </p>
-      <p class="you">Together. And check whether it ever reached production.</p>
-      <p>
-        Noted. Second — the lint cleanup got you to zero errors, so the CI gate
-        can finally land. But it got part of the way there by downgrading a
-        hundred accessibility violations to warnings, and your own repo rules
-        say don't disable those, fix them. The agent flagged this as the call it
-        was least comfortable making.
-      </p>
-      <p class="you">Wait. Which ones did it downgrade?</p>
-      <p>Colour contrast and missing labels, mostly. None of the keyboard ones.</p>
-      <p class="you">Then fix them first. The gate can wait.</p>
-      <p>
-        That's two of three; the third can wait for tomorrow if you'd rather.
-        One I couldn't settle for you: whether that permissions bug
-        ever reached production — that needs your eyes on the logs. Your
-        transcript goes to your agent, which is what actually merges and
-        comments. I don't touch anything.
-      </p>
-    </div>
-
-    <p class="meta">
-      ✓ 3 decisions · 9m10s · nothing changed yet — your own loop applies it,
-      on your machine, with your access
-    </p>
-  </section>
-
-  <section id="try">
-    <p class="kicker">the part worth trying first</p>
-    <h2>Have it ring you, about a minute from now.</h2>
-    <p class="lede">
-      Not a video and not a sandbox. Install it, type one command, and your own
-      phone rings — a real call on a real line that you can interrupt
-      mid-sentence and argue with. Almost nobody has been telephoned by a
-      developer tool before. Do that part before you decide anything else.
-    </p>
-
-    <div class="term">
-      <span class="p">$ </span>screenless setup<br>
-      <span class="out">&nbsp;&nbsp;✓ code sent to +31 6 •• •• •• ••<br>
-      &nbsp;&nbsp;✓ number verified</span><br>
-      <br>
-      <span class="p">$ </span>screenless test<br>
-      <span class="out">&nbsp;&nbsp;<span class="hit">ringing</span> — pick up, and talk over it whenever you like</span><br>
-      <br>
-      <span class="p">$ </span>screenless init<br>
-      <span class="out">&nbsp;&nbsp;✓ tonight's run points at ~/code/your-repo</span><br>
-      <br>
-      <span class="p">claude&gt; </span>/screenless start<br>
-      <span class="out">&nbsp;&nbsp;waiting for work — probe every 60s</span>
-    </div>
-
-    <p class="cap">
-      Then leave that window open and go to bed. At 03:00 your own agent wakes,
-      reads the repo, and by morning a briefing is waiting on the phone.
-    </p>
-  </section>
-
-  <section id="skills">
-    <p class="kicker">skills</p>
-    <h2>Two examples we ship. The tooling is yours.</h2>
-    <p class="lede">
-      screenless is a CLI: verify a number, call it, dispatch to a team, watch
-      a terminal for what lands. A <em>skill</em> is a prompt that points those
-      primitives at a job. We ship two, as proof of what the line can do —
-      then it is yours to build the rest.
-    </p>
-
-    <div class="split">
-      <div>
-        <div class="what">the morning PR briefing</div>
-        <ul>
-          <li>Reads the night's pull requests and tickets on your machine</li>
-          <li>Calls each person about the few decisions that are theirs</li>
-          <li>Hands the transcript to your own agent, which does the work</li>
-        </ul>
-      </div>
-      <div>
-        <div class="what">call-when-afk</div>
-        <ul>
-          <li>Tell your agent you're stepping out</li>
-          <li>It stops pausing on questions — it phones you each one</li>
-          <li>And keeps working the moment you answer</li>
-        </ul>
-      </div>
-    </div>
-
-    <p class="lede" style="margin-top:34px">
-      Those are two prompts, a few dozen lines each. A standup that rings
-      whoever missed it and collects their update. An on-call line that reads a
-      teammate the failing check and takes the call on whether to roll back. A
-      release gate that phones the reviewer. Same handful of commands — the uses
-      are yours to discover.
-    </p>
-  </section>
-
-  <section id="how">
-    <p class="kicker">how it works</p>
-    <h2>It runs on your team's machines. That is the whole trick.</h2>
-
-    <div class="steps">
-      <div class="step">
-        <span class="n">03:00</span>
-        <div>
-          <h3>Your agent reads the night</h3>
-          <p>
-            Through the MCPs you already connected — your tracker, your repo,
-            your browser. Nothing new to grant, and your code never leaves.
-          </p>
-        </div>
-      </div>
-      <div class="step">
-        <span class="n">08:00</span>
-        <div>
-          <h3>The phone rings</h3>
-          <p>
-            Interruptible, in ten languages, and it hangs up when the queue is
-            drained. Decline it and the items roll into tomorrow; ring the line
-            any time to leave a spoken request instead.
-          </p>
-        </div>
-      </div>
-      <div class="step">
-        <span class="n">08:09</span>
-        <div>
-          <h3>An agent does the work</h3>
-          <p>
-            The voice has no tools and no credentials. It collects decisions and
-            hangs up; the terminal it routes to merges, comments and closes,
-            with the access that machine already has.
-          </p>
-        </div>
       </div>
     </div>
   </section>
@@ -806,28 +641,7 @@
   </section>
 </div>
 
-<section class="early">
-  <div class="wrap">
-    <p class="kicker">where this actually is</p>
-    <h2>The line works. The skills are early. The rest is being built with the first fifty.</h2>
-    <p class="lede">
-      We would rather say it here than have you find out on day three. The line
-      itself is real and proven: calling out, ringing in, teammates, routing to
-      terminals, billing — all of it works on real phones today. What is early
-      is the two skills on top of it: the morning briefing that reads a queue of
-      pull requests and picks the few that need a person is still being built,
-      in the open, with the first fifty teams.
-    </p>
-    <p class="lede">
-      That is the offer: install it today, put your team on the line for almost
-      nothing, and help shape what a phone line for a team of agents
-      turns out to be good for. The per-minute price you join at is locked for
-      as long as you stay.
-    </p>
-  </div>
-</section>
-
-<section class="close">
+<section class="close" id="start">
   <div class="wrap">
     <h2>Give your team a phone line.</h2>
     <p class="stand">
