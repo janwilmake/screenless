@@ -340,7 +340,7 @@ async function startCall(
   prompt: string,
   lang: Lang,
   origin: string,
-  opts: { userId?: string; orgId?: string; queued?: boolean } = {},
+  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   const callId = crypto.randomUUID();
   const wToken = await webhookToken(callId, env.SESSION_SECRET);
@@ -371,6 +371,8 @@ async function startCall(
     phone,
     userId: opts.userId,
     orgId: opts.orgId,
+    // A self-call's initiator is the callee; a dispatch names the dispatcher.
+    initiatedBy: opts.initiatedBy ?? opts.userId,
     assistantId: assistant.id,
     texmlAppId: connectionId,
     status: "initiated",
@@ -438,13 +440,19 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     if (!(await rateLimit(env, `dispatch:${s.phone}`, 10)))
       return fail(429, "too many team calls this hour, try again shortly");
 
+    // Not queued: `screenless call` blocks until the transcripts are in, so the
+    // initiator collects them by polling — handing them to a watcher too would
+    // apply them twice. `initiatedBy` is what lets the initiator read a
+    // teammate's call back (getCall checks it). The queue stays for the cron
+    // brief and ring-ins, where nobody is waiting.
     const placed: Array<{ callId: string; to: string; name: string }> = [];
     const failed: Array<{ to: string; error: string }> = [];
     for (const m of members) {
       const r = await startCall(env, m.phone!, prompt, lang, origin, {
         userId: m.id,
         orgId: gate.org.id,
-        queued: true,
+        queued: false,
+        initiatedBy: gate.user.id,
       });
       if (r.ok) placed.push({ callId: r.callId, to: m.phone!, name: m.name || m.email || m.phone! });
       else failed.push({ to: m.phone!, error: r.error });
@@ -727,7 +735,13 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
 
   const record = await loadCall(env, callId);
   if (!record) return fail(404, "unknown call id");
-  if (record.phone !== s.phone) return fail(403, "not your call");
+  // Your own call, or one you dispatched to a teammate — the initiator polls a
+  // teammate's transcript back, which is what makes `screenless call --to`
+  // synchronous.
+  if (record.phone !== s.phone) {
+    const me = await db.userByPhone(env, s.phone);
+    if (!me || record.initiatedBy !== me.id) return fail(403, "not your call");
+  }
 
   const done = record.status === "completed" || record.status === "failed";
   if (!done) return json({ callId, status: record.status, done: false });

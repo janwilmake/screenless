@@ -810,16 +810,40 @@ async function call(args: string[]): Promise<void> {
       body: { prompt, ...(language === undefined ? {} : { language }), to },
       token: cfg.token,
     });
+
+    if (!asJson) {
+      for (const p of res.placed)
+        console.log(`${c.green("→")} calling ${c.bold(p.name)} ${c.dim(`(${p.callId.slice(0, 8)})`)}`);
+      for (const f of res.failed) console.log(`${c.red("✗")} ${f.to}: ${f.error}`);
+      if (res.placed.length) console.log(c.dim("\n  waiting for each to finish...\n"));
+    }
+
+    // Block until every dispatched call ends — the whole point of `call` is
+    // that it returns the transcript. Each is polled to completion; a slow
+    // pickup just means a longer wait, capped so the command always returns.
+    const deadline = Date.now() + 20 * 60 * 1000;
+    const pending = new Map(res.placed.map((p) => [p.callId, p.name]));
+    const done: Array<{ name: string; result: CallStatus }> = [];
+
+    while (pending.size && Date.now() < deadline) {
+      await sleep(3000);
+      for (const [callId, name] of [...pending]) {
+        const status = await api<CallStatus>(cfg.apiUrl, `/calls/${callId}`, { token: cfg.token });
+        if (!status.done) continue;
+        pending.delete(callId);
+        done.push({ name, result: status });
+        if (!asJson) {
+          console.log(`\n${c.cyan("─")} ${c.bold(name)} ${c.dim(status.status === "failed" ? "· no answer" : `· ${status.durationSecs ?? 0}s`)}`);
+          if (status.status !== "failed") printTranscript(status.transcript ?? []);
+        }
+      }
+    }
+
     if (asJson) {
-      console.log(JSON.stringify(res, null, 2));
+      console.log(JSON.stringify({ ...res, transcripts: done }, null, 2));
       return;
     }
-    for (const p of res.placed)
-      console.log(`${c.green("→")} calling ${c.bold(p.name)} ${c.dim(`(${p.callId.slice(0, 8)})`)}`);
-    for (const f of res.failed) console.log(`${c.red("✗")} ${f.to}: ${f.error}`);
-    console.log(
-      c.dim(`\n  ${res.placed.length} call${res.placed.length === 1 ? "" : "s"} placed — each transcript lands in a watching terminal (${"screenless watch"}).`),
-    );
+    if (pending.size) console.log(c.dim(`\n  ${pending.size} still ringing after 20 min — read later with screenless transcript`));
     return;
   }
 
@@ -1153,8 +1177,8 @@ ${c.bold("Usage")}
 
 ${c.bold("Call options")}
   --to <who>           call teammates instead of yourself — an email or phone,
-                       comma-separated for several; each is dialled and its
-                       transcript lands in a watching terminal
+                       comma-separated for several. Blocks until each ends and
+                       prints the transcripts
   --all                call every teammate with a verified phone
   --at [HH:MM]         park the brief instead of dialling now. Bare --at uses
                        your configured call time

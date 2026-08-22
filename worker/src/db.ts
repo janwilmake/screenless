@@ -1,15 +1,14 @@
 /**
- * Users, organizations, invites and the money ledger, in D1.
+ * Everything the Worker stores, in D1.
  *
- * D1 over a Durable Object because everything the team and billing pages show
- * is a query — members with roles, invites with expiry, usage per day and per
- * member — and SQLite answers those in one statement each. The identity model:
+ * D1 over a Durable Object because most of what the product shows is a query —
+ * members with roles, invites with expiry, usage per day, the team's call
+ * queue — and SQLite answers those in one statement each. The identity model:
  * a user belongs to exactly one org (`org_id` on the row), billing is a credit
  * balance on the org, and the ledger records every movement so the balance is
- * always explainable.
- *
- * Call records, briefs and settings stay in KV — they are single-key,
- * TTL-bound state and D1 would buy them nothing.
+ * always explainable. Settings are columns on the user; calls, briefs,
+ * watchers, the outbox, codes and rate-limit counters are their own tables.
+ * The one thing not here is the parked edition PDF, which goes to R2.
  */
 
 import type { Env } from "./index";
@@ -478,6 +477,9 @@ export interface CallRecord {
   phone: string;
   userId?: string;
   orgId?: string;
+  /** Who placed the call — the initiator. Equals userId for self-calls and
+   *  ring-ins; the dispatcher for a teammate call, who may read it back. */
+  initiatedBy?: string;
   /** Empty for a recorded-request call — no assistant was ever on the line. */
   assistantId: string;
   transcript?: TranscriptLine[];
@@ -505,6 +507,7 @@ function rowToCall(row: Record<string, unknown>): CallRecord {
     phone: String(row.phone),
     userId: (row.user_id as string) ?? undefined,
     orgId: (row.org_id as string) ?? undefined,
+    initiatedBy: (row.initiated_by as string) ?? undefined,
     assistantId: String(row.assistant_id ?? ""),
     texmlAppId: (row.texml_app_id as string) ?? undefined,
     status: row.status as CallRecord["status"],
@@ -526,14 +529,15 @@ function rowToCall(row: Record<string, unknown>): CallRecord {
 export async function putCall(env: Env, id: string, r: CallRecord): Promise<void> {
   await env.DB.prepare(
     `INSERT OR REPLACE INTO calls
-       (id, org_id, user_id, phone, assistant_id, texml_app_id, status, voicemail,
+       (id, org_id, user_id, initiated_by, phone, assistant_id, texml_app_id, status, voicemail,
         inbound, kind, request_text, recording_url, queued, handled_by, debited,
         conversation_id, transcript, created_at, ended_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id,
     r.orgId ?? null,
     r.userId ?? null,
+    r.initiatedBy ?? null,
     r.phone,
     r.assistantId,
     r.texmlAppId ?? null,

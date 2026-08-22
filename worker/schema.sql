@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS calls (
   id TEXT PRIMARY KEY,
   org_id TEXT,
   user_id TEXT,
+  -- Who placed the call. For a self-call and a ring-in this equals user_id;
+  -- for a dispatched teammate call it is the initiator, who may read the
+  -- transcript back even though user_id is the callee.
+  initiated_by TEXT,
   phone TEXT NOT NULL,
   assistant_id TEXT NOT NULL DEFAULT '',
   texml_app_id TEXT,
