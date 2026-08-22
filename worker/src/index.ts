@@ -57,6 +57,9 @@ export interface Env {
   /** Optional. Lets the welcome SMS send from a number not already bound to a
    *  Telnyx messaging profile. Omit when the from-number carries its own. */
   TELNYX_MESSAGING_PROFILE_ID: string;
+  /** The standing TeXML application (connection) id outbound OpenAI calls are
+   *  placed through. The same one the inbound number is assigned to. */
+  TELNYX_TEXML_APP_ID: string;
   /** Landing page origin; also the base for /team links in emails. */
   SITE_URL: string;
   /** This Worker's own hostname. Cron has no request to infer it from. */
@@ -372,6 +375,94 @@ and that agent carries out every decision. If asked whether something is done,
 say plainly that their agent will apply it after the call.`;
 
 /**
+ * What an inbound ring-in is told when OpenAI Realtime answers it.
+ *
+ * The caller is almost always dropping a request for their team's agent, not
+ * looking for a chat — so the assistant stays silent and only speaks if it is
+ * actually asked something. The no-action rule is the same as everywhere: it
+ * collects, it does not do.
+ */
+const INBOUND_QUIET_INSTRUCTIONS = `You are the screenless line answering an incoming call from a verified teammate.
+
+The caller is most likely leaving a feature request, a decision, or a note for their team's coding agent — they do not need a conversation. Stay silent: do not greet, do not speak, do not prompt them. Just listen while they talk.
+
+Only speak if the caller directly asks you a question. Then answer briefly, from what you know, and stop. If you do not know, say so in one sentence.
+
+Speak the caller's language. You have no tools and take no action of any kind — you cannot merge, comment, deploy, or change anything. Everything said on this call is transcribed and handed to the caller's own machine afterwards, which does the work. Never say or imply that you have done, or will do, anything.`;
+
+/** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
+ *  the correlation header the webhook reads to find this call's brief. Shared by
+ *  the outbound bridge route and the inbound answer. */
+const openaiBridgeXml = (env: Env, callId: string): string =>
+  `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true"><Sip>${openai.sipUri(
+    env.OPENAI_PROJECT_ID,
+    env.OPENAI_SIP_HOST || "sip-eu.api.openai.com",
+  )}?X-Screenless-Call=${callId}</Sip></Dial></Response>`;
+
+/**
+ * The OpenAI-Realtime twin of startCall: Telnyx still dials the user, but the
+ * answered leg is bridged over SIP to OpenAI instead of a Telnyx assistant. The
+ * brief is parked in the stash for the incoming-call webhook to read; the
+ * transcript is captured by the Durable Object. No per-call assistant, so
+ * captureTranscript and cleanupAssistant are no-ops on this record.
+ */
+async function startCallOpenAI(
+  env: Env,
+  phone: string,
+  prompt: string,
+  origin: string,
+  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string },
+): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
+  if (!env.TELNYX_TEXML_APP_ID)
+    return { ok: false, status: 503, error: "TELNYX_TEXML_APP_ID not set" };
+
+  const callId = crypto.randomUUID();
+  const wToken = await webhookToken(callId, env.SESSION_SECRET);
+
+  await db.stashPut(
+    env,
+    `realtime:${callId}`,
+    JSON.stringify({
+      instructions: instructionsFor(prompt),
+      mode: "lead",
+      greeting:
+        "Open the call: greet them warmly, say you are their screenless assistant with a couple of things to run past them, then begin with the first item.",
+      voice: env.OPENAI_VOICE,
+    }),
+    3600,
+  );
+
+  const record: CallRecord = {
+    phone,
+    userId: opts.userId,
+    orgId: opts.orgId,
+    initiatedBy: opts.initiatedBy ?? opts.userId,
+    assistantId: "", // no Telnyx assistant — the DO owns this call's transcript
+    status: "initiated",
+    kind: "brief",
+    queued: opts.queued,
+    createdAt: Date.now(),
+  };
+  await saveCall(env, callId, record);
+
+  try {
+    await telnyx.initiateTexmlCall(env.TELNYX_API_KEY, env.TELNYX_TEXML_APP_ID, {
+      from: env.TELNYX_FROM_NUMBER,
+      to: phone,
+      url: `${origin}/texml/openai-bridge/${callId}?t=${wToken}`,
+      statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
+      amdCallback: `${origin}/webhooks/${callId}/amd?t=${wToken}`,
+    });
+  } catch (err) {
+    await db.stashDelete(env, `realtime:${callId}`).catch(() => {});
+    await db.deleteCall(env, callId);
+    return { ok: false, status: 502, error: `failed to place call: ${(err as Error).message}` };
+  }
+
+  return { ok: true, callId };
+}
+
+/**
  * Creates the per-call assistant and dials out.
  *
  * Shared by the CLI's blocking `screenless call` and by the cron that places
@@ -385,6 +476,10 @@ async function startCall(
   origin: string,
   opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
+  // The conversation engine is a flip: OpenAI Realtime over SIP, or the Telnyx
+  // assistant. Both dial through Telnyx; only the answered leg differs.
+  if (env.VOICE_ENGINE === "openai") return startCallOpenAI(env, phone, prompt, origin, opts);
+
   const callId = crypto.randomUUID();
   const wToken = await webhookToken(callId, env.SESSION_SECRET);
 
@@ -591,6 +686,32 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     return sayHangup("Your team is out of screenless credit. An admin can top it up on the billing page. Goodbye.");
   }
 
+  // OpenAI Realtime answers the ring-in and bridges over SIP. It stays quiet —
+  // the caller is most likely leaving a request, not looking for a chat — and
+  // speaks only if asked. The transcript is captured by the Durable Object.
+  if (env.VOICE_ENGINE === "openai") {
+    const callId = crypto.randomUUID();
+    const record: CallRecord = {
+      phone: from,
+      userId: user.id,
+      orgId: org.id,
+      assistantId: "",
+      status: "answered",
+      inbound: true,
+      kind: "brief",
+      queued: true,
+      createdAt: Date.now(),
+    };
+    await saveCall(env, callId, record);
+    await db.stashPut(
+      env,
+      `realtime:${callId}`,
+      JSON.stringify({ instructions: INBOUND_QUIET_INSTRUCTIONS, mode: "quiet", voice: env.OPENAI_VOICE }),
+      3600,
+    );
+    return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
+  }
+
   const callId = crypto.randomUUID();
   const record: CallRecord = {
     phone: from,
@@ -721,7 +842,12 @@ async function finishInbound(env: Env, phone: string, why: string, force = false
   // A request whose transcription is still in flight lands here as failed
   // too — deliberately: the recorded-callback upgrades it to completed the
   // moment the text exists, and until then it must not reach a watcher.
-  const substantial = record.assistantId ? true : Boolean(record.requestText);
+  // Substantial if a Telnyx assistant was on the line, or a request was
+  // recorded, or — for an OpenAI ring-in — the Durable Object captured any
+  // transcript. Transcript lines are written live during the call, so by the
+  // time the end arrives they are already there.
+  const substantial =
+    record.assistantId ? true : Boolean(record.requestText) || Boolean(record.transcript?.length);
   record.status = substantial ? "completed" : "failed";
   record.endedAt = Date.now();
   await saveCall(env, callId, record);
@@ -1147,6 +1273,19 @@ export default {
         return await answerInbound(req, env, origin);
       if (path === "/texml/inbound/recorded" && method === "POST")
         return await inboundRecorded(req, env);
+
+      // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
+      // to OpenAI, stamped with this call's correlation header.
+      const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);
+      if (bridge && (method === "POST" || method === "GET")) {
+        const bid = bridge[1];
+        const provided = url.searchParams.get("t") ?? "";
+        if (!safeEqual(provided, await webhookToken(bid, env.SESSION_SECRET)))
+          return fail(403, "bad webhook token");
+        return new Response(openaiBridgeXml(env, bid), {
+          headers: { "Content-Type": "application/xml" },
+        });
+      }
 
       // Diagnostic: plain TeXML with no AI assistant involved. Lets us test the
       // telephony + TTS path in isolation when an assistant call goes silent.

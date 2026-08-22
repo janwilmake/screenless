@@ -61,3 +61,20 @@ Telnyx→SIP bridge (a TeXML app + `startCall` OpenAI branch that stamps the
 `X-Screenless-Call` SIP header) and the inbound branch (`/texml/inbound` returns
 the SIP bridge with the quiet preprompt); then flip the flag, test, and delete
 the Telnyx assistant.
+
+Bridge built and deployed (behind the flag): `telnyx.initiateTexmlCall`,
+`startCallOpenAI` (outbound, parks the brief, stamps the correlation header),
+the `/texml/openai-bridge/<id>` route, the inbound branch in `answerInbound`
+(OpenAI answers ring-ins quiet), the `finishInbound` fix (a ring-in is
+substantial when it has a transcript), and `INBOUND_QUIET_INSTRUCTIONS`. Webhook
+confirmed registered in the right project (URL + `realtime.call.incoming`).
+
+Follow-ups: the **Telnyx TeXML app id** (`TELNYX_TEXML_APP_ID`) is still needed
+for OUTBOUND (portal login would not drive from automation) — inbound needs it
+not, so inbound is tested first; the **OpenAI org is unverified** (if the test
+fails on model access, that is the fix); and the **language config removal**
+(`languages.ts`) is agreed, to be done at cutover with the Telnyx-assistant
+deletion, keeping only a small per-user language hint in the outbound prompt.
+
+- HH:MM — `the language config can completely be removed i guess now that we have this realtime thing with multilanguage right/ ??? if u agree, do that too, put it on the todolist`
+  *(agreed; on the cutover todo above.)*

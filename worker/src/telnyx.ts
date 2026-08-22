@@ -288,6 +288,52 @@ export function initiateAiCall(
   );
 }
 
+export interface TexmlCallOptions {
+  from: string;
+  to: string;
+  /** TeXML to run when the call is answered — for us, the SIP bridge to OpenAI. */
+  url: string;
+  statusCallback: string;
+  /** Optional AMD, so an outbound brief is not read into a voicemail. */
+  amdCallback?: string;
+}
+
+/**
+ * Dials out and runs TeXML we host at `Url` when the leg answers.
+ *
+ * Unlike initiateAiCall (which relies on an assistant's own auto-created app
+ * and its voice_url), this passes an explicit `Url` so one standing TeXML
+ * application can place every OpenAI call — the per-call document it fetches is
+ * the `<Dial><Sip>` bridge to OpenAI, stamped with our correlation header.
+ */
+export function initiateTexmlCall(
+  apiKey: string,
+  connectionId: string,
+  o: TexmlCallOptions,
+) {
+  return call<{ sid?: string; call_sid?: string }>(
+    apiKey,
+    "POST",
+    `/texml/calls/${connectionId}`,
+    {
+      From: o.from,
+      To: o.to,
+      Url: o.url,
+      StatusCallback: o.statusCallback,
+      StatusCallbackEvent: "initiated ringing answered completed",
+      StatusCallbackMethod: "POST",
+      ...(o.amdCallback
+        ? {
+            MachineDetection: "Enable",
+            AsyncAmd: "true",
+            AsyncAmdStatusCallback: o.amdCallback,
+            AsyncAmdStatusCallbackMethod: "POST",
+          }
+        : {}),
+    },
+  );
+}
+
 /**
  * Ends a live TeXML call. The account and call sids come straight off the
  * callback that told us it was a machine, so nothing has to be stored.

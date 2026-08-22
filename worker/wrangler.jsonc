@@ -99,7 +99,12 @@
     "OPENAI_SIP_HOST": "sip-eu.api.openai.com",
     // The Realtime model and voice. Marin is one of the two newest voices.
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
-    "OPENAI_VOICE": "marin"
+    "OPENAI_VOICE": "marin",
+
+    // The standing Telnyx TeXML application outbound OpenAI calls originate
+    // through (the same one the inbound number is assigned to). Its id is in the
+    // Telnyx portal under the number's connection / TeXML application.
+    "TELNYX_TEXML_APP_ID": ""
   },
 
   // One per live OpenAI Realtime call: it holds the control WebSocket for the
