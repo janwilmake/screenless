@@ -21,6 +21,7 @@ readonly INSTALL_DIR="${SCREENLESS_INSTALL_DIR:-$HOME/.screenless}"
 readonly LIB_DIR="$INSTALL_DIR/lib"
 readonly BIN_DIR="$INSTALL_DIR/bin"
 readonly SKILL_DIR="${SCREENLESS_SKILL_DIR:-$HOME/.claude/skills/screenless}"
+readonly SKILLS_ROOT="$(dirname "$SKILL_DIR")"
 readonly MIN_NODE=20
 
 # Colour only when a terminal is actually watching. Piped into a log, the
@@ -87,6 +88,7 @@ mkdir -p "$tmp/skill"
 fetch "$BASE_URL/SKILL.md" "$tmp/skill/SKILL.md" 2>/dev/null || rm -f "$tmp/skill/SKILL.md"
 fetch "$BASE_URL/APPLY.md" "$tmp/skill/APPLY.md" 2>/dev/null || rm -f "$tmp/skill/APPLY.md"
 fetch "$BASE_URL/press.tar.gz" "$tmp/press.tar.gz" 2>/dev/null || rm -f "$tmp/press.tar.gz"
+fetch "$BASE_URL/CALL-WHEN-AFK.md" "$tmp/skill/CALL-WHEN-AFK.md" 2>/dev/null || rm -f "$tmp/skill/CALL-WHEN-AFK.md"
 
 # Only lib/ is replaced. The config file next to it holds a session token and
 # a verified phone number, and reinstalling is not a reason to lose either.
@@ -129,6 +131,13 @@ if [ -f "$tmp/skill/SKILL.md" ]; then
     say "  ${dim}nightly loop skill installed, but Claude Code was not found.${reset}"
     say "  ${dim}The paper and the call brief are written by it: https://claude.com/claude-code${reset}"
   fi
+fi
+
+# The call-when-afk skill is its own slash command, so its own skill directory.
+if [ -f "$tmp/skill/CALL-WHEN-AFK.md" ]; then
+  mkdir -p "$SKILLS_ROOT/call-when-afk"
+  cp "$tmp/skill/CALL-WHEN-AFK.md" "$SKILLS_ROOT/call-when-afk/SKILL.md"
+  [ "$have_claude" -eq 1 ] && ok "call-when-afk skill installed ${dim}— say you're AFK and it phones you the questions${reset}"
 fi
 
 # ------------------------------------------------------- old scheduler

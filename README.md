@@ -598,12 +598,16 @@ worker/                 shared backend — telephony + scheduled mail
   src/telnyx.ts           Telnyx API client
   wrangler.toml           all tunable defaults
 press/                  the weekly paper — built, see press/README.md
-  SKILL.md                the loop Claude Code runs
   bin/collect.mjs         deterministic facts from git + gh
   bin/render.mjs          edition.json -> HTML -> PDF
   lib/charts.mjs          dependency-free SVG charts for paper
+loop/                   the branded skill: nightly brief + weekly paper
+  SKILL.md                the loop Claude Code runs
+  APPLY.md                the return leg — applying what a call decided
+call-when-afk/          a branded skill: phone the user their questions while away
+  SKILL.md
 rounds/                 the morning call — planned, see rounds/README.md
-site/index.html         the landing page (screenless.sh)
+site/src/index.html     the landing page (screenless.sh)
 ```
 
 ## License

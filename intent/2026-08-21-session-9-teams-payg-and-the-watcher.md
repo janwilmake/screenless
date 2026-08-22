@@ -145,3 +145,6 @@ a wrongly-typed number can never receive its own verification text.
 
 - 00:20 — `i  think 'screenless call' should rturn the transcript after the call was made and ended, so only return after the transcript is in`
   *(make `screenless call --to` synchronous like the self-call already is: block until every dispatched call ends and print the transcripts, rather than fire-and-forget. Dispatched calls become non-queued — the initiator collects — and each call is tagged with who initiated it so the initiator may read a teammate's transcript. The queue/watcher stays for the cron brief and ring-ins, where nobody is waiting.)*
+
+- 00:40 — `for screenless lets add a skill called /call-when-afk, that is described to be used whenever the user says theyll be afk. the skill should instruct the model to use screenless call for the rest of the session to call the user for every intermediate question, instead of stopping with a question, a call is spawned with a question such that the session continues after the transcript comes in.`
+  *(a third branded skill: when the user says they are AFK, the model stops ending turns on blocking questions and instead places a synchronous `screenless call` with the question — which now returns the transcript — and continues with the answer. Installed like the loop skill, to ~/.claude/skills/call-when-afk/.)*

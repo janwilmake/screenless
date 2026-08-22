@@ -33,6 +33,10 @@ cp "$here"/src/* "$out"/
 # the served directory — there is no build step on Cloudflare's side.
 cp "$root"/loop/SKILL.md "$root"/loop/APPLY.md "$out"/
 
+# The call-when-afk branded skill, installed to its own skill directory so it
+# is its own /call-when-afk slash command.
+cp "$root"/call-when-afk/SKILL.md "$out"/CALL-WHEN-AFK.md
+
 # The skill calls press/bin/*.mjs by absolute path under ~/.claude/skills/
 # screenless/, so the toolkit ships with it. The example edition rides along:
 # the skill tells the model to read it before writing its first one.
