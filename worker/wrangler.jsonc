@@ -84,8 +84,31 @@
 
     // What every new org starts with, in cents: the free plan. One grant per
     // org, ever — removing and re-adding a member never mints a second one.
-    "FREE_CREDIT_CENTS": "1000"
+    "FREE_CREDIT_CENTS": "1000",
+
+    // --- OpenAI Realtime: the conversation and the voice. Telnyx still does the
+    // telephony and bridges the leg to OpenAI over SIP; only the assistant moved.
+    //
+    // "openai" runs briefs and ring-ins through OpenAI Realtime; "telnyx" keeps
+    // the old Telnyx AI Assistant. The cutover is this flip, per path.
+    "VOICE_ENGINE": "telnyx",
+    // Project id in the SIP address sip:<id>@<host>. Fill in from the OpenAI
+    // dashboard; non-secret.
+    "OPENAI_PROJECT_ID": "",
+    // EU SIP host, to keep media in-region with the Amsterdam anchorsite.
+    "OPENAI_SIP_HOST": "sip-eu.api.openai.com",
+    // The Realtime model and voice. Marin is one of the two newest voices.
+    "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
+    "OPENAI_VOICE": "marin"
   },
+
+  // One per live OpenAI Realtime call: it holds the control WebSocket for the
+  // duration and writes the transcript into the call's D1 row. SQLite-backed
+  // because new DO classes require it; we keep no DO storage of our own.
+  "durable_objects": {
+    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeCall" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeCall"] }],
 
   // All state: users, orgs, invites, ledger, calls, briefs, watchers, outbox,
   // codes and rate-limit counters. Schema in schema.sql:
@@ -112,4 +135,6 @@
   //   STRIPE_SECRET_KEY     — while unset, billing is inert and every org is entitled
   //   STRIPE_WEBHOOK_SECRET — from `stripe webhook_endpoints create`
   //   RESEND_API_KEY        — sends every mail this Worker writes
+  //   OPENAI_API_KEY        — runs the Realtime conversation + voice
+  //   OPENAI_WEBHOOK_SECRET — whsec_… from registering the webhook endpoint in OpenAI
 }

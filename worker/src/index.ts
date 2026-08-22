@@ -1,4 +1,5 @@
 import * as telnyx from "./telnyx";
+import * as openai from "./openai";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
 import * as db from "./db";
@@ -24,11 +25,19 @@ export interface Env {
   /** The landing page, served from site/public by the assets binding. */
   ASSETS: Fetcher;
 
+  /** Per-call OpenAI Realtime session, keyed `realtime:<callId>`, so the
+   *  incoming-call webhook can find the brief for a leg Telnyx bridged. */
+  REALTIME: DurableObjectNamespace;
+
   // secrets — set with `wrangler secret put <NAME>`
   TELNYX_API_KEY: string;
   TELNYX_VERIFY_PROFILE_ID: string;
   SESSION_SECRET: string;
   ADMIN_SECRET: string;
+  /** Runs the conversation and the voice on outbound briefs and ring-ins. */
+  OPENAI_API_KEY: string;
+  /** Verifies the `realtime.call.incoming` webhook (Standard Webhooks). */
+  OPENAI_WEBHOOK_SECRET: string;
   /**
    * Optional. While unset billing is inert: every org is entitled whatever its
    * balance says, which is what keeps `wrangler dev` usable.
@@ -59,7 +68,22 @@ export interface Env {
   PRICE_PER_MINUTE_CENTS: string;
   /** What a fresh org starts with, in cents. The free plan. */
   FREE_CREDIT_CENTS: string;
+
+  // vars — OpenAI Realtime (the conversation + voice; Telnyx still does telephony)
+  /** "openai" routes the conversation through OpenAI Realtime over SIP;
+   *  "telnyx" keeps the Telnyx AI Assistant. Lets the cutover be a flip. */
+  VOICE_ENGINE: string;
+  /** Project id in the SIP address `sip:<id>@<host>`. Non-secret. */
+  OPENAI_PROJECT_ID: string;
+  /** SIP host, EU to match the Amsterdam anchorsite. */
+  OPENAI_SIP_HOST: string;
+  /** The Realtime model, e.g. "gpt-realtime-2.1". */
+  OPENAI_REALTIME_MODEL: string;
+  /** The Realtime voice, e.g. "marin". */
+  OPENAI_VOICE: string;
 }
+
+export { RealtimeCall } from "./realtime";
 
 /**
  * Sessions last a year.
@@ -721,6 +745,89 @@ async function inboundStatus(req: Request, env: Env): Promise<Response> {
 }
 
 /**
+ * The OpenAI Realtime call-lifecycle webhook.
+ *
+ * Fires when a leg Telnyx bridged over SIP reaches OpenAI. We verify it,
+ * correlate it to our own call via the X-Screenless-Call SIP header, accept it
+ * with the session config we parked when the call was placed, and hand a
+ * Durable Object the control socket so the transcript is captured live.
+ * Rejecting is the safe default: no correlation, or no parked config, means we
+ * do not know whose call this is and must not run it.
+ */
+async function openaiWebhook(req: Request, env: Env): Promise<Response> {
+  const raw = await req.text();
+  if (!env.OPENAI_WEBHOOK_SECRET) return fail(503, "openai webhook not configured");
+  if (!(await openai.verifyWebhook(env.OPENAI_WEBHOOK_SECRET, raw, req.headers)))
+    return fail(403, "bad webhook signature");
+
+  let payload: { type?: string };
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return json({ ok: true });
+  }
+  // Only the incoming-call event drives anything; acknowledge the rest.
+  if (payload.type !== "realtime.call.incoming") return json({ ok: true });
+
+  const incoming = openai.parseIncoming(payload);
+  if (!incoming) return json({ ok: true });
+
+  const ourCallId = openai.correlationId(incoming.sipHeaders);
+  const stashed = ourCallId ? await db.stashGet(env, `realtime:${ourCallId}`) : null;
+  if (!ourCallId || !stashed) {
+    await openai.rejectCall(env.OPENAI_API_KEY, incoming.callId);
+    console.error("openai webhook: no correlation for call", incoming.callId, ourCallId ?? "(no header)");
+    return json({ ok: true });
+  }
+  const cfg = JSON.parse(stashed) as {
+    instructions: string;
+    mode: "lead" | "quiet";
+    greeting?: string;
+    voice?: string;
+  };
+
+  try {
+    await openai.acceptCall(env.OPENAI_API_KEY, incoming.callId, {
+      model: env.OPENAI_REALTIME_MODEL,
+      instructions: cfg.instructions,
+      voice: cfg.voice || env.OPENAI_VOICE,
+    });
+  } catch (err) {
+    console.error("openai accept failed", ourCallId, (err as Error).message);
+    return json({ ok: true });
+  }
+
+  const rec = await loadCall(env, ourCallId);
+  if (rec) {
+    rec.status = "answered";
+    // Reuse conversationId to hold the OpenAI call id. captureTranscript is
+    // gated on assistantId (empty for an OpenAI call), so the Telnyx transcript
+    // path is never taken here — the Durable Object owns this call's transcript.
+    rec.conversationId = incoming.callId;
+    await saveCall(env, ourCallId, rec);
+  }
+
+  // Hand the live control socket to a per-call Durable Object for the
+  // transcript. Its fetch returns as soon as the socket is up; it keeps running
+  // for the call and persists each line as it lands.
+  const stub = env.REALTIME.get(env.REALTIME.idFromName(ourCallId));
+  await stub
+    .fetch("https://realtime/start", {
+      method: "POST",
+      body: JSON.stringify({
+        ourCallId,
+        openaiCallId: incoming.callId,
+        mode: cfg.mode,
+        greeting: cfg.greeting,
+      }),
+    })
+    .catch((err) => console.error("realtime DO start failed", ourCallId, (err as Error).message));
+
+  await db.stashDelete(env, `realtime:${ourCallId}`).catch(() => {});
+  return json({ ok: true });
+}
+
+/**
  * Safety net for a ring-in whose end never reached us — a Worker whose TeXML
  * application has no status callback configured, or a callback that was
  * dropped. Nobody talks to the assistant for an hour; past that, the call is
@@ -1270,6 +1377,10 @@ export default {
       }
 
       if (method === "POST" && path === "/webhooks/inbound/status") return await inboundStatus(req, env);
+
+      // OpenAI Realtime call lifecycle (a leg Telnyx bridged over SIP).
+      if (method === "POST" && path === "/webhooks/openai/realtime")
+        return await openaiWebhook(req, env);
 
       // Ops: close a ring-in by hand when its end never arrived.
       const fin = path.match(/^\/admin\/inbound\/(\+\d+)\/finish$/);
