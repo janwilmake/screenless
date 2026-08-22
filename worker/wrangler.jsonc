@@ -91,12 +91,15 @@
     //
     // "openai" runs briefs and ring-ins through OpenAI Realtime; "telnyx" keeps
     // the old Telnyx AI Assistant. The cutover is this flip, per path.
-    "VOICE_ENGINE": "telnyx",
+    "VOICE_ENGINE": "openai",
     // Project id in the SIP address sip:<id>@<host>. From the OpenAI
     // dashboard; non-secret.
-    "OPENAI_PROJECT_ID": "proj_TJtzn4qYY3ClpPDRjSaKEHsP",
-    // EU SIP host, to keep media in-region with the Amsterdam anchorsite.
-    "OPENAI_SIP_HOST": "sip-eu.api.openai.com",
+    "OPENAI_PROJECT_ID": "proj_5gS42My5zyUg993fkLpZK2kM",
+    // SIP host. Must match the project's region: the accept/WS API base is
+    // api.openai.com (US), so the SIP host is the US one too. EU
+    // (sip-eu.api.openai.com + eu.api.openai.com) only works for a project
+    // created with Europe data residency — a later optimisation.
+    "OPENAI_SIP_HOST": "sip.api.openai.com",
     // The Realtime model and voice. Marin is one of the two newest voices.
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
     "OPENAI_VOICE": "marin",
@@ -104,7 +107,9 @@
     // The standing Telnyx TeXML application outbound OpenAI calls originate
     // through (the same one the inbound number is assigned to). Its id is in the
     // Telnyx portal under the number's connection / TeXML application.
-    "TELNYX_TEXML_APP_ID": ""
+    // This is the screenless-inbound app (same one the number is assigned to);
+    // it needs an Outbound Voice Profile assigned or outbound SIP dials 480.
+    "TELNYX_TEXML_APP_ID": "3027023992306271718"
   },
 
   // One per live OpenAI Realtime call: it holds the control WebSocket for the

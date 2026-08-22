@@ -78,3 +78,45 @@ deletion, keeping only a small per-user language hint in the outbound prompt.
 
 - HH:MM — `the language config can completely be removed i guess now that we have this realtime thing with multilanguage right/ ??? if u agree, do that too, put it on the todolist`
   *(agreed; on the cutover todo above.)*
+
+## Getting the first call to work (a chain of four fixes)
+
+Inbound was flipped to `openai` and tested with real calls. It failed several
+times; each failure taught one thing (browser-driven diagnosis on the OpenAI and
+Telnyx dashboards, both logged in by the user):
+
+1. **First OpenAI account was unverified** → switched to a new account
+   (`proj_5gS42My5zyUg993fkLpZK2kM`); new API key + webhook secret set by the user.
+2. **Telnyx returned 480 / no OpenAI webhook** — the Telnyx SIP Call Flow tool
+   showed the inbound leg getting `480 Temporarily Unavailable` in ~200ms. Root
+   cause: the `screenless-inbound` TeXML app (id `3027023992306271718`, now
+   `TELNYX_TEXML_APP_ID`) had **no Outbound Voice Profile** assigned, so every
+   outbound call — including the `<Dial><Sip>` to OpenAI — was blocked. Assigned
+   the Default (Global) OVP in the portal.
+3. **`accept` 404 "No session found for the provided call_id"** — the webhook
+   now fired, but I was using the **EU SIP host** (`sip-eu`) against a **US
+   project**, so the session lived EU-side while `accept` hit `api.openai.com`
+   (US). EU residency needs a project *created* in the Europe region; switched
+   the SIP host to the US default (`sip.api.openai.com`) so SIP + API + accept
+   are all US-consistent. Call connected.
+4. **Marin talked during quiet mode, and the caller's words were not captured**
+   — the DO's late, wrong-shaped `session.update` never took, so the model
+   auto-responded; and input transcription was off. Fixed in the **accept**:
+   `audio.input.turn_detection.create_response=false` for quiet mode (silent
+   from the first moment), and `audio.input.transcription` always on (a ring-in
+   exists to capture the *caller*).
+
+Proven on a real call: caller's request captured, Marin silent unless asked a
+direct question, transcript in the D1 call row, call billed and completed.
+
+Still open: **EU latency upgrade** — blocked for now: OpenAI EU data residency
+is gated (eligibility / enterprise, not a self-serve project option — only
+"Global" appears when creating a project). Staying on US (~150-200ms slower from
+NL, but the test call felt good). If eligibility is granted later: create a
+Europe-region project, flip SIP host → `sip-eu.api.openai.com` and the API base
+→ `eu.api.openai.com`. Also open: the **cutover** (delete the Telnyx assistant + `languages.ts`
+once outbound is also proven on Realtime); minor quiet-mode question-detector
+over-eagerness on whisper fragments.
+
+- HH:MM — `ensure to clean up all the telnix assistant shit` / `the language config can completely be removed` / `does that mean it is slower... how do i get the eu one` / `how much did this cost` / `u have 4 the same shells open`
+  *(cleanup + language removal are on the cutover todo; US is ~150-200ms slower from NL than EU, EU needs a Europe-region project; the test calls cost ~$3.40 internal (30¢/min from the free credit) plus a few dollars of OpenAI Realtime; stray `wrangler tail` shells killed.)*

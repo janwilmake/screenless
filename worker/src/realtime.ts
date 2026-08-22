@@ -69,12 +69,10 @@ export class RealtimeCall {
     ws.addEventListener("close", () => this.finalize());
     ws.addEventListener("error", () => this.finalize());
 
-    // In quiet mode, stop the model auto-responding to every turn; we trigger a
-    // reply only when a caller asks something. In lead mode the defaults stand.
-    if (this.mode === "quiet") {
-      this.send({ type: "session.update", session: { turn_detection: { type: "server_vad", create_response: false } } });
-    }
-
+    // Quiet mode's "never auto-respond" is set in the accept call itself (so
+    // there is no window where the model talks over a caller). Here the DO only
+    // watches the transcript and, in quiet mode, triggers a reply when the
+    // caller actually asks a question.
     return new Response("ok");
   }
 

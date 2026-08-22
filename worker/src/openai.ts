@@ -128,6 +128,11 @@ export interface AcceptOptions {
   model: string;
   instructions: string;
   voice: string;
+  /** Quiet mode (inbound ring-ins): the model never auto-responds; it speaks
+   *  only when the Durable Object explicitly asks it to (the caller asked a
+   *  question). Set from the very start, in the accept, so there is no window
+   *  where the default VAD makes it talk over a caller leaving a request. */
+  quiet?: boolean;
 }
 
 /**
@@ -136,6 +141,10 @@ export interface AcceptOptions {
  * No `tools`: the architectural rule is that the voice takes no action. It
  * collects decisions and hangs up; the caller's own machine applies them. A
  * session with no tools cannot break that even if the model tries.
+ *
+ * Input transcription is always on: capturing what the *caller* says is the
+ * whole point — a ring-in's request, or a briefing's decisions. Without it we
+ * only ever see the assistant's own words.
  *
  * Returns 200 once OpenAI starts ringing the SIP leg with this config; after
  * that the Durable Object attaches to the control socket for the transcript.
@@ -152,7 +161,16 @@ export async function acceptCall(
       type: "realtime",
       model: o.model,
       instructions: o.instructions,
-      audio: { output: { voice: o.voice } },
+      audio: {
+        output: { voice: o.voice },
+        input: {
+          transcription: { model: "whisper-1" },
+          // Quiet: detect end-of-turn but never auto-generate a reply.
+          ...(o.quiet
+            ? { turn_detection: { type: "server_vad", create_response: false } }
+            : {}),
+        },
+      },
     }),
   });
   if (!res.ok) {

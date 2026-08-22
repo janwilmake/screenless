@@ -917,6 +917,7 @@ async function openaiWebhook(req: Request, env: Env): Promise<Response> {
       model: env.OPENAI_REALTIME_MODEL,
       instructions: cfg.instructions,
       voice: cfg.voice || env.OPENAI_VOICE,
+      quiet: cfg.mode === "quiet",
     });
   } catch (err) {
     console.error("openai accept failed", ourCallId, (err as Error).message);
