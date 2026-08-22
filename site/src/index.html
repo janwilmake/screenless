@@ -201,7 +201,8 @@
   .demo-bar em{margin-left:10px;font-family:var(--mono);font-size:12px;
                color:#6a7183;font-style:normal}
   .demo-body{font-family:var(--mono);font-size:13.5px;line-height:1.5;
-             padding:20px 20px 22px;height:340px;overflow:hidden;color:#c9cedb}
+             padding:20px 20px 22px;height:392px;overflow:hidden;color:#c9cedb;
+             display:flex;flex-direction:column;justify-content:flex-end}
   .demo-body .ln{margin:0 0 11px;opacity:0;transform:translateY(4px);
                  transition:opacity .3s ease,transform .3s ease;white-space:pre-wrap;word-break:break-word}
   .demo-body .ln.show{opacity:1;transform:none}
@@ -334,7 +335,7 @@
 
   @media(max-width:900px){
     .hero-grid{grid-template-columns:1fr;gap:40px}
-    .demo-body{height:320px}
+    .demo-body{height:360px}
     .cols{grid-template-columns:1fr}
   }
   @media(max-width:720px){

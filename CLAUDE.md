@@ -75,10 +75,13 @@ agents open pull requests overnight. Five parts:
   in full by `build.sh` and gitignored. Ship with `npm run deploy` in `site/`.
 - `press/` — the PDF toolkit: `collect.mjs` for deterministic facts, the chart
   library, the print stylesheet, the renderer.
-- `loop/` — the single skill that builds the paper *and* the call brief from
-  one reading, and applies the call's decisions afterwards. Armed inside a
-  Claude Code session with `/screenless start`; `screenless wait` in the CLI
-  is the gate it blocks on. Not a scheduler, on purpose — see `loop/README.md`.
+- `skills/` — the branded skills, one directory each so `npx skills add
+  janwilmake/screenless` (skills.sh) installs them into every coding agent.
+  `skills/screenless/` builds the paper *and* the call brief from one reading
+  and applies the call's decisions afterwards (armed with `/screenless start`;
+  `screenless wait` is the gate — not a scheduler, see its README);
+  `skills/call-when-afk/` turns blocking questions into phone calls while the
+  user is away.
 
 ## The one architectural rule
 

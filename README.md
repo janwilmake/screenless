@@ -92,11 +92,19 @@ lost when agents write most of the code.
 curl -fsSL https://screenless.sh/install | bash
 ```
 
-One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH, and
-goes straight into `screenless setup` — phone verification by SMS, no card. Every
-new team starts with **$10 of free call credit**; after that calls bill
-pay-as-you-go at ~30¢/minute from the team's shared balance. Node 20+ required
-and never installed for you.
+One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH,
+installs the branded skills into every coding agent it finds (Claude Code,
+Cursor, Codex, …), and goes straight into `screenless setup` — phone
+verification by SMS, no card. Every new team starts with **$10 of free call
+credit**; after that calls bill pay-as-you-go at ~30¢/minute from the team's
+shared balance. Node 20+ required and never installed for you.
+
+Just want the skills in your agents, without the CLI? They live under
+`skills/` and install with one command via [skills.sh](https://skills.sh):
+
+```bash
+npx skills add janwilmake/screenless
+```
 
 Both surfaces are built by a **loop armed inside a Claude Code session on your
 own machine**:
@@ -148,7 +156,7 @@ diff, the "this one needs your eyes" router, and writeback to the PR.
 "<prompt>"`, the primitive it will sit on.
 
 **Built and working (the paper):** the chart library, the fact collector, the
-PDF renderer, the print stylesheet, the loop in `loop/SKILL.md` with its
+PDF renderer, the print stylesheet, the loop in `skills/screenless/SKILL.md` with its
 `screenless wait` gate, and scheduled delivery via `screenless mail`. `press/example/edition.json` renders to
 a six-page PDF today. It has not yet run unattended against a real repo for a
 week, which is the only test that counts.

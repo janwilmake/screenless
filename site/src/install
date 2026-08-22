@@ -108,36 +108,64 @@ chmod +x "$BIN_DIR/screenless"
 
 ok "installed to ${dim}$INSTALL_DIR${reset}"
 
-# ------------------------------------------------------------------- skill
+# ------------------------------------------------------------------- skills
 
-# Installed globally rather than per-repo: the instructions are the same for
-# every project, and the per-project settings live in each repo's own
-# .screenless.json, written by `screenless init`.
-if [ -f "$tmp/skill/SKILL.md" ]; then
-  rm -rf "$SKILL_DIR"
-  mkdir -p "$SKILL_DIR"
-  cp "$tmp/skill/SKILL.md" "$SKILL_DIR/SKILL.md"
-  [ -f "$tmp/skill/APPLY.md" ] && cp "$tmp/skill/APPLY.md" "$SKILL_DIR/APPLY.md"
-  # The collector and renderer the skill calls. Installed beside it, at a path
-  # the skill can spell out, because a skill that says `press/bin/collect.mjs`
-  # relative to nothing was the reason the first papers never rendered.
+# The skills go into every coding agent the user runs, not just Claude Code —
+# each agent reads skills from its own global directory, and screenless is
+# useful in all of them. Installed globally rather than per-repo: the
+# instructions are the same everywhere, and per-project settings live in each
+# repo's own .screenless.json, written by `screenless init`.
+#
+# This mirrors what `npx skills add janwilmake/screenless` (skills.sh) does;
+# doing it here too means the curl|bash install needs no second command, and
+# works offline. For any agent not covered below, that one command fills the gap.
+install_skills() { # $1 = an agent's global skills dir
+  local root="$1"
+  [ -f "$tmp/skill/SKILL.md" ] || return 0
+  rm -rf "$root/screenless" "$root/call-when-afk"
+  mkdir -p "$root/screenless" "$root/call-when-afk"
+  cp "$tmp/skill/SKILL.md" "$root/screenless/SKILL.md"
+  [ -f "$tmp/skill/APPLY.md" ] && cp "$tmp/skill/APPLY.md" "$root/screenless/APPLY.md"
+  [ -f "$tmp/skill/CALL-WHEN-AFK.md" ] && cp "$tmp/skill/CALL-WHEN-AFK.md" "$root/call-when-afk/SKILL.md"
+  # The collector and renderer the paper skill calls, at a path it spells out.
+  # Only needed where the loop actually runs (Claude Code), but harmless
+  # elsewhere and simpler to ship uniformly.
   if [ -f "$tmp/press.tar.gz" ]; then
-    mkdir -p "$SKILL_DIR/press"
-    tar -xzf "$tmp/press.tar.gz" -C "$SKILL_DIR/press" || rm -rf "$SKILL_DIR/press"
+    mkdir -p "$root/screenless/press"
+    tar -xzf "$tmp/press.tar.gz" -C "$root/screenless/press" 2>/dev/null || rm -rf "$root/screenless/press"
   fi
-  if [ "$have_claude" -eq 1 ]; then
-    ok "loop skill installed for Claude Code ${dim}— arm it with /screenless start${reset}"
-  else
-    say "  ${dim}nightly loop skill installed, but Claude Code was not found.${reset}"
-    say "  ${dim}The paper and the call brief are written by it: https://claude.com/claude-code${reset}"
+}
+
+# agent name : the dir whose presence means the agent is installed : skills dir
+installed_agents=""
+for spec in \
+  "Claude Code:$HOME/.claude:$HOME/.claude/skills" \
+  "Cursor:$HOME/.cursor:$HOME/.cursor/skills" \
+  "Codex:$HOME/.codex:$HOME/.codex/skills" \
+  "Windsurf:$HOME/.windsurf:$HOME/.windsurf/skills" \
+  "Gemini:$HOME/.gemini:$HOME/.gemini/skills" \
+  "OpenCode:$HOME/.opencode:$HOME/.opencode/skills" ; do
+  name="${spec%%:*}"; rest="${spec#*:}"; detect="${rest%%:*}"; dir="${rest#*:}"
+  if [ -d "$detect" ]; then
+    install_skills "$dir"
+    installed_agents="$installed_agents $name,"
   fi
+done
+
+# Claude Code is the runtime the loop assumes, so install for it even if the
+# directory does not exist yet — unless we already did above.
+if [ ! -d "$HOME/.claude" ]; then
+  install_skills "$HOME/.claude/skills"
+  installed_agents="$installed_agents Claude Code,"
 fi
 
-# The call-when-afk skill is its own slash command, so its own skill directory.
-if [ -f "$tmp/skill/CALL-WHEN-AFK.md" ]; then
-  mkdir -p "$SKILLS_ROOT/call-when-afk"
-  cp "$tmp/skill/CALL-WHEN-AFK.md" "$SKILLS_ROOT/call-when-afk/SKILL.md"
-  [ "$have_claude" -eq 1 ] && ok "call-when-afk skill installed ${dim}— say you're AFK and it phones you the questions${reset}"
+if [ -n "$installed_agents" ]; then
+  agents_list="$(printf '%s' "$installed_agents" | sed 's/,$//; s/^ //; s/,/,/g')"
+  ok "screenless + call-when-afk skills installed for:${dim}$agents_list${reset}"
+  say "  ${dim}other agents? run:${reset} npx skills add janwilmake/screenless"
+fi
+if [ "$have_claude" -eq 0 ]; then
+  say "  ${dim}Claude Code runs the paper and the brief — install it: https://claude.com/claude-code${reset}"
 fi
 
 # ------------------------------------------------------- old scheduler
@@ -194,8 +222,8 @@ fi
 if [ "${SCREENLESS_NO_SETUP:-}" = "1" ] || [ ! -t 1 ] || [ ! -r /dev/tty ]; then
   say ""
   say "Next: ${bold}screenless setup${reset} ${dim}— verify your number${reset}"
-  say "Then: ${bold}screenless init${reset} ${dim}— point the loop at a repo${reset}"
-  say "Then, in Claude Code: ${bold}/screenless start${reset} ${dim}— arm it, and leave the session open${reset}"
+  say "Then, in your agent: ${bold}/screenless${reset} ${dim}— arm the watcher first, and leave it open${reset}"
+  say "      ${dim}(it points at the repo you're in, and takes the team's calls)${reset}"
   say ""
   exit 0
 fi

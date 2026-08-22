@@ -30,12 +30,12 @@ mkdir -p "$out"
 cp "$here"/src/* "$out"/
 
 # Downloaded by the installer over HTTP, so they have to exist as real files in
-# the served directory — there is no build step on Cloudflare's side.
-cp "$root"/loop/SKILL.md "$root"/loop/APPLY.md "$out"/
-
-# The call-when-afk branded skill, installed to its own skill directory so it
-# is its own /call-when-afk slash command.
-cp "$root"/call-when-afk/SKILL.md "$out"/CALL-WHEN-AFK.md
+# the served directory — there is no build step on Cloudflare's side. The
+# canonical skills live under skills/<name>/ so `npx skills add janwilmake/
+# screenless` (skills.sh) discovers them; these flat copies are what the bash
+# installer fetches.
+cp "$root"/skills/screenless/SKILL.md "$root"/skills/screenless/APPLY.md "$out"/
+cp "$root"/skills/call-when-afk/SKILL.md "$out"/CALL-WHEN-AFK.md
 
 # The skill calls press/bin/*.mjs by absolute path under ~/.claude/skills/
 # screenless/, so the toolkit ships with it. The example edition rides along:
