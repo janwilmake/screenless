@@ -1,90 +1,53 @@
 # screenless
 
-Understand what your agents built last night without opening a laptop.
+**A phone line for your team and its coding agents.** Walk away from the
+keyboard and your agents don't stall: when one hits a decision only a person
+can make, it phones you — or anyone on your team — takes your answer out loud,
+and keeps working. Unblocked from anywhere. No screen.
 
-You already run coding agents that turn tickets into pull requests overnight.
-The code gets written; the bottleneck moved. Someone still has to make the calls
-the model cannot — is this the right scope, does this belong in the release, is
-this abstraction worth it. Those are taste and priority questions, not
-correctness questions, so they do not disappear as models improve.
+![An agent hits a decision, calls you, and continues from your answer](docs/demo.gif)
 
-Today that costs an hour at a screen before you have had coffee. It does not
-need a screen.
+## What it is
 
-**Who this is for:** senior engineers who already have agents producing more
-pull requests than they want to read on a laptop.
+screenless is a CLI and a small Cloudflare Worker that give a team a shared
+phone number wired to the terminals it runs. The number goes both ways:
 
-## Two surfaces, one idea
+- **Ring in** — a teammate calls the line and speaks a request, a decision, an
+  idea. It is transcribed and routed to whoever is running `screenless watch`:
+  the caller's own terminal first, any teammate's otherwise, a queue that holds
+  up to a week when nobody is. Their agent picks it up and acts.
+- **Ring out** — `screenless call "…" --to alex@team.com`, or `--all`. Dial one
+  teammate or the whole team and each conversation returns as a transcript. It
+  only ever reaches verified numbers on your own team.
+- **Skills** — a *skill* is a prompt that points those primitives at a job. Two
+  ship as examples; the CLI is the tooling you build the rest on.
 
-| | **the call** | **the paper** |
-| --- | --- | --- |
-| What | A morning call that walks your open PRs and takes your decisions | A weekly printable PDF, landing Saturday — visual, almost no text |
-| Answers | *What do I need to decide today?* | *What is my product actually becoming?* |
-| Shape | Interruptible conversation, CLI-triggered | One-way, glanceable, printable |
-| Screen time | Zero — it is a phone call | Zero, if you print it |
+### The skills that ship
 
-They share a name because paper and a phone call are the only two media in this
-workflow that are not a screen.
+- **screenless** — the nightly loop. It reads your repo's pull requests and
+  tickets, calls each person about the few decisions that are theirs, and hands
+  the transcript to your own agent, which does the work. On Saturdays it also
+  builds a weekly team paper: who shipped what, and the week ahead.
+- **call-when-afk** — tell your agent you are stepping out and it stops pausing
+  on questions. It phones you each one and continues the moment you answer.
 
-### the call
+Install the skills into any coding agent — Claude Code, Cursor, Codex, and the
+rest — with one command via [skills.sh](https://skills.sh):
 
-```
-22:40  claude> /screenless start
-       waiting for work — probe every 60s
-
-03:00  --- woke after 4h20m ---  NIGHTLY ~/code/your-repo
-       $ screenless call "<brief>" --at
-       ✓ parked — calling +31612345678 at 08:00 · 14 PRs open, 3 need you
-
-08:00
-agent  Morning. Three things today, the paper has the rest.
-       The first is the candidate notes field — the intake form
-       writes it, nothing reads it yet. The agent put it in a
-       JSONB column on candidates rather than its own table.
-       Shall I go on, or is there something you want first?
-you    What else reads it?
-agent  Nothing. Write-only from the intake form, and the PR says
-       so. So: separate table now, or leave it until something
-       queries it?
-you    Leave it. Revisit on first read.
-agent  Leave it, revisit on first read. The second one is in the
-       export ticket, and it's really about page size —
-you    Wait, why is that in a ticket about export?
-agent  It isn't scoped there; the agent says so itself. Split it
-       out, or leave it?
-you    Split it, and hold the export PR until that's gone.
-...
-
-✓ 3 decisions · 9m10s · nothing changed yet
-
-08:09  --- woke after 5h9m ---  WORK 5ef8e342
-       $ screenless transcript --json
-       ✓ 4 merged · 1 split · 1 comment · 1 left for your eyes
+```bash
+npx skills add janwilmake/screenless
 ```
 
-Note where the work happens. The voice on the phone has no tools and no
-credentials — it collects decisions and hangs up. Your own loop applies them
-afterwards, with the access you already gave it.
+Or get everything, the CLI included, from the one-line installer below.
 
-And one decision could not be made by voice: the call said so instead of
-pressing you for an answer while you are walking the dog.
+## The one rule
 
-### the paper
-
-A weekly PDF, mailed to land on Saturday morning, built to be printed and
-read with coffee — the state of the product after a week of agent work:
-
-- **One page per ticket in flight**, mostly picture: what surface it touches,
-  a screenshot of that surface as it looks today, and what will look different
-  when it lands.
-- **A product map**, not a changelog — what area got heavier this week, what has
-  not been touched in a month, where the agents are concentrating.
-- **Text kept to captions.** If a page needs a paragraph, it belongs in the call
-  instead.
-
-The goal is not status reporting. It is that reading it makes you understand your
-own product better than you did yesterday — which is the thing that gets quietly
-lost when agents write most of the code.
+The voice on the phone has no tools and no credentials. It collects decisions
+and hangs up; a terminal on your own machine — with the MCPs, the logged-in
+browser and the Claude subscription you already gave it — is what merges,
+comments, and closes. A teammate's request arrives marked as untrusted, weighed
+before it runs with your access. Nothing leaves your machines but a question and
+an answer.
 
 ## How it installs
 
@@ -142,29 +105,21 @@ and inherits the same access.
 
 ## Status — read this before anything else
 
-This repository is a **working primitive plus a product thesis**. Be clear on
-which is which.
+The **line is real and proven**: calling out, ringing in, calling teammates,
+transcription, routing to a watching terminal, pay-as-you-go billing, teams
+and invites — all of it works on real phones today, in production at
+screenless.sh. Verified end to end with live calls, including a teammate
+speaking a request that an agent picked up and acted on.
 
-**Built and working:** outbound calling, phone-number verification by OTP,
-per-call AI assistant creation, an interruptible two-way conversation, call
-records, and transcript retrieval. That is the hard telephony half.
+What is **still early is the intelligence in the skills**. The morning
+briefing's hard part — reading a queue of pull requests and picking out the
+few that genuinely need a person, then writing that back — is being built in
+the open. `call-when-afk` and the calling primitives work now; the nightly
+loop and the weekly paper render and deliver, but have not run unattended
+against a real repo for a full week, which is the only test that counts.
 
-**Not built:** everything that makes the transcript above real — pull-request
-ingestion, cross-repo triage, agenda building, speech-shaped summarisation of a
-diff, the "this one needs your eyes" router, and writeback to the PR.
-`screenless brief` does not exist yet. What exists is `screenless call
-"<prompt>"`, the primitive it will sit on.
-
-**Built and working (the paper):** the chart library, the fact collector, the
-PDF renderer, the print stylesheet, the loop in `skills/screenless/SKILL.md` with its
-`screenless wait` gate, and scheduled delivery via `screenless mail`. `press/example/edition.json` renders to
-a six-page PDF today. It has not yet run unattended against a real repo for a
-week, which is the only test that counts.
-
-**Blocked upstream:** Telnyx AI Assistants currently produce no audio on
-telephony calls. See [Blocked on Telnyx](#blocked-on-telnyx). Until that clears,
-the call cannot be demonstrated end to end. The paper is not affected by this and
-is the cheaper thing to build first.
+So: install it, use the line and `call-when-afk` today, and help shape what
+the briefing becomes.
 
 ## How the call fits together
 
@@ -185,9 +140,11 @@ token bound to your verified phone number.
 Telnyx Verify API; entering the code mints the session. No OAuth provider, no
 password.
 
-**You can only call the number you verified.** The Worker takes `To` from the
-session token and ignores any number in the request body. That is deliberate: it
-makes this structurally incapable of becoming a dialer, which matters given Dutch
+**You can only call verified numbers on your own team.** A self-call takes
+`To` from the session token; a teammate call resolves targets to members of
+your own org with a verified phone, and refuses anything else. Either way the
+number is never a free-form value from the request body — which keeps this
+structurally incapable of becoming a dialer, and matters given Dutch
 telemarketing law (see [Legal](#legal-if-you-ever-point-this-at-someone-else)).
 
 The Worker is also the webhook receiver, so the CLI never needs a tunnel — it
@@ -231,9 +188,8 @@ call — and tops up from the billing tab when it runs out.
 - **The COGS is also the moat.** No first-party vendor will bundle real
   telephony into a flat subscription, which is exactly why the notification tier
   got commoditised and this one will not.
-- **The paper carries almost no COGS**, since it runs on your machine against
-  your own Claude subscription. It is the free surface, and it can ship without
-  waiting on Telnyx.
+- **The weekly paper carries almost no COGS**, since it runs on your machine
+  against your own Claude subscription — only the calls meter.
 
 Verification is charged separately: **$0.03 per successful verify plus $0.091 per
 SMS to a Dutch number** — billed even on failed attempts, which is why
@@ -242,8 +198,7 @@ SMS to a Dutch number** — billed even on failed attempts, which is why
 ## Setup
 
 You need a [Telnyx account](https://telnyx.com/sign-up) and a Cloudflare account.
-Budget about 20 minutes. (This section covers the call only; the paper has
-nothing to set up yet.)
+Budget about 20 minutes.
 
 **Only Telnyx is required — there is no separate Deepgram account.** Telnyx hosts
 the Deepgram models, selected via `transcription.model` in the assistant config,
@@ -399,7 +354,7 @@ cd site && npm run deploy
 ```
 
 `site/public/` is generated in full by `site/build.sh` and gitignored. Edit
-`site/src/` for the pages and installer, `loop/` for the skills, `press/` for the toolkit,
+`site/src/` for the pages and installer, `skills/` for the branded skills,
 `cli/src/` for the CLI; never edit `site/public/`, because the next build
 deletes it.
 
@@ -480,7 +435,7 @@ prompt will blow past the 4000-character limit.
 
 ## Configuration
 
-Defaults live in `worker/wrangler.toml`:
+Defaults live in `worker/wrangler.jsonc`:
 
 | Var | Default | Notes |
 | --- | --- | --- |
@@ -519,26 +474,21 @@ deliberative review call has natural pauses — you are thinking about whether t
 field belongs in its own table. `eot_threshold` and `eager_eot_threshold` in
 `worker/src/telnyx.ts` are the knobs if you want them.
 
-## Blocked on Telnyx
+## The silent-call bug (resolved)
 
-Everything in this repo works. The AI Assistant does not produce audio on
-telephony calls, and that failure is upstream of this code.
+For the first fortnight every assistant call was silent — the caller heard
+nothing, and the conversation recorded zero assistant turns. The cause was
+narrow and upstream: **Telnyx-hosted TTS voices render no audio on a PSTN
+call**. Plain TeXML `<Say>` was audible, the assistant worked over text, and
+standalone TTS worked — but an assistant speaking through a Telnyx voice on a
+phone line produced silence.
 
-Verified working: outbound calls, TTS in-call (plain TeXML `<Say>` is audible),
-speech-to-text during the failing calls, the assistant over text
-(`POST /v2/ai/assistants/{id}/chat`), standalone TTS, direct model invocation,
-and the assistant's own TeXML document.
-
-Verified failing: any call with an assistant connected. Zero `assistant` messages
-are recorded and the caller hears silence. Reproduced with both
-`/texml/ai_calls` and `/texml/calls` + `<Connect><AIAssistant>`, across two
-models, two voices, two transcription languages, two anchorsites, with and
-without callbacks — and with an assistant created by Telnyx's own portal demo
-rather than by this code.
-
-`/texml/say` is left in the worker as the isolation test: if calls go silent,
-point a TeXML application at it. If you hear it, telephony and TTS are fine and
-the fault is in the assistant layer.
+The fix was to give each language a third-party voice (AWS Polly / Azure
+Neural), chosen on measured latency, rather than a Telnyx-hosted one. Calls
+have been audible and interruptible since. `/texml/say` stays in the worker as
+the isolation test: point a TeXML application at it and if you hear it,
+telephony and TTS are fine and the fault is higher up. See `telnyx-bug/` for
+the full reproduction.
 
 ## Setup gotchas found the hard way
 
@@ -596,26 +546,26 @@ moment you point it at anyone else.
 ## Layout
 
 ```
-cli/                    the shared `screenless` binary
-  src/index.ts            setup, call, mail, whoami, logout
-  src/config.ts           ~/.screenless/config.json
-worker/                 shared backend — telephony + scheduled mail
-  src/index.ts            routes, webhooks, call records, cron
-  src/auth.ts             OTP, session tokens
-  src/mail.ts             outbox, wake-up scheduling, delivery
-  src/telnyx.ts           Telnyx API client
-  wrangler.toml           all tunable defaults
-press/                  the weekly paper — built, see press/README.md
-  bin/collect.mjs         deterministic facts from git + gh
-  bin/render.mjs          edition.json -> HTML -> PDF
-  lib/charts.mjs          dependency-free SVG charts for paper
-loop/                   the branded skill: nightly brief + weekly paper
-  SKILL.md                the loop Claude Code runs
-  APPLY.md                the return leg — applying what a call decided
-call-when-afk/          a branded skill: phone the user their questions while away
-  SKILL.md
-rounds/                 the morning call — planned, see rounds/README.md
-site/src/index.html     the landing page (screenless.sh)
+cli/                       the `screenless` binary — no dependencies, two files
+  src/index.ts               setup, call, watch, done, team, mail, billing …
+  src/config.ts              ~/.screenless/config.json
+worker/                    the one Worker — site, team page, and the whole API
+  src/index.ts               routes, calls, inbound IVR, watchers, cron
+  src/db.ts                  all state in D1: users, orgs, calls, briefs, ledger …
+  src/team.ts                the /team page and its API
+  src/billing.ts             pay-as-you-go, Stripe topups
+  src/telnyx.ts              Telnyx client — verify, calls, SMS, transcription
+  src/mail.ts, emailhtml.ts  outbox (D1 + R2) and the branded email frame
+  schema.sql                 the D1 schema
+  wrangler.jsonc             vars, bindings, tunable defaults
+skills/                    the branded skills — installable via skills.sh
+  screenless/                nightly brief + weekly paper
+    SKILL.md, APPLY.md         the loop, and the return leg after a call
+    press/                     the PDF toolkit the paper skill calls
+  call-when-afk/             phone the user their questions while away
+site/src/                  the landing page and installer (screenless.sh)
+docs/demo.gif              the hero terminal animation
+rounds/                    the PR-triage brains of the briefing — planned
 ```
 
 ## License

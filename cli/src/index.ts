@@ -319,8 +319,9 @@ async function setup(args: string[]): Promise<void> {
       console.log(`\n  ${c.dim("Not in a git repo. Run")} ${c.cyan("screenless init")} ${c.dim("inside the repo you want a paper about.")}`);
     }
 
-    console.log(`\nTry: ${c.cyan('screenless test')} ${c.dim("— a demo call, right now")}`);
-    console.log(`Then, in Claude Code: ${c.cyan('/screenless start')} ${c.dim("— arm the loop, and leave the session open")}`);
+    console.log(`\nFirst, in your coding agent: ${c.cyan('/screenless')} ${c.dim("— arm the watcher, and leave it open")}`);
+    console.log(`Then try: ${c.cyan('screenless test')} ${c.dim("— a demo call, right now")}`);
+    console.log(c.dim("\n  Check your texts — save the screenless number to your contacts; that's the line to ring."));
   } finally {
     rl.close();
   }

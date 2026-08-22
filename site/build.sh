@@ -7,10 +7,10 @@
 # pages with copies of loop/ and cli/dist, and the only thing standing between
 # you and losing an afternoon's work was remembering which was which.
 #
-#   site/src/   pages and the installer, hand-written
-#   loop/       the skills the installer downloads
-#   press/      the collector and renderer the skill calls, shipped as a tarball
-#   cli/dist/   the CLI, shipped as a tarball
+#   site/src/               pages and the installer, hand-written
+#   skills/                 the branded skills the installer downloads
+#   skills/screenless/press/ the collector and renderer that skill calls
+#   cli/dist/               the CLI, shipped as a tarball
 #
 #   ./build.sh          assemble
 #   npm run deploy      assemble, then deploy the merged Worker (worker/),
@@ -41,7 +41,7 @@ cp "$root"/skills/call-when-afk/SKILL.md "$out"/CALL-WHEN-AFK.md
 # screenless/, so the toolkit ships with it. The example edition rides along:
 # the skill tells the model to read it before writing its first one.
 COPYFILE_DISABLE=1 tar -czf "$out/press.tar.gz" \
-  -C "$root/press" bin lib templates example README.md
+  -C "$root/skills/screenless/press" bin lib templates example README.md
 
 npm --prefix "$root/cli" run build --silent
 COPYFILE_DISABLE=1 tar -czf "$out/screenless.tar.gz" \

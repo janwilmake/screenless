@@ -73,8 +73,10 @@ agents open pull requests overnight. Five parts:
 - `cli/` — the `screenless` CLI, published as a tarball the installer fetches.
 - `site/` — `src/` is hand-written (pages, installer); `public/` is generated
   in full by `build.sh` and gitignored. Ship with `npm run deploy` in `site/`.
-- `press/` — the PDF toolkit: `collect.mjs` for deterministic facts, the chart
-  library, the print stylesheet, the renderer.
+- `skills/screenless/press/` — the PDF toolkit the paper skill calls:
+  `collect.mjs` for deterministic facts, the chart library, the print
+  stylesheet, the renderer. It lives inside the skill so the skill is
+  self-contained and `npx skills add` installs it whole.
 - `skills/` — the branded skills, one directory each so `npx skills add
   janwilmake/screenless` (skills.sh) installs them into every coding agent.
   `skills/screenless/` builds the paper *and* the call brief from one reading
@@ -104,8 +106,8 @@ copy that implies the call changed something, you have broken the model.
   name in the comment block at the bottom of that file.
 - Billing is off when `STRIPE_SECRET_KEY` is unset, so `wrangler dev` and any
   pre-Stripe deploy stay usable. Keep it that way.
-- Never edit `site/public/`. It is assembled from `site/src/`, `loop/`,
-  `press/` and `cli/dist/`, and rebuilt from empty on every deploy, so an edit there is
+- Never edit `site/public/`. It is assembled from `site/src/`, `skills/` and
+  `cli/dist/`, and rebuilt from empty on every deploy, so an edit there is
   work you will lose. This is why it is gitignored rather than merely
   documented — a rule with an exception is a rule nobody checks.
 - The CLI has no dependencies, and should stay that way — it is distributed as
