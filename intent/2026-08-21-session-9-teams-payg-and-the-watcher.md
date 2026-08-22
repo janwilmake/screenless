@@ -151,3 +151,10 @@ a wrongly-typed number can never receive its own verification text.
 
 - 00:55 — `remove the whole newspaper thing from the landingpage. ask me questions on how to improve the landing further. btw im gonna be afk so call me`
   *(the weekly paper comes off the landing entirely — skills section, pricing, mockup, and every mention — leaving the morning briefing and call-when-afk as the two example skills and a line-only price. The user is AFK, so the "ask me questions" is answered by the call-when-afk skill itself: a real `screenless call` placed with the improvement questions. Newspaper *brand aesthetic* (masthead, newsprint, OG image) left pending that call's answer.)*
+
+- 01:00 (by phone, call 81b6d006, 4m24s) — answers to the three landing questions, plus a fourth ask:
+  1. **Newspaper look:** change it. "Iets meer professioneel, start-up vibe … moet echt mooi uitzien, mooi strak." Drop the newsprint/serif/masthead brand for a clean, professional, sleek startup aesthetic.
+  2. **Free tier:** happy with $10 credit as the only free thing. Pricing should read simple — "30¢/min" — and the CTA should mention the $10 free.
+  3. **First-time visitor:** must grasp that it *receives and makes* calls, for yourself and your team, and that you install the CLI.
+  4. **New:** use a good design skill and a good copywriting skill so the page is genuinely sleek and the copy is perfect — "het moet gewoon heel goed in de markt komen te staan."
+  *(the call-when-afk skill in action: questions asked and answered by phone, session continued from the transcript)*
