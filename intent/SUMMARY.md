@@ -1,8 +1,9 @@
 # Intent, resolved
 
-Last updated: 2026-08-22 — covers sessions 1–9, through the 00:05 prompt on
-22 Aug in session 9. If the session files carry prompts newer than that, this document
-is behind them and they win.
+Last updated: 2026-08-22 — covers sessions 1–9, through the 03:35 prompt on
+22 Aug in session 9 (the leftover sweep and the real-`npx skills` installer).
+If the session files carry prompts newer than that, this document is behind
+them and they win.
 
 Every instruction given across all sessions, collapsed to its final form —
 where an instruction was later replaced, only the replacement is listed, with
@@ -107,8 +108,9 @@ team infrastructure, and its final prompt reframed it as tooling.)*
 | Intent | Status |
 |---|---|
 | One command: `curl -fsSL https://screenless.sh/install \| bash` | built |
+| The skills install into **every** coding agent via the real skills.sh CLI — `npx skills add janwilmake/screenless` — so installs count in its stats; a bundled per-agent copy is the offline fallback *(was: a hand-rolled per-agent copier only)* | **built and proven** — the wrap exits 0 and installs all three skills across agents in a sandbox HOME |
 | The loop is armed inside a Claude Code session; `screenless wait` is the gate | built — proven for the nightly; `screenless watch --gate` armed beside it is new and unrun |
-| The installer ships `press/` beside the skill | built |
+| The installer ships `press/` beside the skill | built — now inside `skills/morning-pr-review/`, the skill that uses it |
 | After the call, the machine acts on the decisions | **built and proven** |
 | A PR comment the apply leg writes is signed and names what it ticketed | built, unrun |
 

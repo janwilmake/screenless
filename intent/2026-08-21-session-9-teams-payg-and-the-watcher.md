@@ -171,3 +171,26 @@ a wrongly-typed number can never receive its own verification text.
 
 - 02:30 — `we dont need a docs or a rounds folder. also its unclear to me now: does installation and launching /screenless also arm the nightly 3am loop for the prs or just the watcher so ppl can place incoming calls? i think the latter is most important, and the nightly 3am loop should be an optional and separate skill, /morning-pr-review. and from the landingpage,remove these sections [the call demo, try-it, skills, how-it-works, and where-this-actually-is] and also the last 'where this actually is' section`
   *(clarifies the core: /screenless arms ONLY the watcher — the team line, incoming calls — which is the important thing. The nightly 3am PR loop is split out into a separate optional skill, /morning-pr-review, which builds the brief + weekly paper and parks the call; the watcher skill still applies what any finished call decided. press/ moves into the morning-pr-review skill. docs/ and rounds/ folders removed (GIF to repo root). Landing stripped to the line: the call-demo, try-it, skills, how-it-works and where-this-is sections all cut.)*
+
+- 02:45 — `also change the gh repo description`
+  *(update the GitHub repo description to match the repositioning — the team
+  phone line, not the PR-review app.)*
+
+- 03:00 — `in the readme all setup things for self hosting need to go into a separate readme. pls keep the readme short and powerful`
+  *(README stays short and marketing-forward — what it is, the two example
+  skills, install, status; everything self-hosting — Telnyx/Cloudflare/Stripe
+  setup, the full command reference, the hard-won gotchas — moves to a separate
+  SELFHOST.md that the README points to.)*
+
+- 03:20 — `is everything up to date and cleaned up now? no old leftovers. also i want to rly use 'npx skills' not our own faked one because then we get into their stats which is better, can it be wrapped?`
+  *(two asks: (1) audit for leftovers from the refactor — stale paths, dead
+  references, folders that should be gone; (2) the installer must call the real
+  skills.sh CLI — `npx skills add janwilmake/screenless --all -g -y` — as the
+  primary path so installs register in skills.sh's stats, keeping the bundled
+  per-agent copy only as an offline fallback. Not a hand-rolled reimplementation.)*
+
+- 03:35 — `u forgot some stuff, there's still the docs and the rounds folder... also telnyx bug can be cleaned up`
+  *(the leftover sweep missed some: the docs/ and rounds/ folders were still
+  present, and telnyx-bug/ — a bug reproduction now resolved and described in
+  SELFHOST.md — can go too. All removed, with the references that pointed at
+  telnyx-bug/ rewritten in place.)*
