@@ -92,9 +92,9 @@
     // "openai" runs briefs and ring-ins through OpenAI Realtime; "telnyx" keeps
     // the old Telnyx AI Assistant. The cutover is this flip, per path.
     "VOICE_ENGINE": "telnyx",
-    // Project id in the SIP address sip:<id>@<host>. Fill in from the OpenAI
+    // Project id in the SIP address sip:<id>@<host>. From the OpenAI
     // dashboard; non-secret.
-    "OPENAI_PROJECT_ID": "",
+    "OPENAI_PROJECT_ID": "proj_TJtzn4qYY3ClpPDRjSaKEHsP",
     // EU SIP host, to keep media in-region with the Amsterdam anchorsite.
     "OPENAI_SIP_HOST": "sip-eu.api.openai.com",
     // The Realtime model and voice. Marin is one of the two newest voices.
