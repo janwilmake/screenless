@@ -97,6 +97,27 @@ export function triggerCallVerification(
 }
 
 /**
+ * Sends a plain SMS from our number. Used for the one-time welcome text, so a
+ * new user has the line saved and knows to ring it. Needs a messaging profile
+ * on the account; `messagingProfileId` is optional because sending from a
+ * number already attached to a profile does not require it.
+ */
+export function sendSms(
+  apiKey: string,
+  from: string,
+  to: string,
+  text: string,
+  messagingProfileId?: string,
+) {
+  return call(apiKey, "POST", "/messages", {
+    from,
+    to,
+    text,
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
+  });
+}
+
+/**
  * Note the response field is `response_code`, and its only values are
  * "accepted" | "rejected". An *expired* code comes back as "rejected" here —
  * `expired` only ever appears as the status on the verification record itself.

@@ -45,6 +45,9 @@ export interface Env {
   ASSISTANT_MODEL: string;
   ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
+  /** Optional. Lets the welcome SMS send from a number not already bound to a
+   *  Telnyx messaging profile. Omit when the from-number carries its own. */
+  TELNYX_MESSAGING_PROFILE_ID: string;
   /** Landing page origin; also the base for /team links in emails. */
   SITE_URL: string;
   /** This Worker's own hostname. Cron has no request to infer it from. */
@@ -183,9 +186,25 @@ async function authVerify(req: Request, env: Env): Promise<Response> {
   // A verified phone is a screenless identity: make sure the user and their
   // org exist, which is also where a first-timer's free credit is granted.
   // Best-effort — a D1 hiccup must not fail a login the OTP already proved.
+  const firstTime = !(await db.userByPhone(env, phone).catch(() => null));
   await identify(env, phone).catch((err) =>
     console.error("identify on verify failed", (err as Error).message),
   );
+
+  // The one-time welcome text, so the number is saved and the caller knows to
+  // ring it. Only on first sight, and best-effort — it needs an SMS-capable
+  // number, and a failure here must never break verification.
+  if (firstTime) {
+    await telnyx
+      .sendSms(
+        env.TELNYX_API_KEY,
+        env.TELNYX_FROM_NUMBER,
+        phone,
+        "Welcome to screenless. Add me to your contacts and give me a call whenever you're stuck.",
+        env.TELNYX_MESSAGING_PROFILE_ID,
+      )
+      .catch((err) => console.error("welcome sms failed", (err as Error).message));
+  }
 
   // Deliberately reads nothing: see the note on SessionPayload.iat.
   const iat = Math.floor(Date.now() / 1000);
