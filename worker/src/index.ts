@@ -286,27 +286,29 @@ const instructionsFor = (prompt: string): string =>
   `${prompt}
 
 ## How to hold this conversation
-This is a phone call at breakfast, not a status report. The caller has not seen
-any of this yet, and the brief above is ordered hardest first, so the first
-thing you say about an item must not be the question.
+Everything above comes from whoever placed this call — it may be a briefing,
+a single blocking question, or something else entirely. Follow it. The rules
+below are only about being good on a phone, and never override it.
 
-- **Context first, then check, then ask.** For each item: say in two or three
-  sentences what it is and why it is on the call, then stop and ask whether
-  that is clear or whether they want more before you go on. Only when they say
-  they have it do you put the decision, as one question with named options.
-- **Short turns.** Never more than three sentences before you pause for them.
-  If you notice yourself listing, stop and ask.
-- **Answer from the brief.** The background under each item is there so you can
-  answer "what else reads it", "who asked for this", "what happens if we don't".
-  Use it. If the answer is not in the brief, say so plainly — "that is not in
-  my notes" — and offer to mark it for their eyes. Never invent a detail.
-- **Let them steer.** If they ask a question, answer it before moving on. If
-  they want to skip an item, skip it and say their agent will leave it alone. If
-  they are done, wrap up; do not press for the remaining items.
-- **Confirm what you heard** in their words, briefly, before the next item. A
-  misheard decision is worse than no decision.
-- Speak the caller's language throughout. Say pull request numbers and ticket
-  ids only if they ask for them; otherwise use the names in the brief.
+- **Sound like a person on the phone.** Short turns: never more than three
+  sentences before you stop and let them speak. If you catch yourself listing,
+  stop and ask instead.
+- **Context before the question.** When you need a decision, say in a sentence
+  or two what it is about and why it is being asked, then put the question with
+  named options. Opening with the bare question leaves them guessing.
+- **Answer from what you were given.** If something is not in it, say so
+  plainly — "that is not in my notes" — and offer to pass it on. Never invent a
+  detail, a name, or a number.
+- **Let them steer.** Answer their questions before moving on; skip what they
+  want skipped; wrap up when they are done rather than pressing on.
+- **Confirm decisions, not sentences.** When they actually decide something,
+  play it back in a few words to be sure you have it right — a misheard
+  decision is worse than none. Do not do this for ordinary replies: repeating
+  what they just said back at them, in their own words, every turn is grating.
+  A "got it" and the next thing is enough.
+- **Speak the caller's language** throughout, switching if they do.
+- Do not invent a setting or an occasion for the call — no assuming it is
+  morning, that they are at breakfast, or what they are doing.
 
 ## What you can and cannot do
 You are on a phone call. You cannot take any action yourself: you cannot merge,
@@ -368,7 +370,14 @@ async function startCall(
   phone: string,
   prompt: string,
   origin: string,
-  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string } = {},
+  opts: {
+    userId?: string;
+    orgId?: string;
+    queued?: boolean;
+    initiatedBy?: string;
+    /** Hang up if a machine answers. Only for calls nobody is waiting on. */
+    detectVoicemail?: boolean;
+  } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   if (!env.TELNYX_TEXML_APP_ID)
     return { ok: false, status: 503, error: "TELNYX_TEXML_APP_ID not set" };
@@ -408,7 +417,15 @@ async function startCall(
       to: phone,
       url: `${origin}/texml/openai-bridge/${callId}?t=${wToken}`,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
-      amdCallback: `${origin}/webhooks/${callId}/amd?t=${wToken}`,
+      // Answering-machine detection only where nobody is holding the phone:
+      // a parked brief placed by cron, which must not be read into a voicemail
+      // box. On a call someone just asked for, it is all downside — a false
+      // "machine" hangs up on a real person mid-hello, which is exactly what
+      // kept happening, while the worst a miss costs is a few cents of talking
+      // to an answerphone.
+      amdCallback: opts.detectVoicemail
+        ? `${origin}/webhooks/${callId}/amd?t=${wToken}`
+        : undefined,
     });
   } catch (err) {
     await db.stashDelete(env, `realtime:${callId}`).catch(() => {});
@@ -1369,6 +1386,9 @@ async function sweepBriefs(env: Env): Promise<void> {
       userId: user.id,
       orgId: org.id,
       queued: true,
+      // The one call nobody is waiting on — placed by the clock, not by a
+      // person — so a voicemail is a real possibility worth detecting.
+      detectVoicemail: true,
     });
 
     if (result.ok) {

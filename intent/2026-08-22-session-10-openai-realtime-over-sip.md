@@ -191,10 +191,36 @@ for OpenAI Realtime, against the 30¢/minute charged — margin is intact.
   ("pull request 1284 was merged at 3:45"), which is where a phone line blurs.
   Jan picked Cedar; it is live.)*
 
-  Also seen twice tonight: **answering-machine detection false-positived on
-  outbound calls** — two of four rang, were answered by a human, and were hung
-  up as "voicemail". Worth watching; if it recurs, the AMD verdict handling in
-  the amd webhook is the place to loosen.
+- HH:MM — `interesying, even thoughwe never talk about breakfast in 'call' it says enjoy ur breakfast.`
+  *(a real leak, not a quirk: the outbound instructions still carried the
+  morning-briefing framing from session 1 — "a phone call at breakfast", "the
+  brief above is ordered hardest first", "items", "answer from the brief" — and
+  that was applied to EVERY outbound call, including call-when-afk questions and
+  anything a skill places. Backwards for a product where the morning brief is
+  one skill among many. Rewritten to be prompt-neutral: how to be good on a
+  phone (short turns, context before the question, never invent, let them steer,
+  speak their language) with an explicit "do not invent a setting or occasion
+  for the call — no assuming it is morning or that they are at breakfast". The
+  specifics now come only from whoever placed the call.)*
+
+- HH:MM — `also... it seems that the AMD happens falsely a lot. mahybe its because the beep in the beginning?`
+  *(two of four outbound calls were answered by a human and hung up as
+  "voicemail". Fixed by scope rather than by tuning a threshold: answering-machine
+  detection now runs ONLY on the cron-placed brief — the one call nobody is
+  waiting on — and not on calls a person asked for. The costs are wildly
+  asymmetric: a false positive hangs up on a real person mid-hello and reads as
+  broken, while a miss costs a few cents of talking to an answerphone. Omitting
+  the AMD callback means Telnyx runs no detection at all on those calls.)*
+
+- (on the verification call) `You don't need to confirm it like that every time like in all my exact words`
+  *(the "confirm what you heard in their words" rule was being applied to every
+  turn, so it parroted. Narrowed to decisions only — play back an actual
+  decision in a few words, but answer ordinary replies with a "got it" and move
+  on.)*
+
+  Both fixes confirmed on a live call: it connected despite a deliberate pause
+  (AMD no longer killing it) and mentioned no breakfast or morning — "it was
+  great, much better now".
 
 - HH:MM — `ensure to clean up all the telnix assistant shit` / `the language config can completely be removed` / `does that mean it is slower... how do i get the eu one` / `how much did this cost` / `u have 4 the same shells open`
   *(cleanup + language removal are on the cutover todo; US is ~150-200ms slower from NL than EU, EU needs a Europe-region project; the test calls cost ~$3.40 internal (30¢/min from the free credit) plus a few dollars of OpenAI Realtime; stray `wrangler tail` shells killed.)*

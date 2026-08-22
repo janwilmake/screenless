@@ -153,17 +153,18 @@ export interface TexmlCallOptions {
   /** TeXML to run when the call is answered — for us, the SIP bridge to OpenAI. */
   url: string;
   statusCallback: string;
-  /** Optional AMD, so an outbound brief is not read into a voicemail. */
+  /** Optional. Set only for calls nobody is waiting on (the cron-placed
+   *  brief): omitting it means Telnyx runs no answering-machine detection at
+   *  all, so a real person can never be hung up on by a false verdict. */
   amdCallback?: string;
 }
 
 /**
  * Dials out and runs TeXML we host at `Url` when the leg answers.
  *
- * Unlike initiateAiCall (which relies on an assistant's own auto-created app
- * and its voice_url), this passes an explicit `Url` so one standing TeXML
- * application can place every OpenAI call — the per-call document it fetches is
- * the `<Dial><Sip>` bridge to OpenAI, stamped with our correlation header.
+ * An explicit `Url` is passed so one standing TeXML application can place every
+ * call — the per-call document it fetches is the `<Dial><Sip>` bridge to
+ * OpenAI, stamped with our correlation header.
  */
 export function initiateTexmlCall(
   apiKey: string,
