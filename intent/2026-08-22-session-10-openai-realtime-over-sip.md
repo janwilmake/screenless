@@ -156,5 +156,29 @@ are not retried. It is cosmetic; the fixes cost working audio.
 Cost measured on the new key: ~$0.11 over ~3.8 connected minutes ≈ **3¢/minute**
 for OpenAI Realtime, against the 30¢/minute charged — margin is intact.
 
+## The cutover
+
+- HH:MM — `outbound works perfectly except for a single beep at pickup. now we can remove the telnyx stuff and languages`
+  *(outbound proven on Realtime, so the fallback is no longer needed. Deleted:
+  the whole Telnyx AI Assistant path (createAssistant/deleteAssistant/
+  initiateAiCall/setAnchorsite/deleteTexmlApplication, the conversation +
+  transcript endpoints, `/texml/assistant`, `captureTranscript`,
+  `cleanupAssistant`), the recorded-request ring-in path (`inboundRecorded`,
+  `transcribeAudio`, the `<Record>` TeXML), the `VOICE_ENGINE` flag and its
+  branches, `ASSISTANT_MODEL`/`ASSISTANT_VOICE`, and `languages.ts` entire —
+  with language removed from settings, briefs, the `/settings` catalogue, the
+  CLI's setup picker, `screenless call --lang` and the help text. The Realtime
+  voice is natively multilingual and switches mid-sentence, so a language
+  setting is a thing that can only be wrong. telnyx.ts went from ~400 lines to
+  204 and now does only what Telnyx is still for: verify, SMS, and dialling.)*
+
+- HH:MM — `btw pls do a fun test wher it makes a fun convo with me (outbound call)`
+  *(placed as the post-cutover regression test, so the fun call doubled as the
+  proof that outbound still works with all the old code gone. First attempt was
+  hung up by answering-machine detection — a false positive worth watching.
+  Second connected: 74s, warm and funny, and it stayed inside the architectural
+  rule while joking about it — "I'll just keep hanging out in the phone line,
+  quietly not taking any actions".)*
+
 - HH:MM — `ensure to clean up all the telnix assistant shit` / `the language config can completely be removed` / `does that mean it is slower... how do i get the eu one` / `how much did this cost` / `u have 4 the same shells open`
   *(cleanup + language removal are on the cutover todo; US is ~150-200ms slower from NL than EU, EU needs a Europe-region project; the test calls cost ~$3.40 internal (30¢/min from the free credit) plus a few dollars of OpenAI Realtime; stray `wrangler tail` shells killed.)*

@@ -38,19 +38,9 @@
     "TELNYX_FROM_NUMBER": "+31850835195",
 
     // Region each call's media is anchored to. Telnyx's EU GPUs are co-located
-    // with the telephony PoPs in Amsterdam, which is the point of using Telnyx
-    // for Dutch calls at all. Applied per call to the assistant's own TeXML
-    // app, which would otherwise default to "Latency".
+    // with the telephony PoPs in Amsterdam. Set on the TeXML application that
+    // carries every call.
     "TELNYX_ANCHORSITE": "Amsterdam, Netherlands",
-
-    // LLM driving the conversation. Telnyx hosts several; Haiku is fast and
-    // cheap, which matters because time-to-first-token is the largest single
-    // slice of per-turn latency.
-    "ASSISTANT_MODEL": "anthropic/claude-haiku-4-5",
-
-    // Normally empty: the voice follows the caller's chosen language, from the
-    // table in src/languages.ts. Set this only to force one voice everywhere.
-    "ASSISTANT_VOICE": "",
 
     // Worldwide. The real spend guard is BLOCKED_PREFIXES in src/util.ts,
     // which blocks satellite and SMS-pumping ranges regardless of this value.
@@ -86,12 +76,9 @@
     // org, ever — removing and re-adding a member never mints a second one.
     "FREE_CREDIT_CENTS": "1000",
 
-    // --- OpenAI Realtime: the conversation and the voice. Telnyx still does the
-    // telephony and bridges the leg to OpenAI over SIP; only the assistant moved.
-    //
-    // "openai" runs briefs and ring-ins through OpenAI Realtime; "telnyx" keeps
-    // the old Telnyx AI Assistant. The cutover is this flip, per path.
-    "VOICE_ENGINE": "openai",
+    // --- OpenAI Realtime runs the conversation and the voice, for both
+    // outbound briefs and ring-ins. Telnyx still owns the telephony and bridges
+    // the answered leg here over SIP.
     // Project id in the SIP address sip:<id>@<host>. From the OpenAI
     // dashboard; non-secret.
     "OPENAI_PROJECT_ID": "proj_5gS42My5zyUg993fkLpZK2kM",
@@ -104,11 +91,10 @@
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
     "OPENAI_VOICE": "marin",
 
-    // The standing Telnyx TeXML application outbound OpenAI calls originate
-    // through (the same one the inbound number is assigned to). Its id is in the
-    // Telnyx portal under the number's connection / TeXML application.
-    // This is the screenless-inbound app (same one the number is assigned to);
-    // it needs an Outbound Voice Profile assigned or outbound SIP dials 480.
+    // The standing Telnyx TeXML application every call runs through — the
+    // screenless-inbound app the number is assigned to. It must have an
+    // Outbound Voice Profile assigned, or the outbound SIP leg to OpenAI is
+    // refused with 480 and the caller hears nothing.
     "TELNYX_TEXML_APP_ID": "3027023992306271718"
   },
 

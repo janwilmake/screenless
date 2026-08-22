@@ -4,7 +4,6 @@ import * as billing from "./billing";
 import * as schedule from "./schedule";
 import * as db from "./db";
 import * as team from "./team";
-import { LANGUAGES, DEFAULT_LANGUAGE, isSupportedLanguage, languageOf } from "./languages";
 import { session, sign, webhookToken, safeEqual } from "./auth";
 import { scheduleMail, sweepOutbox, sendEmailCode, isEmail } from "./mail";
 import {
@@ -51,8 +50,6 @@ export interface Env {
   // vars — set in wrangler.jsonc
   TELNYX_FROM_NUMBER: string;
   TELNYX_ANCHORSITE: string;
-  ASSISTANT_MODEL: string;
-  ASSISTANT_VOICE: string;
   ALLOWED_DESTINATIONS: string;
   /** Optional. Lets the welcome SMS send from a number not already bound to a
    *  Telnyx messaging profile. Omit when the from-number carries its own. */
@@ -72,13 +69,12 @@ export interface Env {
   /** What a fresh org starts with, in cents. The free plan. */
   FREE_CREDIT_CENTS: string;
 
-  // vars — OpenAI Realtime (the conversation + voice; Telnyx still does telephony)
-  /** "openai" routes the conversation through OpenAI Realtime over SIP;
-   *  "telnyx" keeps the Telnyx AI Assistant. Lets the cutover be a flip. */
-  VOICE_ENGINE: string;
+  // vars — OpenAI Realtime: the conversation and the voice. Telnyx still does
+  // the telephony and bridges the answered leg here over SIP.
   /** Project id in the SIP address `sip:<id>@<host>`. Non-secret. */
   OPENAI_PROJECT_ID: string;
-  /** SIP host, EU to match the Amsterdam anchorsite. */
+  /** SIP host. Must match the project's region (US unless the project has EU
+   *  data residency, which is gated). */
   OPENAI_SIP_HOST: string;
   /** The Realtime model, e.g. "gpt-realtime-2.1". */
   OPENAI_REALTIME_MODEL: string;
@@ -251,54 +247,7 @@ function withNextCall(settings: schedule.Settings, env: Env) {
     ...settings,
     nextCallAt: schedule.nextCallTime(settings),
     inboundNumber: env.TELNYX_FROM_NUMBER,
-    // Sent so the CLI never hard-codes a language list that can drift from
-    // what the Worker will actually accept.
-    languages: LANGUAGES.map((l) => ({ code: l.code, label: l.label })),
   };
-}
-
-/**
- * Tears down the per-call assistant and the TeXML app Telnyx created with it.
- * Best-effort: a failure here must never surface to the caller, but skipping
- * the app leaves one orphan per call. A recorded request has neither.
- */
-async function cleanupAssistant(env: Env, record: CallRecord): Promise<void> {
-  if (record.assistantId) {
-    await telnyx.deleteAssistant(env.TELNYX_API_KEY, record.assistantId).catch(() => {});
-  }
-  if (record.texmlAppId) {
-    await telnyx.deleteTexmlApplication(env.TELNYX_API_KEY, record.texmlAppId).catch(() => {});
-  }
-}
-
-/**
- * Copies the transcript into our own record, then deletes it at Telnyx.
- *
- * Order matters and is the whole point: read, store, delete. Deleting first
- * would honour the retention promise by destroying the thing the caller came
- * for. Best-effort throughout — a transcript we failed to copy is worth more
- * than a call that errors after the fact.
- */
-async function captureTranscript(env: Env, callId: string, record: CallRecord): Promise<void> {
-  if (!record.assistantId) return; // a recorded request carries its own text
-  try {
-    const conversationId =
-      record.conversationId ??
-      (await telnyx.findConversationByAssistant(env.TELNYX_API_KEY, record.assistantId)) ??
-      undefined;
-    if (!conversationId) return;
-
-    const lines = await telnyx.getTranscript(env.TELNYX_API_KEY, conversationId);
-    record.transcript = lines
-      .filter((m) => m.text && (m.role === "user" || m.role === "assistant"))
-      .map((m) => ({ role: m.role, text: m.text ?? "", at: m.sent_at ?? m.created_at }));
-    record.conversationId = conversationId;
-    await saveCall(env, callId, record);
-
-    await telnyx.deleteConversation(env.TELNYX_API_KEY, conversationId).catch(() => {});
-  } catch (err) {
-    console.error("transcript capture failed", callId, (err as Error).message);
-  }
 }
 
 /* ---------------------------------------------------------- end of call */
@@ -322,10 +271,6 @@ async function afterCallEnded(env: Env, callId: string, record: CallRecord): Pro
   // Nothing to enqueue: the team's queue is a query over calls, and this call
   // already carries its `queued` flag.
 }
-
-type Lang = string;
-
-const asLang = (v: unknown): Lang => (isSupportedLanguage(v) ? v : DEFAULT_LANGUAGE);
 
 /**
  * Everything the assistant is told, from the brief the loop wrote.
@@ -410,17 +355,20 @@ const openaiBridgeXml = (env: Env, callId: string): string =>
 
 /**
  * The OpenAI-Realtime twin of startCall: Telnyx still dials the user, but the
- * answered leg is bridged over SIP to OpenAI instead of a Telnyx assistant. The
- * brief is parked in the stash for the incoming-call webhook to read; the
- * transcript is captured by the Durable Object. No per-call assistant, so
- * captureTranscript and cleanupAssistant are no-ops on this record.
+ * answered leg is bridged over SIP to OpenAI Realtime, which runs the
+ * conversation and the voice. The brief is parked in the stash for the
+ * incoming-call webhook to read, and the transcript is captured live by the
+ * per-call Durable Object.
+ *
+ * Shared by the CLI's blocking `screenless call` and by the cron that places
+ * parked briefs, so a scheduled call and an on-demand one are the same call.
  */
-async function startCallOpenAI(
+async function startCall(
   env: Env,
   phone: string,
   prompt: string,
   origin: string,
-  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string },
+  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   if (!env.TELNYX_TEXML_APP_ID)
     return { ok: false, status: 503, error: "TELNYX_TEXML_APP_ID not set" };
@@ -471,84 +419,6 @@ async function startCallOpenAI(
   return { ok: true, callId };
 }
 
-/**
- * Creates the per-call assistant and dials out.
- *
- * Shared by the CLI's blocking `screenless call` and by the cron that places
- * parked briefs, so a scheduled call and an on-demand one are the same call.
- */
-async function startCall(
-  env: Env,
-  phone: string,
-  prompt: string,
-  lang: Lang,
-  origin: string,
-  opts: { userId?: string; orgId?: string; queued?: boolean; initiatedBy?: string } = {},
-): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
-  // The conversation engine is a flip: OpenAI Realtime over SIP, or the Telnyx
-  // assistant. Both dial through Telnyx; only the answered leg differs.
-  if (env.VOICE_ENGINE === "openai") return startCallOpenAI(env, phone, prompt, origin, opts);
-
-  const callId = crypto.randomUUID();
-  const wToken = await webhookToken(callId, env.SESSION_SECRET);
-
-  const assistant = await telnyx.createAssistant(env.TELNYX_API_KEY, `screenless-${callId}`, {
-    instructions: instructionsFor(prompt),
-    model: env.ASSISTANT_MODEL,
-    voice: env.ASSISTANT_VOICE || languageOf(lang).voice,
-    language: lang,
-    greeting: languageOf(lang).greeting,
-  });
-
-  // Calls MUST go through the assistant's own auto-created TeXML app: its
-  // voice_url points at /ai/assistants/{id}/texml, which is what actually
-  // drives the conversation.
-  const connectionId = assistant.telephony_settings?.default_texml_app_id;
-  if (!connectionId) {
-    await telnyx.deleteAssistant(env.TELNYX_API_KEY, assistant.id).catch(() => {});
-    return { ok: false, status: 502, error: "Telnyx did not return a TeXML app for the assistant" };
-  }
-
-  // That app defaults to anchorsite "Latency". Pin it to the configured region
-  // so media anchors where we want it — non-fatal if it fails, since a call
-  // from the wrong PoP beats no call at all.
-  await telnyx.setAnchorsite(env.TELNYX_API_KEY, connectionId, env.TELNYX_ANCHORSITE).catch(() => {});
-
-  const record: CallRecord = {
-    phone,
-    userId: opts.userId,
-    orgId: opts.orgId,
-    // A self-call's initiator is the callee; a dispatch names the dispatcher.
-    initiatedBy: opts.initiatedBy ?? opts.userId,
-    assistantId: assistant.id,
-    texmlAppId: connectionId,
-    status: "initiated",
-    kind: "brief",
-    queued: opts.queued,
-    createdAt: Date.now(),
-  };
-  await saveCall(env, callId, record);
-
-  try {
-    await telnyx.initiateAiCall(env.TELNYX_API_KEY, connectionId, {
-      from: env.TELNYX_FROM_NUMBER,
-      // The verified phone, never a value from a request body. This is the
-      // property that keeps the PoC from being a dialer.
-      to: phone,
-      assistantId: assistant.id,
-      statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
-      conversationCallback: `${origin}/webhooks/${callId}/conversation?t=${wToken}`,
-      amdCallback: `${origin}/webhooks/${callId}/amd?t=${wToken}`,
-    });
-  } catch (err) {
-    await cleanupAssistant(env, record);
-    await db.deleteCall(env, callId);
-    return { ok: false, status: 502, error: `failed to place call: ${(err as Error).message}` };
-  }
-
-  return { ok: true, callId };
-}
-
 async function placeCall(req: Request, env: Env, origin: string): Promise<Response> {
   const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated — run `screenless setup`");
@@ -556,9 +426,8 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   const gate = await requireCredit(env, s.phone);
   if (gate instanceof Response) return gate;
 
-  const { prompt, language, at, hold, to } = (await req.json().catch(() => ({}))) as {
+  const { prompt, at, hold, to } = (await req.json().catch(() => ({}))) as {
     prompt?: string;
-    language?: string;
     at?: string;
     hold?: boolean;
     /** Teammate targets: emails, phones, or ["all"]. Absent means call yourself. */
@@ -570,8 +439,8 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   // pasted diff, not against a real brief.
   if (prompt.length > 12000) return fail(400, "prompt too long (max 12000 chars)");
 
-  const settings = await schedule.loadSettings(env, s.phone);
-  const lang = language === undefined ? asLang(settings.language) : asLang(language);
+  // The voice follows whatever language the caller speaks — the Realtime model
+  // switches on its own, so there is nothing to configure or pass down.
 
   /* ---- calling teammates: any, some, or all ---- */
 
@@ -595,7 +464,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
     const placed: Array<{ callId: string; to: string; name: string }> = [];
     const failed: Array<{ to: string; error: string }> = [];
     for (const m of members) {
-      const r = await startCall(env, m.phone!, prompt, lang, origin, {
+      const r = await startCall(env, m.phone!, prompt, origin, {
         userId: m.id,
         orgId: gate.org.id,
         queued: false,
@@ -617,12 +486,11 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   // means "my configured call time". Testing it for truth sent that case down
   // the dial-now path — the one thing a 03:00 loop must never do.
   if (at !== undefined || hold) {
-    const parked = await schedule.parkBrief(env, s.phone, { prompt, language: lang, at, hold });
+    const parked = await schedule.parkBrief(env, s.phone, { prompt, at, hold });
     if (!parked.ok) return fail(400, parked.error);
     return json({
       parked: true,
       dueAt: parked.brief.dueAt,
-      callAt: settings.callAt,
       inboundNumber: env.TELNYX_FROM_NUMBER,
     });
   }
@@ -632,7 +500,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
 
   // Not queued: this CLI process is already blocking on the transcript, so
   // handing the call to a watcher too would apply it twice.
-  const result = await startCall(env, s.phone, prompt, lang, origin, {
+  const result = await startCall(env, s.phone, prompt, origin, {
     userId: gate.user.id,
     orgId: gate.org.id,
     queued: false,
@@ -697,133 +565,29 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
 
   // OpenAI Realtime answers the ring-in and bridges over SIP. It stays quiet —
   // the caller is most likely leaving a request, not looking for a chat — and
-  // speaks only if asked. The transcript is captured by the Durable Object.
-  if (env.VOICE_ENGINE === "openai") {
-    const callId = crypto.randomUUID();
-    const record: CallRecord = {
-      phone: from,
-      userId: user.id,
-      orgId: org.id,
-      assistantId: "",
-      status: "answered",
-      inbound: true,
-      kind: "brief",
-      queued: true,
-      createdAt: Date.now(),
-    };
-    await saveCall(env, callId, record);
-    await db.stashPut(
-      env,
-      `realtime:${callId}`,
-      JSON.stringify({ instructions: INBOUND_QUIET_INSTRUCTIONS, mode: "quiet", voice: env.OPENAI_VOICE }),
-      3600,
-    );
-    return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
-  }
-
+  // speaks only if asked, becoming a normal conversation once they do. The
+  // transcript is captured live by the per-call Durable Object.
   const callId = crypto.randomUUID();
   const record: CallRecord = {
     phone: from,
     userId: user.id,
     orgId: org.id,
-    assistantId: "",
     status: "answered",
     inbound: true,
-    kind: "request",
+    kind: "brief",
     queued: true,
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
-
-  const t = await webhookToken("inbound", env.SESSION_SECRET);
-  const doneUrl = `${origin}/texml/inbound/recorded?t=${t}&amp;call=${callId}`;
-  // maxLength is the ceiling, not the intended stop: a voice note ends when
-  // the caller hangs up, presses #, or falls silent for `timeout` seconds. So
-  // it is set to the platform maximum — an hour — to be effectively no limit,
-  // rather than a 5-minute cutoff that would truncate a long briefing dump.
-  //
-  // Both callbacks, because they cover different endings. `action` fires when
-  // the recording ends inside the call — # pressed, silence, maxLength — and
-  // its response is what the caller hears next. `recordingStatusCallback` is
-  // the only one that fires on the common ending, hanging up: the action URL
-  // is deliberately never requested then (Twilio semantics, which TeXML
-  // follows), which is exactly how the first two real ring-ins produced a
-  // recording nothing ever collected.
-  return xml(
-    `<Record action="${doneUrl}" method="POST" maxLength="3600" timeout="6" finishOnKey="#" playBeep="true" recordingStatusCallback="${doneUrl}" recordingStatusCallbackMethod="POST"/>` +
-      sayXml("I did not catch anything. Goodbye.") +
-      `<Hangup/>`,
+  await db.stashPut(
+    env,
+    `realtime:${callId}`,
+    JSON.stringify({ instructions: INBOUND_QUIET_INSTRUCTIONS, mode: "quiet", voice: env.OPENAI_VOICE }),
+    3600,
   );
+  return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
 }
 
-/**
- * The recording is in: transcribe it and make it the call's transcript, so a
- * spoken request and an assistant conversation are the same shape to the
- * watcher that collects them.
- *
- * The common way to end a recording is to hang up — which means the call's
- * hangup status callback races this one and usually wins, closing the call as
- * "nothing said" before the transcription exists. So this handler is the
- * authority for request calls: it stores the recording URL first (a request
- * with audio must never be losable to a transcription hiccup), transcribes,
- * and then *upgrades* an already-closed call back to completed, re-running the
- * end-of-call work — the debit is keyed by call id and the queue dedupes, so
- * running it twice changes nothing.
- */
-async function inboundRecorded(req: Request, env: Env): Promise<Response> {
-  if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
-
-  const callId = new URL(req.url).searchParams.get("call") ?? "";
-  const record = await loadCall(env, callId);
-  if (!record) return sayHangup("Sorry, something went wrong. Goodbye.");
-
-  // Both the action and the recording-status callback point here, and a
-  // #-terminated recording triggers both. The second arrival has nothing to
-  // add.
-  if (record.requestText && record.status === "completed") {
-    return sayHangup("Got it. Your team's terminal picks this up next. Goodbye.");
-  }
-
-  const params = await inboundBody(req);
-  const recordingUrl = params.RecordingUrl ?? params.recording_url ?? "";
-  console.log(
-    "inbound recorded",
-    callId,
-    `url=${recordingUrl ? "yes" : "no"}`,
-    `duration=${params.RecordingDuration ?? "?"}`,
-    `keys=${Object.keys(params).join(",")}`,
-  );
-  if (!recordingUrl) {
-    return sayHangup("Nothing recorded. Call again whenever you are ready. Goodbye.");
-  }
-
-  record.kind = "request";
-  record.recordingUrl = recordingUrl;
-  await saveCall(env, callId, record);
-
-  let text = "";
-  try {
-    text = await telnyx.transcribeAudio(env.TELNYX_API_KEY, recordingUrl);
-  } catch (err) {
-    console.error("transcription failed", callId, (err as Error).message);
-  }
-  record.requestText =
-    text || `(the recording could not be transcribed — listen to it at ${recordingUrl})`;
-  record.transcript = [{ role: "user", text: record.requestText, at: new Date().toISOString() }];
-
-  if (record.status === "completed" || record.status === "failed") {
-    // The hangup already closed this call without its request; reopen and
-    // finish it properly now that the request exists.
-    record.status = "completed";
-    record.endedAt = record.endedAt ?? Date.now();
-    await saveCall(env, callId, record);
-    await afterCallEnded(env, callId, record);
-  } else {
-    await saveCall(env, callId, record);
-  }
-
-  return sayHangup("Got it. Your team's terminal picks this up next. Goodbye.");
-}
 
 /**
  * Closes a ring-in.
@@ -846,22 +610,14 @@ async function finishInbound(env: Env, phone: string, why: string, force = false
   // path may force it, for records that predate the flag.
   if (!record.inbound && !force) return null;
 
-  // A ring-in that never got as far as leaving a request or meeting the
-  // assistant is a hang-up during the menu: nothing to collect, nothing owed.
-  // A request whose transcription is still in flight lands here as failed
-  // too — deliberately: the recorded-callback upgrades it to completed the
-  // moment the text exists, and until then it must not reach a watcher.
-  // Substantial if a Telnyx assistant was on the line, or a request was
-  // recorded, or — for an OpenAI ring-in — the Durable Object captured any
-  // transcript. Transcript lines are written live during the call, so by the
-  // time the end arrives they are already there.
-  const substantial =
-    record.assistantId ? true : Boolean(record.requestText) || Boolean(record.transcript?.length);
+  // Substantial when anything was actually said: the Durable Object writes
+  // each transcript line live during the call, so by the time the end arrives
+  // they are already stored. A ring-in that was answered and hung up on
+  // immediately leaves nothing to collect, and costs the org nothing.
+  const substantial = Boolean(record.transcript?.length) || Boolean(record.requestText);
   record.status = substantial ? "completed" : "failed";
   record.endedAt = Date.now();
   await saveCall(env, callId, record);
-  await captureTranscript(env, callId, record);
-  await cleanupAssistant(env, record);
   await afterCallEnded(env, callId, record);
   console.log("inbound call finished", callId, why);
   return callId;
@@ -1139,7 +895,6 @@ async function handleWebhook(
           .hangupTexmlCall(env.TELNYX_API_KEY, accountSid, callSid)
           .catch((err) => console.error("voicemail hangup failed", callId, (err as Error).message));
       }
-      await cleanupAssistant(env, record);
     }
     return json({ ok: true });
   }
@@ -1174,11 +929,9 @@ async function handleWebhook(
 
   await saveCall(env, callId, record);
 
-  // Once the call is done and we have the transcript handle, the per-call
-  // assistant has served its purpose — and the org gets billed, the queue fed.
+  // The call is over: bill the org and feed the queue. The transcript was
+  // written live by the Durable Object, so there is nothing to fetch here.
   if (record.status === "completed" || record.status === "failed") {
-    if (record.status === "completed") await captureTranscript(env, callId, record);
-    await cleanupAssistant(env, record);
     await afterCallEnded(env, callId, record);
   }
 
@@ -1260,30 +1013,10 @@ export default {
        * placed through /texml/calls — which works — instead of
        * /texml/ai_calls, which connects and then sits silent.
        */
-      if (path === "/texml/assistant") {
-        const id = url.searchParams.get("id") ?? "";
-        if (!/^assistant-[\w-]+$/.test(id)) return fail(400, "bad assistant id");
-        // ?say=1 prepends a plain <Say> before connecting the assistant. It is
-        // a diagnostic: hearing the Say and then silence proves the audio path
-        // works on that exact leg and isolates the fault to the assistant,
-        // inside a single call rather than across two.
-        const say =
-          url.searchParams.get("say") === "1"
-            ? `<Say voice="female" language="en-US">Test line. If you can hear this, audio works. Connecting the assistant now.</Say>`
-            : "";
-        return new Response(
-          `<?xml version="1.0" encoding="UTF-8"?><Response>${say}<Connect><AIAssistant id="${id}"></AIAssistant></Connect></Response>`,
-          { headers: { "Content-Type": "application/xml" } },
-        );
-      }
-
       // Inbound: someone ringing the number back. Telnyx has been seen to use
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
         return await answerInbound(req, env, origin);
-      if (path === "/texml/inbound/recorded" && method === "POST")
-        return await inboundRecorded(req, env);
-
       // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
       // to OpenAI, stamped with this call's correlation header.
       const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);
@@ -1632,7 +1365,7 @@ async function sweepBriefs(env: Env): Promise<void> {
 
     // Queued: the loop that parked this brief may be asleep when the call
     // ends, and the team's watcher is the thing that collects it.
-    const result = await startCall(env, phone, brief.prompt, asLang(brief.language), origin, {
+    const result = await startCall(env, phone, brief.prompt, origin, {
       userId: user.id,
       orgId: org.id,
       queued: true,

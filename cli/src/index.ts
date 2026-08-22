@@ -257,21 +257,13 @@ async function setup(args: string[]): Promise<void> {
       return;
     }
 
-    // Language before the call is ever placed, because it decides the voice as
-    // well as the transcription.
-    const catalogue = await api<Settings>(base, "/settings", { token: result.token });
-    const langs = catalogue.languages ?? [{ code: "en", label: "English" }];
-    console.log(`\n${c.bold("Language for the call")} ${c.dim("(1 = English)")}`);
-    for (const [i, l] of langs.entries()) console.log(`  ${String(i + 1).padStart(2)}. ${l.label}`);
-    const picked = (await rl.question(`Choose ${c.dim("[1]")}: `)).trim();
-    const chosen = langs[(Number(picked) || 1) - 1] ?? langs[0];
-
+    // No language to choose any more: the voice understands and answers in
+    // whatever language the caller speaks, and switches mid-sentence.
     await api<Settings>(base, "/settings", {
       method: "POST",
-      body: { acceptTerms: true, language: chosen.code },
+      body: { acceptTerms: true },
       token: result.token,
     });
-    console.log(`${c.green("✓")} ${chosen.label}\n`);
 
     // The paper is free and the address doubles as the team-page sign-in, so
     // it is confirmed before anything that costs credit.
@@ -709,9 +701,7 @@ interface Settings {
   callAt: string;
   timezone: string;
   callEnabled: boolean;
-  language: string;
   termsAcceptedAt: number;
-  languages?: Array<{ code: string; label: string }>;
   /** Next actual ring, ms since epoch. */
   nextCallAt: number;
   /** The team line — ring it any time to leave a spoken request. */
@@ -729,8 +719,6 @@ function showSettings(s: Settings): void {
   console.log(
     `${c.bold("next call")}   ${s.callEnabled ? `${when.toLocaleString()} ${c.dim(`(${away})`)}` : c.red("paused")}`,
   );
-  const lang = s.languages?.find((l) => l.code === s.language);
-  console.log(`${c.bold("language")}    ${lang?.label ?? s.language}`);
   console.log(`${c.bold("team line")}   ${s.inboundNumber} ${c.dim("— ring it, talk after the beep, hang up")}`);
 }
 
@@ -785,12 +773,8 @@ async function call(args: string[]): Promise<void> {
   if (cfg.expiresAt * 1000 < Date.now()) die("session expired — run `screenless setup` again");
 
   const prompt = args.find((a) => !a.startsWith("--"));
-  if (!prompt) die('usage: screenless call "your prompt here" [--to <email|all>] [--at HH:MM] [--lang en|nl|multi]');
+  if (!prompt) die('usage: screenless call "your prompt here" [--to <email|all>] [--at HH:MM]');
 
-  // No default: unset means the account's language, which the Worker holds.
-  // Defaulting to "en" here silently overrode a Dutch account on every call
-  // the loop parked, because the loop never passes --lang.
-  const language = argFlag(args, "--lang");
   const asJson = args.includes("--json");
   const at = argFlag(args, "--at");
   const hold = args.includes("--hold");
@@ -808,7 +792,7 @@ async function call(args: string[]): Promise<void> {
       failed: Array<{ to: string; error: string }>;
     }>(cfg.apiUrl, "/calls", {
       method: "POST",
-      body: { prompt, ...(language === undefined ? {} : { language }), to },
+      body: { prompt, to },
       token: cfg.token,
     });
 
@@ -863,7 +847,7 @@ async function call(args: string[]): Promise<void> {
       callId?: string;
     }>(cfg.apiUrl, "/calls", {
       method: "POST",
-      body: { prompt, ...(language === undefined ? {} : { language }), at, hold },
+      body: { prompt, at, hold },
       token: cfg.token,
     });
 
@@ -891,7 +875,7 @@ async function call(args: string[]): Promise<void> {
 
   const { callId } = await api<{ callId: string }>(cfg.apiUrl, "/calls", {
     method: "POST",
-    body: { prompt, ...(language === undefined ? {} : { language }) },
+    body: { prompt },
     token: cfg.token,
   });
 
@@ -1184,9 +1168,6 @@ ${c.bold("Call options")}
   --at [HH:MM]         park the brief instead of dialling now. Bare --at uses
                        your configured call time
   --hold               park it with no time at all — it waits until you ring in
-  --lang <code>        override the account language for this call. One of
-                       en nl fr de hi it ja pt ru es, or "multi" to follow
-                       code-switching mid-sentence
   --json               emit the raw result instead of a formatted transcript
 
   With no --to, the call is to your own verified number. Teammate calls only

@@ -480,8 +480,10 @@ export interface CallRecord {
   /** Who placed the call — the initiator. Equals userId for self-calls and
    *  ring-ins; the dispatcher for a teammate call, who may read it back. */
   initiatedBy?: string;
-  /** Empty for a recorded-request call — no assistant was ever on the line. */
-  assistantId: string;
+  /** Legacy: the per-call Telnyx assistant, back when Telnyx ran the
+   *  conversation. Nothing sets it since the move to OpenAI Realtime; kept so
+   *  call records written before the cutover still load. */
+  assistantId?: string;
   transcript?: TranscriptLine[];
   texmlAppId?: string;
   status: "initiated" | "ringing" | "answered" | "completed" | "failed";
@@ -539,7 +541,7 @@ export async function putCall(env: Env, id: string, r: CallRecord): Promise<void
     r.userId ?? null,
     r.initiatedBy ?? null,
     r.phone,
-    r.assistantId,
+    r.assistantId ?? null,
     r.texmlAppId ?? null,
     r.status,
     r.voicemail ? 1 : 0,

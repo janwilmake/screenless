@@ -2,7 +2,7 @@
  * Per-person settings, and the brief the morning call is placed from.
  *
  * Settings are columns on the user row — when the call rings, in which zone,
- * in what language, where the paper mails. They used to be a KV blob keyed by
+ * where the paper mails. They used to be a KV blob keyed by
  * phone; folding them into `users` removed a second identity store and the
  * email-sync glue between the two.
  *
@@ -17,7 +17,6 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import { isValidTimezone, parseClock, nextOccurrence } from "./time";
-import { DEFAULT_LANGUAGE, isSupportedLanguage } from "./languages";
 
 /**
  * How long a brief stays interesting. Two days covers a missed call and a
@@ -30,7 +29,6 @@ export interface Settings {
   callAt: string;
   timezone: string;
   callEnabled: boolean;
-  language: string;
   termsAcceptedAt: number;
   email: string;
   emailVerifiedAt: number;
@@ -42,7 +40,6 @@ export function settingsOf(user: db.User): Settings {
     callAt: user.call_at,
     timezone: user.timezone,
     callEnabled: Boolean(user.call_enabled),
-    language: user.language,
     termsAcceptedAt: user.terms_accepted_at,
     email: user.email ?? "",
     emailVerifiedAt: user.email_verified_at,
@@ -60,7 +57,6 @@ export interface SettingsPatch {
   callAt?: unknown;
   timezone?: unknown;
   callEnabled?: unknown;
-  language?: unknown;
   acceptTerms?: unknown;
   email?: unknown;
   emailVerifiedAt?: unknown;
@@ -94,11 +90,6 @@ export async function updateSettings(
     binds.push(patch.timezone);
   }
 
-  if (patch.language !== undefined) {
-    if (!isSupportedLanguage(patch.language)) return { ok: false, error: "unsupported language" };
-    sets.push("language = ?");
-    binds.push(patch.language as string);
-  }
 
   // Set together by /email/verify and nowhere else, so an address can never be
   // marked confirmed without a code having been redeemed for it. Unique across
@@ -155,7 +146,6 @@ export function nextCallTime(settings: Settings, from: number = Date.now()): num
 
 export interface Brief {
   prompt: string;
-  language: string;
   /** When to dial, ms since epoch. Null means "held, dial only on request". */
   dueAt: number | null;
   status: "parked" | "placed";
@@ -172,7 +162,6 @@ export async function loadBrief(env: Env, phone: string): Promise<Brief | null> 
   if (!row) return null;
   return {
     prompt: String(row.prompt),
-    language: String(row.language),
     dueAt: row.due_at === null ? null : Number(row.due_at),
     status: row.status as Brief["status"],
     attempts: Number(row.attempts),
@@ -183,12 +172,11 @@ export async function loadBrief(env: Env, phone: string): Promise<Brief | null> 
 
 export async function saveBrief(env: Env, phone: string, brief: Brief): Promise<void> {
   await env.DB.prepare(
-    `INSERT OR REPLACE INTO briefs (phone, prompt, language, due_at, status, attempts, call_id, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO briefs (phone, prompt, due_at, status, attempts, call_id, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     phone,
     brief.prompt,
-    brief.language,
     brief.dueAt,
     brief.status,
     brief.attempts,
@@ -213,7 +201,7 @@ export async function clearBrief(env: Env, phone: string): Promise<void> {
 export async function parkBrief(
   env: Env,
   phone: string,
-  input: { prompt: string; language: string; at?: string; hold?: boolean },
+  input: { prompt: string; at?: string; hold?: boolean },
 ): Promise<{ ok: true; brief: Brief } | { ok: false; error: string }> {
   const settings = await loadSettings(env, phone);
 
@@ -230,7 +218,6 @@ export async function parkBrief(
 
   const brief: Brief = {
     prompt: input.prompt,
-    language: input.language,
     dueAt,
     status: "parked",
     attempts: 0,
