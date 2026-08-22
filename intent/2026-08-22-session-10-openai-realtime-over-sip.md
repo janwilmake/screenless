@@ -180,5 +180,21 @@ for OpenAI Realtime, against the 30¢/minute charged — margin is intact.
   rule while joking about it — "I'll just keep hanging out in the phone line,
   quietly not taking any actions".)*
 
+- HH:MM — `great. just 1 more ask: is there a clearer voice with realtime 2.1 that's just as fast?`
+  *(yes — Cedar. Voice does not affect latency at all: speed is the model
+  generating audio tokens, not which voice renders them. Cedar and Marin are the
+  two newest Realtime-exclusive voices and the only ones worth considering; the
+  older eight (alloy, ash, ballad, coral, echo, sage, shimmer, verse) are a
+  generation behind and several are unsupported on realtime models. Cedar reads
+  crisper where Marin is warmer — usually what "clearer" means on a phone.
+  Switched and A/B'd by ear on a real call reading numbers and technical words
+  ("pull request 1284 was merged at 3:45"), which is where a phone line blurs.
+  Jan picked Cedar; it is live.)*
+
+  Also seen twice tonight: **answering-machine detection false-positived on
+  outbound calls** — two of four rang, were answered by a human, and were hung
+  up as "voicemail". Worth watching; if it recurs, the AMD verdict handling in
+  the amd webhook is the place to loosen.
+
 - HH:MM — `ensure to clean up all the telnix assistant shit` / `the language config can completely be removed` / `does that mean it is slower... how do i get the eu one` / `how much did this cost` / `u have 4 the same shells open`
   *(cleanup + language removal are on the cutover todo; US is ~150-200ms slower from NL than EU, EU needs a Europe-region project; the test calls cost ~$3.40 internal (30¢/min from the free credit) plus a few dollars of OpenAI Realtime; stray `wrangler tail` shells killed.)*

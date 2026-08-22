@@ -87,9 +87,12 @@
     // (sip-eu.api.openai.com + eu.api.openai.com) only works for a project
     // created with Europe data residency — a later optimisation.
     "OPENAI_SIP_HOST": "sip.api.openai.com",
-    // The Realtime model and voice. Marin is one of the two newest voices.
+    // The Realtime model and voice. Cedar and Marin are the two newest voices
+    // and the only ones worth using; the older eight are a generation behind.
+    // Cedar reads crisper than Marin, which carries better down a phone line.
+    // Voice does not affect latency — that is the model, not the rendering.
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
-    "OPENAI_VOICE": "marin",
+    "OPENAI_VOICE": "cedar",
 
     // The standing Telnyx TeXML application every call runs through — the
     // screenless-inbound app the number is assigned to. It must have an
