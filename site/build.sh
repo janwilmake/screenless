@@ -36,12 +36,13 @@ cp "$here"/src/* "$out"/
 # installer fetches.
 cp "$root"/skills/screenless/SKILL.md "$root"/skills/screenless/APPLY.md "$out"/
 cp "$root"/skills/call-when-afk/SKILL.md "$out"/CALL-WHEN-AFK.md
+cp "$root"/skills/morning-pr-review/SKILL.md "$out"/MORNING-PR-REVIEW.md
 
-# The skill calls press/bin/*.mjs by absolute path under ~/.claude/skills/
-# screenless/, so the toolkit ships with it. The example edition rides along:
-# the skill tells the model to read it before writing its first one.
+# The morning-pr-review skill calls press/bin/*.mjs by absolute path under
+# ~/.claude/skills/morning-pr-review/, so the toolkit ships with it. The example
+# edition rides along: the skill reads it before writing its first one.
 COPYFILE_DISABLE=1 tar -czf "$out/press.tar.gz" \
-  -C "$root/skills/screenless/press" bin lib templates example README.md
+  -C "$root/skills/morning-pr-review/press" bin lib templates example README.md
 
 npm --prefix "$root/cli" run build --silent
 COPYFILE_DISABLE=1 tar -czf "$out/screenless.tar.gz" \

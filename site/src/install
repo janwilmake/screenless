@@ -4,11 +4,11 @@
 #
 #   curl -fsSL https://screenless.sh/install | bash
 #
-# Drops the CLI in ~/.screenless, puts a launcher on PATH, installs the loop
-# skill for Claude Code, and — when there is a terminal to talk to — goes
-# straight into `screenless setup`, which verifies your phone number and starts
-# the trial. One command, from nothing to a working install; the loop itself is
-# armed afterwards, from a Claude Code session, with `/screenless start`.
+# Drops the CLI in ~/.screenless, puts a launcher on PATH, installs the skills
+# into every coding agent it finds, and — when there is a terminal to talk to —
+# goes straight into `screenless setup`, which verifies your phone number. One
+# command, from nothing to a working install; the line itself is armed
+# afterwards, in your agent, with `/screenless`.
 #
 # Deliberately does not install Node. A tool that silently mutates your
 # toolchain is a tool you cannot reason about later; if Node is missing we say
@@ -72,7 +72,7 @@ fi
 # ------------------------------------------------------------------ install
 
 say ""
-say "${bold}screenless${reset} ${dim}— review your agents' overnight work by phone${reset}"
+say "${bold}screenless${reset} ${dim}— a phone line for your team and its coding agents${reset}"
 say ""
 
 tmp="$(mktemp -d)"
@@ -87,8 +87,9 @@ fetch "$BASE_URL/screenless.tar.gz" "$tmp/screenless.tar.gz" \
 mkdir -p "$tmp/skill"
 fetch "$BASE_URL/SKILL.md" "$tmp/skill/SKILL.md" 2>/dev/null || rm -f "$tmp/skill/SKILL.md"
 fetch "$BASE_URL/APPLY.md" "$tmp/skill/APPLY.md" 2>/dev/null || rm -f "$tmp/skill/APPLY.md"
-fetch "$BASE_URL/press.tar.gz" "$tmp/press.tar.gz" 2>/dev/null || rm -f "$tmp/press.tar.gz"
 fetch "$BASE_URL/CALL-WHEN-AFK.md" "$tmp/skill/CALL-WHEN-AFK.md" 2>/dev/null || rm -f "$tmp/skill/CALL-WHEN-AFK.md"
+fetch "$BASE_URL/MORNING-PR-REVIEW.md" "$tmp/skill/MORNING-PR-REVIEW.md" 2>/dev/null || rm -f "$tmp/skill/MORNING-PR-REVIEW.md"
+fetch "$BASE_URL/press.tar.gz" "$tmp/press.tar.gz" 2>/dev/null || rm -f "$tmp/press.tar.gz"
 
 # Only lib/ is replaced. The config file next to it holds a session token and
 # a verified phone number, and reinstalling is not a reason to lose either.
@@ -122,17 +123,22 @@ ok "installed to ${dim}$INSTALL_DIR${reset}"
 install_skills() { # $1 = an agent's global skills dir
   local root="$1"
   [ -f "$tmp/skill/SKILL.md" ] || return 0
-  rm -rf "$root/screenless" "$root/call-when-afk"
+  rm -rf "$root/screenless" "$root/call-when-afk" "$root/morning-pr-review"
   mkdir -p "$root/screenless" "$root/call-when-afk"
+  # screenless — the watcher, the core skill
   cp "$tmp/skill/SKILL.md" "$root/screenless/SKILL.md"
   [ -f "$tmp/skill/APPLY.md" ] && cp "$tmp/skill/APPLY.md" "$root/screenless/APPLY.md"
+  # call-when-afk
   [ -f "$tmp/skill/CALL-WHEN-AFK.md" ] && cp "$tmp/skill/CALL-WHEN-AFK.md" "$root/call-when-afk/SKILL.md"
-  # The collector and renderer the paper skill calls, at a path it spells out.
-  # Only needed where the loop actually runs (Claude Code), but harmless
-  # elsewhere and simpler to ship uniformly.
-  if [ -f "$tmp/press.tar.gz" ]; then
-    mkdir -p "$root/screenless/press"
-    tar -xzf "$tmp/press.tar.gz" -C "$root/screenless/press" 2>/dev/null || rm -rf "$root/screenless/press"
+  # morning-pr-review — the optional nightly loop, with its press toolkit at the
+  # path the skill spells out.
+  if [ -f "$tmp/skill/MORNING-PR-REVIEW.md" ]; then
+    mkdir -p "$root/morning-pr-review"
+    cp "$tmp/skill/MORNING-PR-REVIEW.md" "$root/morning-pr-review/SKILL.md"
+    if [ -f "$tmp/press.tar.gz" ]; then
+      mkdir -p "$root/morning-pr-review/press"
+      tar -xzf "$tmp/press.tar.gz" -C "$root/morning-pr-review/press" 2>/dev/null || rm -rf "$root/morning-pr-review/press"
+    fi
   fi
 }
 
@@ -161,11 +167,11 @@ fi
 
 if [ -n "$installed_agents" ]; then
   agents_list="$(printf '%s' "$installed_agents" | sed 's/,$//; s/^ //; s/,/,/g')"
-  ok "screenless + call-when-afk skills installed for:${dim}$agents_list${reset}"
+  ok "skills installed for:${dim}$agents_list${reset}"
   say "  ${dim}other agents? run:${reset} npx skills add janwilmake/screenless"
 fi
 if [ "$have_claude" -eq 0 ]; then
-  say "  ${dim}Claude Code runs the paper and the brief — install it: https://claude.com/claude-code${reset}"
+  say "  ${dim}no coding agent found — screenless arms inside one (e.g. Claude Code): https://claude.com/claude-code${reset}"
 fi
 
 # ------------------------------------------------------- old scheduler
