@@ -9,7 +9,7 @@ This is the return leg. The call collected decisions and changed nothing; this
 is where they take effect, on the user's own machine, with the access the user
 already granted.
 
-Run it after a call. The armed loop gets here by itself — `screenless wait`
+Run it after a call. The armed watcher gets here by itself — `screenless watch`
 prints `WORK <callId>` within a minute of the call ending — but it is equally
 valid to run by hand.
 

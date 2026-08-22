@@ -193,4 +193,8 @@ a wrongly-typed number can never receive its own verification text.
   *(the leftover sweep missed some: the docs/ and rounds/ folders were still
   present, and telnyx-bug/ — a bug reproduction now resolved and described in
   SELFHOST.md — can go too. All removed, with the references that pointed at
-  telnyx-bug/ rewritten in place.)*
+  telnyx-bug/ rewritten in place. A deeper grep then caught one more: APPLY.md
+  (the watcher's return leg) said `screenless wait` prints `WORK <callId>`,
+  mixing the nightly gate with the watcher — corrected to `screenless watch`.
+  Installer's real-`npx skills` wrap verified in a sandbox HOME; site rebuilt
+  and worker redeployed so the served installer and skill flat files are current.)*
