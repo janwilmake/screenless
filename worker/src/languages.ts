@@ -13,7 +13,7 @@
  * "only 2 TTS records, neither associated with a call session". Every
  * Telnyx-hosted voice we tried was silent, including the default they pick when
  * `voice_settings` is omitted; the first third-party voice tried worked
- * immediately. See telnyx-bug/ for the reproduction.
+ * immediately — third-party voices (AWS Polly / Azure Neural) fixed it.
  *
  * Latency was measured against /v2/text-to-speech/speech, three runs per voice,
  * one sentence. English is a clear win for AWS: Joanna-Neural ~300ms against

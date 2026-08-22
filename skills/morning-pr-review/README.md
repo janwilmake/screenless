@@ -1,4 +1,4 @@
-# loop — the armed session
+# morning-pr-review — the armed nightly loop
 
 One skill, armed once in a Claude Code session, producing both surfaces from a
 single reading of the repo — the paper, and the morning call's brief — and
@@ -24,14 +24,14 @@ toolkit was never installed anywhere the skill could find it.
 A session the user already has open has none of those problems — it inherits
 the terminal's file access, its permission mode, its MCPs, its browser and its
 subscription. So the loop lives there, the way the orchestrator does: arm it
-with `/screenless start` and leave the window open. The one property that
+with `/morning-pr-review start` and leave the window open. The one property that
 costs is that nothing happens with the session closed; in practice, nothing
 happened with the scheduler either.
 
 ## How it waits
 
 ```
-/screenless start
+/morning-pr-review start
 ```
 
 runs one tick, then arms `screenless wait` as a background command. The waiter
@@ -87,7 +87,7 @@ screenless init            # in each repo you want a paper about
 Then, in Claude Code, in any of those repos:
 
 ```
-/screenless start
+/morning-pr-review start
 ```
 
 `/screenless status` says what the next probe would do; `/screenless stop`

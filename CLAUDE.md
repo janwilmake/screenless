@@ -65,25 +65,29 @@ each message should explain why the change was wanted, not just what moved.
 
 ## What this repo is
 
-A morning phone call and a nightly printed paper for engineers whose coding
-agents open pull requests overnight. Five parts:
+A phone line for a team and its coding agents: a shared number an agent calls
+when it hits a decision only a person can make, wired to the terminals the team
+runs. The morning call and the nightly paper are now just two of the branded
+skills built on top. Five parts:
 
-- `worker/` — Cloudflare Worker: telephony, phone verification, Stripe billing,
-  and the parked briefs the morning call is placed from.
+- `worker/` — Cloudflare Worker: telephony, phone verification, teams and
+  invites, per-org pay-as-you-go billing, the routing that lands a call in a
+  watching terminal, and the parked briefs the morning skill is placed from.
 - `cli/` — the `screenless` CLI, published as a tarball the installer fetches.
 - `site/` — `src/` is hand-written (pages, installer); `public/` is generated
   in full by `build.sh` and gitignored. Ship with `npm run deploy` in `site/`.
-- `skills/screenless/press/` — the PDF toolkit the paper skill calls:
-  `collect.mjs` for deterministic facts, the chart library, the print
-  stylesheet, the renderer. It lives inside the skill so the skill is
-  self-contained and `npx skills add` installs it whole.
 - `skills/` — the branded skills, one directory each so `npx skills add
-  janwilmake/screenless` (skills.sh) installs them into every coding agent.
-  `skills/screenless/` builds the paper *and* the call brief from one reading
-  and applies the call's decisions afterwards (armed with `/screenless start`;
-  `screenless wait` is the gate — not a scheduler, see its README);
-  `skills/call-when-afk/` turns blocking questions into phone calls while the
-  user is away.
+  janwilmake/screenless` (skills.sh) installs them into every coding agent:
+  - `screenless/` — the **watcher**, the core skill: `/screenless` arms
+    `screenless watch` so the team's incoming calls land in this terminal and
+    the agent acts on them (`APPLY.md` is the return leg for a call's decisions).
+  - `call-when-afk/` — turns blocking questions into phone calls while the user
+    is away.
+  - `morning-pr-review/` — the **optional** nightly loop: `screenless wait` is
+    its gate (not a scheduler, see its README), it builds the call brief and the
+    weekly paper, and its `press/` subdir is the PDF toolkit (`collect.mjs`, the
+    chart library, the renderer) shipped inside the skill so `npx skills add`
+    installs it whole.
 
 ## The one architectural rule
 

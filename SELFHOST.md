@@ -319,8 +319,7 @@ The fix was to give each language a third-party voice (AWS Polly / Azure
 Neural), chosen on measured latency, rather than a Telnyx-hosted one. Calls
 have been audible and interruptible since. `/texml/say` stays in the worker as
 the isolation test: point a TeXML application at it and if you hear it,
-telephony and TTS are fine and the fault is higher up. See `telnyx-bug/` for
-the full reproduction.
+telephony and TTS are fine and the fault is higher up in the assistant layer.
 
 
 ## Setup gotchas found the hard way
