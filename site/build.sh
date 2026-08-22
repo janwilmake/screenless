@@ -9,7 +9,7 @@
 #
 #   site/src/               pages and the installer, hand-written
 #   skills/                 the branded skills the installer downloads
-#   skills/screenless/press/ the collector and renderer that skill calls
+#   skills/morning-pr-review/press/  the toolkit that skill calls
 #   cli/dist/               the CLI, shipped as a tarball
 #
 #   ./build.sh          assemble

@@ -20,8 +20,6 @@ readonly BASE_URL="${SCREENLESS_BASE_URL:-https://screenless.sh}"
 readonly INSTALL_DIR="${SCREENLESS_INSTALL_DIR:-$HOME/.screenless}"
 readonly LIB_DIR="$INSTALL_DIR/lib"
 readonly BIN_DIR="$INSTALL_DIR/bin"
-readonly SKILL_DIR="${SCREENLESS_SKILL_DIR:-$HOME/.claude/skills/screenless}"
-readonly SKILLS_ROOT="$(dirname "$SKILL_DIR")"
 readonly MIN_NODE=20
 
 # Colour only when a terminal is actually watching. Piped into a log, the
@@ -82,15 +80,6 @@ trap 'rm -rf "$tmp"' EXIT
 fetch "$BASE_URL/screenless.tar.gz" "$tmp/screenless.tar.gz" \
   || die "could not download the CLI from $BASE_URL"
 
-# Best-effort: an older server without the skill bundle should still install a
-# working CLI rather than fail the whole run.
-mkdir -p "$tmp/skill"
-fetch "$BASE_URL/SKILL.md" "$tmp/skill/SKILL.md" 2>/dev/null || rm -f "$tmp/skill/SKILL.md"
-fetch "$BASE_URL/APPLY.md" "$tmp/skill/APPLY.md" 2>/dev/null || rm -f "$tmp/skill/APPLY.md"
-fetch "$BASE_URL/CALL-WHEN-AFK.md" "$tmp/skill/CALL-WHEN-AFK.md" 2>/dev/null || rm -f "$tmp/skill/CALL-WHEN-AFK.md"
-fetch "$BASE_URL/MORNING-PR-REVIEW.md" "$tmp/skill/MORNING-PR-REVIEW.md" 2>/dev/null || rm -f "$tmp/skill/MORNING-PR-REVIEW.md"
-fetch "$BASE_URL/press.tar.gz" "$tmp/press.tar.gz" 2>/dev/null || rm -f "$tmp/press.tar.gz"
-
 # Only lib/ is replaced. The config file next to it holds a session token and
 # a verified phone number, and reinstalling is not a reason to lose either.
 rm -rf "$LIB_DIR"
@@ -111,16 +100,23 @@ ok "installed to ${dim}$INSTALL_DIR${reset}"
 
 # ------------------------------------------------------------------- skills
 
-# The skills go into every coding agent the user runs, not just Claude Code —
-# each agent reads skills from its own global directory, and screenless is
-# useful in all of them. Installed globally rather than per-repo: the
-# instructions are the same everywhere, and per-project settings live in each
-# repo's own .screenless.json, written by `screenless init`.
-#
-# This mirrors what `npx skills add janwilmake/screenless` (skills.sh) does;
-# doing it here too means the curl|bash install needs no second command, and
-# works offline. For any agent not covered below, that one command fills the gap.
-install_skills() { # $1 = an agent's global skills dir
+# The skills go into every coding agent the user runs. The real skills.sh CLI
+# is the way to do that — `npx skills add janwilmake/screenless` — and using it
+# rather than a hand-rolled copy is deliberate: it registers the install in
+# skills.sh's stats, and stays correct as it adds agents. The bundled copies
+# below are only a fallback for when npx or the network is unavailable, so the
+# curl|bash install still works offline.
+if command -v npx >/dev/null 2>&1; then
+  say "  ${dim}installing skills via skills.sh …${reset}"
+  # --all: every skill into every detected agent · -g: global · -y: no prompts.
+  # </dev/null so the piped installer's stdin can't be mistaken for answers.
+  if npx -y skills add janwilmake/screenless --all -g -y </dev/null >/dev/null 2>&1; then
+    ok "skills installed via ${dim}npx skills add janwilmake/screenless${reset}"
+    SKILLS_DONE=1
+  fi
+fi
+
+install_skills() { # $1 = an agent's global skills dir (fallback path)
   local root="$1"
   [ -f "$tmp/skill/SKILL.md" ] || return 0
   rm -rf "$root/screenless" "$root/call-when-afk" "$root/morning-pr-review"
@@ -142,33 +138,28 @@ install_skills() { # $1 = an agent's global skills dir
   fi
 }
 
-# agent name : the dir whose presence means the agent is installed : skills dir
-installed_agents=""
-for spec in \
-  "Claude Code:$HOME/.claude:$HOME/.claude/skills" \
-  "Cursor:$HOME/.cursor:$HOME/.cursor/skills" \
-  "Codex:$HOME/.codex:$HOME/.codex/skills" \
-  "Windsurf:$HOME/.windsurf:$HOME/.windsurf/skills" \
-  "Gemini:$HOME/.gemini:$HOME/.gemini/skills" \
-  "OpenCode:$HOME/.opencode:$HOME/.opencode/skills" ; do
-  name="${spec%%:*}"; rest="${spec#*:}"; detect="${rest%%:*}"; dir="${rest#*:}"
-  if [ -d "$detect" ]; then
-    install_skills "$dir"
-    installed_agents="$installed_agents $name,"
+# Fallback: only if the real CLI didn't run. Drop the bundled copies into each
+# agent's global skills dir, detecting agents by their home directory.
+if [ "${SKILLS_DONE:-0}" -ne 1 ]; then
+  installed_agents=""
+  for spec in \
+    "Claude Code:$HOME/.claude:$HOME/.claude/skills" \
+    "Cursor:$HOME/.cursor:$HOME/.cursor/skills" \
+    "Codex:$HOME/.codex:$HOME/.codex/skills" \
+    "Windsurf:$HOME/.windsurf:$HOME/.windsurf/skills" \
+    "Gemini:$HOME/.gemini:$HOME/.gemini/skills" \
+    "OpenCode:$HOME/.opencode:$HOME/.opencode/skills" ; do
+    name="${spec%%:*}"; rest="${spec#*:}"; detect="${rest%%:*}"; dir="${rest#*:}"
+    if [ -d "$detect" ]; then
+      install_skills "$dir"
+      installed_agents="$installed_agents $name,"
+    fi
+  done
+  [ -d "$HOME/.claude" ] || { install_skills "$HOME/.claude/skills"; installed_agents="$installed_agents Claude Code,"; }
+  if [ -n "$installed_agents" ]; then
+    agents_list="$(printf '%s' "$installed_agents" | sed 's/,$//; s/^ //')"
+    ok "skills installed for:${dim}$agents_list${reset} ${dim}(offline copy)${reset}"
   fi
-done
-
-# Claude Code is the runtime the loop assumes, so install for it even if the
-# directory does not exist yet — unless we already did above.
-if [ ! -d "$HOME/.claude" ]; then
-  install_skills "$HOME/.claude/skills"
-  installed_agents="$installed_agents Claude Code,"
-fi
-
-if [ -n "$installed_agents" ]; then
-  agents_list="$(printf '%s' "$installed_agents" | sed 's/,$//; s/^ //; s/,/,/g')"
-  ok "skills installed for:${dim}$agents_list${reset}"
-  say "  ${dim}other agents? run:${reset} npx skills add janwilmake/screenless"
 fi
 if [ "$have_claude" -eq 0 ]; then
   say "  ${dim}no coding agent found — screenless arms inside one (e.g. Claude Code): https://claude.com/claude-code${reset}"
@@ -180,7 +171,8 @@ fi
 # outside any session. They could not read a repo under ~/Desktop (macOS
 # denies that to anything launchd starts), could not approve a tool call, and
 # had no MCPs, so they fired every night and produced nothing. The loop now
-# runs inside a Claude Code session, armed with `/screenless start`; anything
+# runs inside a Claude Code session, armed with `/screenless` (and the optional
+# `/morning-pr-review`); anything
 # the old installer left behind is removed so it cannot keep firing.
 for label in com.screenless.nightly com.screenless.collect; do
   plist="$HOME/Library/LaunchAgents/$label.plist"
