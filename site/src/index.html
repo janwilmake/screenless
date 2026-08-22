@@ -6,7 +6,7 @@
 <title>screenless — a phone line for your team and its coding agents</title>
 <!-- Kept under ~155 characters, which is where Google truncates. The old one
      ran to 192 and lost the price, which is the part people search for. -->
-<meta name="description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Free paper, $10 call credit, then pay as you go.">
+<meta name="description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. $10 free credit, then pay as you go.">
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
@@ -44,20 +44,13 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "A phone line for a team and its coding agents. Ring in and leave a spoken request that lands in whoever's terminal is watching, or dispatch a call to any, some, or all of your teammates from the CLI. The voice takes no action itself: transcripts route to a terminal on someone's own machine, which acts. The morning PR briefing and the weekly team paper are two branded skills built on the CLI; anyone can build their own.",
+      "description": "A phone line for a team and its coding agents. Ring in and leave a spoken request that lands in whoever's terminal is watching, or dispatch a call to any, some, or all of your teammates from the CLI. The voice takes no action itself: transcripts route to a terminal on someone's own machine, which acts. The morning PR briefing and call-when-afk are two branded skills built on the CLI; anyone can build their own.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
         {
           "@type": "Offer",
-          "name": "The paper",
-          "price": "0",
-          "priceCurrency": "USD",
-          "description": "A weekly edition about your own codebase — the team's week and the week ahead — landing Saturday morning by email. Free, no card."
-        },
-        {
-          "@type": "Offer",
-          "name": "The call",
+          "name": "The line",
           "price": "0.30",
           "priceCurrency": "USD",
           "description": "The phone line, pay as you go: 10 USD of credit free, then 0.30 USD per minute of call, billed to your team's shared balance."
@@ -81,7 +74,7 @@
           "name": "Which coding agents does it work with?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Whatever opens the pull requests — Claude Code, Codex, Cursor, a human on a bad day. The loop reads your repo and your tracker, not your agent. Claude Code is what writes the paper, so you need that."
+            "text": "Whatever opens the pull requests — Claude Code, Codex, Cursor, a human on a bad day. The skills read your repo and your tracker, not your agent. Claude Code is what runs them, so you need that."
           }
         },
         {
@@ -129,7 +122,7 @@
           "name": "What does cancelling look like?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "There is nothing to cancel — it is pay-as-you-go, not a subscription. Stop calling and you stop spending; leftover credit just sits there. The paper keeps arriving, free, for as long as you want it."
+            "text": "There is nothing to cancel — it is pay-as-you-go, not a subscription. Stop calling and you stop spending; leftover credit just sits there, and there is nothing to unsubscribe from."
           }
         },
         {
@@ -511,8 +504,8 @@
     <div class="call">
       <p>
         Good morning. Thirty-five pull requests overnight, and every one says no
-        human has read it. I have three that genuinely need you — the paper has
-        the rest. Tell me to slow down whenever.
+        human has read it. I have three that genuinely need you; the rest can
+        wait. Tell me to slow down whenever.
       </p>
       <p>
         The first is the one I wouldn't leave. Two open pull requests fix the
@@ -539,7 +532,7 @@
       <p>Colour contrast and missing labels, mostly. None of the keyboard ones.</p>
       <p class="you">Then fix them first. The gate can wait.</p>
       <p>
-        That's two of three; the third is in the paper if you'd rather read it.
+        That's two of three; the third can wait for tomorrow if you'd rather.
         One I couldn't settle for you: whether that permissions bug
         ever reached production — that needs your eyes on the logs. Your
         transcript goes to your agent, which is what actually merges and
@@ -580,8 +573,7 @@
 
     <p class="cap">
       Then leave that window open and go to bed. At 03:00 your own agent wakes,
-      reads the repo, and by morning there is a paper in your inbox and a brief
-      waiting on the phone.
+      reads the repo, and by morning a briefing is waiting on the phone.
     </p>
   </section>
 
@@ -605,43 +597,21 @@
         </ul>
       </div>
       <div>
-        <div class="what">the weekly paper</div>
+        <div class="what">call-when-afk</div>
         <ul>
-          <li>A Saturday PDF: the team's week, by person, and the week ahead</li>
-          <li>A deep dive on how one part of the product works today</li>
-          <li>Mailed to the whole team — free, forever, no card</li>
+          <li>Tell your agent you're stepping out</li>
+          <li>It stops pausing on questions — it phones you each one</li>
+          <li>And keeps working the moment you answer</li>
         </ul>
       </div>
     </div>
 
-    <div class="sheet" aria-label="Example page from the weekly paper" style="margin-top:34px">
-      <div class="sheet-top">
-        <span class="sheet-name">screenless</span>
-        <span class="sheet-meta">week of 2026-08-15 · edition 41</span>
-      </div>
-      <h4>Matching moved to the centre of the product this week</h4>
-      <p class="sub">
-        Six of nine merged pull requests touched matching or the sync around it.
-        Nothing has been written to the calendar layer in five weeks.
-      </p>
-      <div class="stats">
-        <div><div class="v">38</div><div class="l">open PRs</div></div>
-        <div class="spot"><div class="v">5</div><div class="l">need eyes</div></div>
-        <div><div class="v">171</div><div class="l">merged, 7d</div></div>
-        <div><div class="v">4</div><div class="l">shipped by</div></div>
-      </div>
-      <p class="cap">
-        Printable, mostly picture, and short enough to finish with one coffee.
-      </p>
-    </div>
-
     <p class="lede" style="margin-top:34px">
-      And a third, to show how small a skill can be: <b>call-when-afk</b>. Tell
-      your agent you're stepping out, and for the rest of the session it stops
-      pausing on questions — it phones you each one and keeps working when you
-      answer. A standup that rings whoever missed it. An on-call line that reads
-      a teammate the failing check. A release gate that calls the reviewer. Same
-      handful of commands — the uses are yours to discover.
+      Those are two prompts, a few dozen lines each. A standup that rings
+      whoever missed it and collects their update. An on-call line that reads a
+      teammate the failing check and takes the call on whether to roll back. A
+      release gate that phones the reviewer. Same handful of commands — the uses
+      are yours to discover.
     </p>
   </section>
 
@@ -719,25 +689,25 @@
 
   <section id="price">
     <p class="kicker">price</p>
-    <h2>The paper is free. The call is the product.</h2>
+    <h2>Pay for the minutes you talk. Nothing else.</h2>
 
     <div class="price">
       <div>
-        <div class="what">the paper</div>
-        <div class="amt">Free</div>
-        <div class="per">forever · no card</div>
+        <div class="what">to start</div>
+        <div class="amt">$10</div>
+        <div class="per">free credit · no card</div>
         <ul>
-          <li>A weekly edition, landing Saturday morning</li>
-          <li>Deep dive, schemas, and what isn't moving</li>
-          <li>Install tonight, read it tomorrow</li>
+          <li>Install, verify a number, invite the team</li>
+          <li>About half an hour of calls, on us</li>
+          <li>No subscription, no trial clock</li>
         </ul>
       </div>
       <div>
-        <div class="what">the call</div>
+        <div class="what">then</div>
         <div class="amt">30¢</div>
-        <div class="per">per minute · first $10 on us</div>
+        <div class="per">per minute · pay as you go</div>
         <ul>
-          <li>Pay as you go — a morning call is usually ~$3</li>
+          <li>A morning call is usually ~$3</li>
           <li>One balance for your whole team, one line to ring</li>
           <li>Invite teammates at <a href="/team">screenless.sh/team</a></li>
         </ul>
@@ -747,7 +717,7 @@
     <p class="guarantee">
       No card at setup, no subscription, no trial clock: every team starts with
       $10 of credit, calls draw it down by the minute, and when it runs out the
-      calls stop until an admin tops up. The paper keeps arriving either way.
+      calls stop until an admin tops up. Top up when you want more.
     </p>
   </section>
 
@@ -769,7 +739,7 @@
         <p>
           Whatever opens the pull requests — Claude Code, Codex, Cursor, a
           human on a bad day. The loop reads your repo and your tracker, not
-          your agent. Claude Code is what writes the paper, so you need that.
+          your agent. Claude Code is what runs the skills, so you need that.
         </p>
       </div>
       <div>
@@ -818,8 +788,8 @@
         <h3>What does cancelling look like?</h3>
         <p>
           There is nothing to cancel — it is pay-as-you-go, not a subscription.
-          Stop calling and you stop spending; leftover credit just sits there.
-          The paper keeps arriving, free, for as long as you want it.
+          Stop calling and you stop spending; leftover credit just sits there,
+          and there is nothing to unsubscribe from.
         </p>
       </div>
       <div>
@@ -849,8 +819,8 @@
       in the open, with the first fifty teams.
     </p>
     <p class="lede">
-      That is the offer: install it today, get the paper and the line for
-      almost nothing, and help shape what a phone line for a team of agents
+      That is the offer: install it today, put your team on the line for almost
+      nothing, and help shape what a phone line for a team of agents
       turns out to be good for. The per-minute price you join at is locked for
       as long as you stay.
     </p>
@@ -869,9 +839,9 @@
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
     <p class="fine">
-      The paper costs nothing and always will. The line is pay-as-you-go —
-      $10 free, then 30¢ a minute — and if it turns out to be the wrong shape
-      for your team, just stop calling, and keep the paper.
+      $10 of credit to start, then 30¢ a minute — no subscription, no card
+      until you want one. If it turns out to be the wrong shape for your team,
+      just stop calling; you are never billed for a minute you didn't talk.
     </p>
   </div>
 </section>
