@@ -198,3 +198,10 @@ a wrongly-typed number can never receive its own verification text.
   mixing the nightly gate with the watcher — corrected to `screenless watch`.
   Installer's real-`npx skills` wrap verified in a sandbox HOME; site rebuilt
   and worker redeployed so the served installer and skill flat files are current.)*
+
+- 04:10 — `remove gtm and todo`
+  *(after flagging both as stale, the answer: delete them. GTM.md was the whole
+  $99/month-subscription go-to-market — dead with the move to PAYG — and
+  TODO.md's live items were all done or obsolete (Stripe now live, KV gone,
+  skills now install across every agent). Both removed; the SUMMARY assumption
+  that named GTM.md rewritten to record the deletion.)*

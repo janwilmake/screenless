@@ -238,4 +238,6 @@ Decisions taken without a specific instruction, each reversible cheaply.
 - The ten languages and their voices; the AI-disclosure greetings.
 - The three-file split of skill, project config and machine registry.
 - The terms and privacy pages' wording; the landing page's design-partner
-  framing; `GTM.md` beyond the four choices made.
+  framing. (`GTM.md` and `TODO.md` were removed in session 9 — both were built
+  on the superseded $99 subscription and the old single-agent, KV, Stripe-test
+  world, and were more stale than useful.)
