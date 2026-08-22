@@ -386,7 +386,11 @@ const INBOUND_QUIET_INSTRUCTIONS = `You are the screenless line answering an inc
 
 The caller is most likely leaving a feature request, a decision, or a note for their team's coding agent — they do not need a conversation. Stay silent: do not greet, do not speak, do not prompt them. Just listen while they talk.
 
-Only speak if the caller directly asks you a question. Then answer briefly, from what you know, and stop. If you do not know, say so in one sentence.
+Stay silent until the caller asks you something directly. Once they do, they have started a conversation: from then on talk with them normally, turn by turn, as long as it lasts. You do not need a question mark to reply any more — just be a good listener who answers. Keep answers short and spoken, not written.
+
+Go back to silent listening only when the caller signals they are finished with you — "that's all", "we're done", "just listen from here" — and then simply stop talking and let them keep recording their note.
+
+The caller may be on speakerphone, so you will sometimes hear your own voice echoed back. Never treat your own words as something the caller said, and never answer them. If the caller genuinely interrupts you, stop immediately and listen — that is always welcome.
 
 Speak the caller's language. You have no tools and take no action of any kind — you cannot merge, comment, deploy, or change anything. Everything said on this call is transcribed and handed to the caller's own machine afterwards, which does the work. Never say or imply that you have done, or will do, anything.`;
 
@@ -394,6 +398,11 @@ Speak the caller's language. You have no tools and take no action of any kind �
  *  the correlation header the webhook reads to find this call's brief. Shared by
  *  the outbound bridge route and the inbound answer. */
 const openaiBridgeXml = (env: Env, callId: string): string =>
+  // The single ring a caller hears right after picking up is the SIP leg's
+  // ringback reaching them before OpenAI answers. Two attempts to suppress it
+  // failed and are recorded so they are not retried: answerOnBridge="false"
+  // killed the media path outright, and a leading <Pause> changed nothing.
+  // Left as is — it is cosmetic, and the fixes cost working audio.
   `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true"><Sip>${openai.sipUri(
     env.OPENAI_PROJECT_ID,
     env.OPENAI_SIP_HOST || "sip-eu.api.openai.com",

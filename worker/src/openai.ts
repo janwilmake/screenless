@@ -165,10 +165,28 @@ export async function acceptCall(
         output: { voice: o.voice },
         input: {
           transcription: { model: "whisper-1" },
-          // Quiet: detect end-of-turn but never auto-generate a reply.
-          ...(o.quiet
-            ? { turn_detection: { type: "server_vad", create_response: false } }
-            : {}),
+          // Speakerphone echoes the assistant's own voice back into the call.
+          // far_field is the mode built for a speaker across the room; with a
+          // firmer threshold it keeps that echo from registering as speech.
+          noise_reduction: { type: "far_field" },
+          // Semantic rather than server VAD. server_vad reacts to audio
+          // energy, so on a speakerphone the assistant's own echo read as the
+          // caller taking the turn and cancelled her reply after two words —
+          // the logs showed response after response ending
+          // `cancelled / turn_detected`. Raising the threshold only made it
+          // rarer. Semantic VAD judges whether someone actually means to take
+          // the turn, which is the distinction we need: echo does not, a real
+          // interruption does.
+          turn_detection: {
+            type: "semantic_vad",
+            // "low": only a clear, deliberate interruption takes the floor.
+            eagerness: "low",
+            // Lead mode auto-responds; in quiet mode the Durable Object is the
+            // only thing that ever asks for a reply.
+            create_response: !o.quiet,
+            // Barge-in stays ON — the caller must always be able to cut in.
+            interrupt_response: true,
+          },
         },
       },
     }),

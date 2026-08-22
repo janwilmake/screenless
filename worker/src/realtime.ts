@@ -40,6 +40,14 @@ export class RealtimeCall {
   private lines: Line[] = [];
   private ourCallId = "";
   private mode: "lead" | "quiet" = "quiet";
+  /** A reply is in flight. Guards against the echo of that reply, on a
+   *  speakerphone, triggering another one on top of it. */
+  private speaking = false;
+  /** The assistant's last spoken line, to recognise its own echo. */
+  private lastSpoken = "";
+  /** Quiet mode only: the caller has engaged, so normal turn-taking is on
+   *  until they sign off. */
+  private conversing = false;
 
   constructor(
     private state: DurableObjectState,
@@ -85,11 +93,24 @@ export class RealtimeCall {
   }
 
   private async onMessage(ev: MessageEvent, greeting?: string): Promise<void> {
-    let msg: { type?: string; transcript?: string };
+    let msg: { type?: string; transcript?: string; error?: unknown; response?: { status?: string; status_details?: unknown } };
     try {
       msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
     } catch {
       return;
+    }
+
+    // The session's own complaints are the only window into why a call went
+    // quiet; without them this is guesswork.
+    if (msg.type === "error") {
+      console.error("realtime error", this.ourCallId, JSON.stringify(msg.error));
+    } else if (msg.type === "response.done" && msg.response?.status && msg.response.status !== "completed") {
+      console.error(
+        "realtime response ended",
+        this.ourCallId,
+        msg.response.status,
+        JSON.stringify(msg.response.status_details),
+      );
     }
 
     switch (msg.type) {
@@ -107,10 +128,35 @@ export class RealtimeCall {
       // A caller turn was transcribed.
       case "conversation.item.input_audio_transcription.completed": {
         const text = (msg.transcript ?? "").trim();
-        if (text) await this.record("user", text);
-        // Quiet mode: answer only if this reads as a direct question.
-        if (this.mode === "quiet" && looksLikeQuestion(text)) {
-          this.send({ type: "response.create" });
+        if (!text) break;
+        // On speakerphone the assistant's own voice comes back in and is
+        // transcribed as if the caller said it. Drop anything that repeats
+        // what we just said, so echo is neither recorded nor answered.
+        if (this.echoOfOwnSpeech(text)) break;
+        await this.record("user", text);
+
+        if (this.mode !== "quiet") break;
+
+        // Quiet mode is a starting posture, not a life sentence. The caller
+        // opens by leaving a request in silence; the moment they actually ask
+        // something, they have started a conversation, and having to phrase
+        // every following turn as a question would be absurd. So the first
+        // question latches into normal turn-taking, and only a clear sign-off
+        // puts it back to silent listening.
+        //
+        // Every reply is triggered from here rather than by the server (the
+        // session stays create_response:false for the whole call). One place
+        // decides when to speak, so a server-generated response and ours can
+        // never race — that race is what left the assistant mute mid-call.
+        if (this.conversing) {
+          if (endsConversation(text)) {
+            this.conversing = false;
+            break;
+          }
+          this.reply();
+        } else if (looksLikeQuestion(text)) {
+          this.conversing = true;
+          this.reply();
         }
         break;
       }
@@ -118,10 +164,64 @@ export class RealtimeCall {
       // An assistant turn finished speaking.
       case "response.output_audio_transcript.done": {
         const text = (msg.transcript ?? "").trim();
-        if (text) await this.record("assistant", text);
+        if (text) {
+          this.lastSpoken = text.toLowerCase();
+          await this.record("assistant", text);
+        }
         break;
       }
+
+      // The reply ended — completed, cancelled, or failed. It must clear on
+      // *every* ending, not just the clean one: an interruption cancels the
+      // response, and gating the next reply on an event that never arrives
+      // left the assistant mute for the rest of the call.
+      case "response.done":
+      case "response.cancelled":
+      case "response.incomplete":
+      case "response.failed":
+      case "error":
+        this.speaking = false;
+        break;
+
+      // The caller started talking, which cancels any reply in flight. Same
+      // reasoning as above: treat it as the end of our turn.
+      case "input_audio_buffer.speech_started":
+        this.speaking = false;
+        break;
     }
+  }
+
+  /**
+   * Asks the model to answer the caller's last turn.
+   *
+   * `speaking` is only a de-duplicator for the moment between asking and the
+   * audio starting; it is cleared on every way a response can end, including
+   * cancellation, so a cut-off reply can never leave the assistant mute.
+   */
+  private reply(): void {
+    if (this.speaking) return;
+    this.speaking = true;
+    this.send({ type: "response.create" });
+  }
+
+  /**
+   * True when a "caller" transcript is really the assistant's own voice coming
+   * back through a speakerphone. Compared loosely: the echo is transcribed
+   * imperfectly, so a substantial overlap with what we just said is enough.
+   */
+  private echoOfOwnSpeech(text: string): boolean {
+    if (!this.lastSpoken) return false;
+    const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").trim();
+    const heard = norm(text);
+    const said = norm(this.lastSpoken);
+    if (heard.length < 4) return false;
+    if (said.includes(heard) || heard.includes(said)) return true;
+    // Or: most of the heard words appear in what we just said.
+    const saidWords = new Set(said.split(/\s+/));
+    const words = heard.split(/\s+/).filter(Boolean);
+    if (words.length < 3) return false;
+    const overlap = words.filter((w) => saidWords.has(w)).length / words.length;
+    return overlap > 0.7;
   }
 
   private async record(role: "user" | "assistant", text: string): Promise<void> {
@@ -141,6 +241,21 @@ export class RealtimeCall {
     }
     this.ws = null;
   }
+}
+
+/**
+ * "I am done talking with you" — what drops the session back to silent
+ * listening after a conversation. Deliberately narrow: a false positive here
+ * makes the assistant go mute mid-conversation, which reads as broken.
+ */
+function endsConversation(text: string): boolean {
+  const t = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ");
+  return [
+    "that's all", "thats all", "that is all", "that's it", "thats it",
+    "we're done", "were done", "i'm done", "im done", "nothing else",
+    "stop talking", "be quiet", "stay quiet", "just listen", "no more questions",
+    "dat was het", "dat is het", "klaar", "niks meer", "stil", "luister alleen",
+  ].some((p) => t.includes(p));
 }
 
 /**

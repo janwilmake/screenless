@@ -118,5 +118,43 @@ Europe-region project, flip SIP host → `sip-eu.api.openai.com` and the API bas
 once outbound is also proven on Realtime); minor quiet-mode question-detector
 over-eagerness on whisper fragments.
 
+## Tuning the call, on real ring-ins
+
+With the line working, four rounds of live feedback shaped the behaviour:
+
+- **`i still want to be able to interrupt the ai myself though`** — I had killed
+  speakerphone echo by setting `interrupt_response:false`, which also killed
+  barge-in. Wrong trade, reverted: interruption stays on, and echo is handled by
+  `far_field` noise reduction (I had wrongly used `near_field`, which is for
+  handsets) and a firmer threshold.
+- **`i want it to be a conversation after the first question, until i say
+  something about it ending`** — quiet mode is now only the opening posture. The
+  first question latches the call into normal turn-taking; a narrow sign-off
+  list ("that's all", "please just listen", "dat was het") drops it back to
+  silent listening. Every reply is triggered by the Durable Object, and the
+  session never auto-responds, so a server-generated reply and ours can never
+  race — that race is what once left the assistant mute mid-call.
+- **`after i interrupted, the ai never spoke again`** — my bug: the `speaking`
+  guard was cleared only by `response.done`, but an interruption *cancels* the
+  response, so the flag stuck forever. Now cleared on every ending
+  (done/cancelled/incomplete/failed/error) and when the caller starts speaking.
+- **`after she said 2 words she never spoke again`** — solved by instrumenting
+  rather than guessing: logging the session's own events showed every reply
+  ending `cancelled / turn_detected`. `server_vad` reacts to audio *energy*, so
+  on speakerphone the assistant's own echo read as the caller taking the turn.
+  Switched to **`semantic_vad` (eagerness: low)**, which judges intent to take
+  the turn: echo does not qualify, a deliberate interruption does. Next call
+  logged zero cancellations, and the transcript shows the full intended
+  behaviour — answered when asked, went quiet on "please just listen", captured
+  the request in silence, answered again, survived an interruption.
+
+The **single ring after pickup** is unfixed and deliberately left alone: two
+attempts made it worse (`answerOnBridge="false"` killed the media path outright;
+a leading `<Pause>` changed nothing) and both are recorded in a comment so they
+are not retried. It is cosmetic; the fixes cost working audio.
+
+Cost measured on the new key: ~$0.11 over ~3.8 connected minutes ≈ **3¢/minute**
+for OpenAI Realtime, against the 30¢/minute charged — margin is intact.
+
 - HH:MM — `ensure to clean up all the telnix assistant shit` / `the language config can completely be removed` / `does that mean it is slower... how do i get the eu one` / `how much did this cost` / `u have 4 the same shells open`
   *(cleanup + language removal are on the cutover todo; US is ~150-200ms slower from NL than EU, EU needs a Europe-region project; the test calls cost ~$3.40 internal (30¢/min from the free credit) plus a few dollars of OpenAI Realtime; stray `wrangler tail` shells killed.)*
