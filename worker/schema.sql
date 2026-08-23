@@ -109,7 +109,6 @@ CREATE TABLE IF NOT EXISTS calls (
 CREATE TABLE IF NOT EXISTS briefs (
   phone TEXT PRIMARY KEY,
   prompt TEXT NOT NULL,
-  language TEXT NOT NULL,
   due_at INTEGER,
   status TEXT NOT NULL DEFAULT 'parked' CHECK (status IN ('parked', 'placed')),
   attempts INTEGER NOT NULL DEFAULT 0,
