@@ -184,6 +184,16 @@ export class LiveCall {
   private voiceQueue: unknown[] = [];
   /** When a progress update was last spoken. */
   private updateAt = 0;
+  /** When the current voice session was asked for, and when its socket
+   *  opened: its start-up cost, logged once it has started. */
+  private voiceAskedAt = 0;
+  private voiceOpenAt = 0;
+  /** The voice's current turn, measured for the "live turn" log. */
+  private turn: Turn | null = null;
+  /** When the voice's output last carried speech. */
+  private voiceVoicedAt = 0;
+  /** When the last output chunk arrived. */
+  private outAt = 0;
 
   constructor(
     private state: DurableObjectState,
@@ -247,6 +257,11 @@ export class LiveCall {
       if (this.phone === phone) this.phoneLost();
     });
 
+    // Where this object runs decides the distance to Telnyx and to OpenAI.
+    void fetch("https://cloudflare.com/cdn-cgi/trace")
+      .then((r) => r.text())
+      .then((t) => log({ ev: "live colo", call: callId, colo: /colo=(\w+)/.exec(t)?.[1] ?? "" }))
+      .catch(() => undefined);
     if (!this.ws && !(await this.connectVoice())) {
       phone.close(1011, "voice unavailable");
       return new Response(null, { status: 101, webSocket: pair[0] });
@@ -261,9 +276,11 @@ export class LiveCall {
     const cfg = this.cfg!;
     const gen = ++this.voiceGen;
     this.live = false;
+    this.voiceAskedAt = Date.now();
     const res = await fetch("https://api.openai.com/v1/live/sessions", {
       headers: { Upgrade: "websocket", Authorization: `Bearer ${this.env.OPENAI_LIVE_API_KEY}` },
     });
+    this.voiceOpenAt = Date.now();
     const ws = res.webSocket;
     if (!ws) {
       console.error("live connect failed", this.ourCallId, res.status, await res.text().catch(() => ""));
@@ -362,6 +379,11 @@ export class LiveCall {
   /** One key press from the media stream. The digit goes no further than
    *  the keypad: it is not logged, stored or passed on. */
   private onKey(digit: string): void {
+    // How far ahead of its event a key's tone shows in the audio, if at all:
+    // the frames KEY_AUDIO_HOLD must cover. Loudness only, never the digit.
+    const loud = this.held.map(loudness);
+    const first = loud.findIndex((l) => l > 1000);
+    log({ ev: "live key tone", call: this.ourCallId, held: loud.length, loudFrames: first < 0 ? 0 : loud.length - first });
     this.held = this.held.map(silence);
     this.keyMuteUntil = Date.now() + KEY_MUTE_MS;
     const entry = this.keypad.key(digit, Date.now());
@@ -474,11 +496,21 @@ export class LiveCall {
       case "session.output_audio.delta":
         if (msg.delta) {
           this.voiceSpoke = true;
+          this.measureOut(msg.delta);
           this.toPhone(msg.delta);
         }
         break;
       case "session.started":
         this.live = true;
+        log({
+          ev: "live voice ready",
+          call: this.ourCallId,
+          gen: this.voiceGen,
+          connectMs: this.voiceOpenAt - this.voiceAskedAt,
+          startMs: Date.now() - this.voiceOpenAt,
+          // Caller audio sent in one burst now, ahead of real time.
+          earlyFrames: this.early.length,
+        });
         for (const audio of this.early.splice(0)) this.send({ type: "session.input_audio.append", audio });
         for (const m of this.voiceQueue.splice(0)) this.send(m);
         if (this.greeted) {
@@ -792,6 +824,78 @@ export class LiveCall {
     return Response.json({ ok: true, spoken: true });
   }
 
+  /**
+   * Times one chunk of the voice's output, for the "live turn" log: how long
+   * after the caller stopped talking the voice started, and whether its audio
+   * arrives paced, in bursts, or with gaps that the phone hears as stutter.
+   * A turn starts at the first chunk carrying speech after TURN_GAP_MS
+   * without any, and ends once the speech has stopped that long.
+   */
+  private measureOut(b64: string): void {
+    const now = Date.now();
+    const bytes = b64Bytes(b64);
+    const voiced = loudness(b64) > 200;
+    if (voiced && now - this.voiceVoicedAt > TURN_GAP_MS) {
+      this.endTurn();
+      // The caller's last loud frame came after the voice's last speech: this
+      // turn answers the caller. Otherwise the voice spoke up on its own.
+      const answers = this.callerSpeechAt > this.voiceVoicedAt && now - this.callerSpeechAt < 15_000;
+      this.turn = {
+        startAt: now,
+        replyMs: answers ? now - this.callerSpeechAt : null,
+        chunks: 0,
+        bytes: 0,
+        minBytes: Infinity,
+        maxBytes: 0,
+        offFrame: 0,
+        maxGapMs: 0,
+        lastAt: now,
+      };
+    } else if (!voiced && this.turn && now - this.voiceVoicedAt > TURN_GAP_MS) {
+      this.endTurn();
+    }
+    if (voiced) this.voiceVoicedAt = now;
+    const t = this.turn;
+    if (t) {
+      if (t.chunks) t.maxGapMs = Math.max(t.maxGapMs, now - this.outAt);
+      t.chunks++;
+      t.bytes += bytes;
+      t.minBytes = Math.min(t.minBytes, bytes);
+      t.maxBytes = Math.max(t.maxBytes, bytes);
+      if (bytes % 160) t.offFrame++;
+      t.lastAt = now;
+    }
+    this.outAt = now;
+  }
+
+  /** Logs the turn measured so far. Ids, counts and times only. */
+  private endTurn(): void {
+    const t = this.turn;
+    this.turn = null;
+    if (!t || !t.chunks) return;
+    const wallMs = t.lastAt - t.startAt;
+    const audioMs = Math.round(t.bytes / 8);
+    log({
+      ev: "live turn",
+      call: this.ourCallId,
+      gen: this.voiceGen,
+      replyMs: t.replyMs,
+      // Caller audio runs this far behind while a PIN is awaited.
+      pinHoldMs: this.cfg?.pin ? KEY_AUDIO_HOLD * 20 : 0,
+      chunks: t.chunks,
+      minBytes: t.minBytes,
+      maxBytes: t.maxBytes,
+      // Chunks that are not whole 20 ms frames.
+      offFrame: t.offFrame,
+      maxGapMs: t.maxGapMs,
+      audioMs,
+      wallMs,
+      // Above 1: the audio came faster than it plays, and Telnyx queues it.
+      // Near 1: paced in real time, so every late chunk is a gap on the line.
+      speed: wallMs ? Math.round((audioMs / wallMs) * 100) / 100 : null,
+    });
+  }
+
   private toPhone(payload: string): void {
     try {
       this.phone?.send(JSON.stringify({ event: "media", media: { payload } }));
@@ -832,6 +936,7 @@ export class LiveCall {
   private async finish(by: "phone" | "voice"): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.endTurn();
     this.cancelHangup();
     if (this.phoneGoneTimer) clearTimeout(this.phoneGoneTimer);
     this.phoneGoneTimer = null;
@@ -855,6 +960,29 @@ export class LiveCall {
     this.ws = null;
   }
 }
+
+/** One voice turn as measured by `measureOut`. */
+interface Turn {
+  startAt: number;
+  replyMs: number | null;
+  chunks: number;
+  bytes: number;
+  minBytes: number;
+  maxBytes: number;
+  offFrame: number;
+  maxGapMs: number;
+  lastAt: number;
+}
+
+/** Output without speech for this long ends a voice turn. */
+const TURN_GAP_MS = 600;
+
+/** One structured log line: an event and ids, counts and times, never what
+ *  was said, a digit or a phone number. */
+const log = (fields: Record<string, unknown>): void => console.log(JSON.stringify(fields));
+
+/** Decoded length of a base64 string, without decoding it. */
+const b64Bytes = (b64: string): number => Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
 
 /** Caller words that do not count as talking on: more goodbye, or a noise
  *  the transcriber wrote down in brackets. */
