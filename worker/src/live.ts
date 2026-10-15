@@ -21,12 +21,21 @@
  *
  * The transcript is persisted on every finished line, like RealtimeCall, so
  * the finished call still reaches the watcher queue with everything said.
+ *
+ * Either socket can drop while the phone call goes on: Telnyx reconnects its
+ * stream, and GPT-Live's session can close under us. Neither ends the call.
+ * A dropped voice is restarted with the call so far, a dropped phone stream
+ * is waited for, and only the call itself ending sets `ended`. In Jan's call
+ * of 15 October one of them dropped mid-answer: the call went on with a fresh
+ * voice that greeted him again, while `ended` was already set — so the
+ * watcher had stopped, requests went nowhere, and the hang-up after goodbye
+ * was a no-op.
  */
 
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
-import { callerSaysBye, voiceSaysBye, HANGUP_AFTER_MS } from "./farewell";
+import { callerSaysBye, callerAsksHangup, voiceSaysBye, HANGUP_AFTER_MS, HANGUP_ON_REQUEST_MS } from "./farewell";
 
 /** What answerInbound parks for a live ring-in, read when the audio arrives. */
 export interface LiveConfig {
@@ -53,6 +62,8 @@ interface Handoff {
   at: number;
   claimed: boolean;
   answered: boolean;
+  /** The voice session it was delegated in; its id means nothing to a later one. */
+  voice: number;
 }
 
 /** A request nobody claims in this long gets a spoken "cannot reach your
@@ -61,6 +72,11 @@ interface Handoff {
 const CLAIM_TIMEOUT_MS = 15_000;
 /** How long one long-poll from the watcher is held open. */
 const POLL_HOLD_MS = 20_000;
+/** How long a dropped phone stream may take to reconnect before the call is
+ *  taken as over. Telnyx's own status callback closes the record either way. */
+const PHONE_GRACE_MS = 6_000;
+/** Voice sessions restarted per call before giving up and hanging up. */
+const MAX_VOICE_RESTARTS = 3;
 
 export class LiveCall {
   /** GPT-Live's WebSocket. */
@@ -72,6 +88,14 @@ export class LiveCall {
   /** Background notes that arrived before GPT-Live was ready. */
   private earlyNotes: unknown[] = [];
   private live = false;
+  /** Which voice session is current; events of an older one are ignored. */
+  private voiceGen = 0;
+  private voiceRestarts = 0;
+  /** The greeting is said once per call, never again after a reconnect. */
+  private greeted = false;
+  /** Every background note so far, replayed into a restarted voice. */
+  private notes: string[] = [];
+  private phoneGoneTimer: ReturnType<typeof setTimeout> | null = null;
   private ourCallId = "";
   private userId = "";
   private cfg: LiveConfig | null = null;
@@ -86,6 +110,8 @@ export class LiveCall {
   private ended = false;
   /** The caller's last line was a goodbye. */
   private callerBye = false;
+  /** The caller asked to be hung up on. */
+  private hangupAsked = false;
   /** When the voice last said goodbye: the caller's own goodbye may come
    *  just after it, transcribed a moment late. */
   private voiceByeAt = 0;
@@ -108,7 +134,9 @@ export class LiveCall {
 
   /* ------------------------------------------------------------ the audio */
 
-  /** Telnyx connects its media stream; the GPT-Live session starts with it. */
+  /** Telnyx connects its media stream; the GPT-Live session starts with it.
+   *  A second connect for the same call is Telnyx reconnecting: the new
+   *  stream replaces the old one and the conversation carries on. */
   private async stream(req: Request, callId: string): Promise<Response> {
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const raw = await db.stashGet(this.env, `realtime:${callId}`);
@@ -117,37 +145,74 @@ export class LiveCall {
     this.ourCallId = callId;
     this.userId = cfg.userId;
     this.cfg = cfg;
+    // Back after the grace ran out: the call was still going after all.
+    this.ended = false;
+    if (this.phoneGoneTimer) clearTimeout(this.phoneGoneTimer);
+    this.phoneGoneTimer = null;
+    // An evicted object starts empty; the stored transcript must not be
+    // overwritten by a shorter one.
+    if (!this.lines.length) {
+      const rec = await db.getCall(this.env, callId);
+      if (rec?.transcript?.length) {
+        this.lines = rec.transcript.map((l) => ({ role: l.role, text: l.text, at: l.at ?? new Date().toISOString() })) as Line[];
+        this.handedOffUpTo = this.lines.length;
+        this.greeted = true;
+      }
+    }
 
     const pair = new WebSocketPair();
     const phone = pair[1];
     phone.accept();
+    const old = this.phone;
     this.phone = phone;
+    try {
+      old?.close(1000, "replaced");
+    } catch {
+      /* already closed */
+    }
     phone.addEventListener("message", (ev) => this.fromPhone(ev));
     phone.addEventListener("close", (ev) => {
       console.log("phone stream closed", callId, ev.code, ev.reason);
-      void this.finish("phone");
+      if (this.phone === phone) this.phoneLost();
     });
-    phone.addEventListener("error", () => void this.finish("phone"));
+    phone.addEventListener("error", () => {
+      if (this.phone === phone) this.phoneLost();
+    });
 
+    if (!this.ws && !(await this.connectVoice())) {
+      phone.close(1011, "voice unavailable");
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+    await db.stashPut(this.env, `livecall:${cfg.userId}`, JSON.stringify({ callId, onlyRepo: cfg.onlyRepo }), 7200);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  /** Opens a GPT-Live session for this call: the first, or a replacement for
+   *  one that closed while the caller was still on the line. */
+  private async connectVoice(): Promise<boolean> {
+    const cfg = this.cfg!;
+    const gen = ++this.voiceGen;
+    this.live = false;
     const res = await fetch("https://api.openai.com/v1/live/sessions", {
       headers: { Upgrade: "websocket", Authorization: `Bearer ${this.env.OPENAI_LIVE_API_KEY}` },
     });
     const ws = res.webSocket;
     if (!ws) {
-      console.error("live connect failed", callId, res.status, await res.text().catch(() => ""));
-      phone.close(1011, "voice unavailable");
-      return new Response(null, { status: 101, webSocket: pair[0] });
+      console.error("live connect failed", this.ourCallId, res.status, await res.text().catch(() => ""));
+      return false;
     }
     ws.accept();
     this.ws = ws;
-    ws.addEventListener("message", (ev) => void this.onMessage(ev, cfg.greeting));
+    ws.addEventListener("message", (ev) => {
+      if (gen === this.voiceGen) void this.onMessage(ev, cfg.greeting);
+    });
     ws.addEventListener("close", (ev) => {
-      console.log("live socket closed", callId, ev.code, ev.reason);
-      void this.finish("voice");
+      console.log("live socket closed", this.ourCallId, gen, ev.code, ev.reason);
+      if (gen === this.voiceGen) void this.voiceLost();
     });
     ws.addEventListener("error", () => {
-      console.error("live socket error", callId);
-      void this.finish("voice");
+      console.error("live socket error", this.ourCallId, gen);
+      if (gen === this.voiceGen) void this.voiceLost();
     });
     this.send({
       type: "session.start",
@@ -158,8 +223,32 @@ export class LiveCall {
         delegation: { type: "client" },
       },
     });
-    await db.stashPut(this.env, `livecall:${cfg.userId}`, JSON.stringify({ callId, onlyRepo: cfg.onlyRepo }), 7200);
-    return new Response(null, { status: 101, webSocket: pair[0] });
+    return true;
+  }
+
+  /** GPT-Live went away. With the caller still on the line that is a dropped
+   *  session, not a goodbye: start another that knows the call so far. */
+  private async voiceLost(): Promise<void> {
+    this.ws = null;
+    this.live = false;
+    if (this.ended) return;
+    if (this.phone && this.voiceRestarts < MAX_VOICE_RESTARTS) {
+      this.voiceRestarts++;
+      console.log("live voice restarted", this.ourCallId, this.voiceRestarts);
+      if (await this.connectVoice()) return;
+    }
+    await this.finish("voice");
+  }
+
+  /** The phone stream dropped. Telnyx reconnects a stream on a call that is
+   *  still up, so wait for that before treating the call as over. */
+  private phoneLost(): void {
+    this.phone = null;
+    if (this.ended || this.phoneGoneTimer) return;
+    this.phoneGoneTimer = setTimeout(() => {
+      this.phoneGoneTimer = null;
+      if (!this.phone) void this.finish("phone");
+    }, PHONE_GRACE_MS);
   }
 
   private fromPhone(ev: MessageEvent): void {
@@ -173,7 +262,7 @@ export class LiveCall {
       if (this.live) this.send({ type: "session.input_audio.append", audio: msg.media.payload });
       else if (this.early.length < 250) this.early.push(msg.media.payload);
     } else if (msg.event === "stop") {
-      void this.finish("phone");
+      this.phoneLost();
     }
   }
 
@@ -206,7 +295,12 @@ export class LiveCall {
       case "session.started":
         this.live = true;
         for (const audio of this.early.splice(0)) this.send({ type: "session.input_audio.append", audio });
+        if (this.greeted) {
+          this.resumeVoice();
+          break;
+        }
         for (const note of this.earlyNotes.splice(0)) this.send(note);
+        this.greeted = true;
         // A phone that answers in silence reads as a dead line. Exact words,
         // as an instruction: GPT-Live has no "speak now" in client mode.
         this.send({
@@ -226,7 +320,7 @@ export class LiveCall {
         break;
       case "session.closed":
         console.log("live session closed", this.ourCallId, msg.reason ?? "");
-        await this.finish("voice");
+        await this.voiceLost();
         break;
       case "error":
         console.error("live error", this.ourCallId, JSON.stringify(msg.error));
@@ -236,14 +330,41 @@ export class LiveCall {
     }
   }
 
+  /** A replacement voice joins a call already under way: it gets the notes
+   *  and the call so far, and picks up without greeting again. */
+  private resumeVoice(): void {
+    this.earlyNotes = [];
+    for (const m of this.noteMessages(this.notes.join("\n\n"))) this.send(m);
+    if (this.buf) void this.flush();
+    const sofar = this.lines
+      .slice(-30)
+      .map((l) => `${l.role === "user" ? "Caller" : "You"}: ${l.text}`)
+      .join("\n")
+      .slice(-6000);
+    for (let i = 0; i < sofar.length; i += 1600)
+      this.send({
+        type: "session.thinking.append",
+        delegation_id: null,
+        content: `${i ? "(continued) " : "The call so far, before your connection dropped:\n"}${sofar.slice(i, i + 1600)}`,
+      });
+    this.send({
+      type: "session.instructions.append",
+      delegation_id: null,
+      content:
+        "You are already in this call: your connection dropped for a moment and you are back. Do not greet the caller again. Say briefly that you dropped out for a second, then carry on where the call left off. Requests delegated before the drop are still running; their results will arrive as notes.",
+    });
+  }
+
   /** Transcript deltas carry no turn boundary; a change of speaker, or a
    *  pause, is what ends a line. */
   private delta(role: "user" | "assistant", text: string): void {
     if (!text) return;
-    if (role === "user" && text.trim()) this.cancelHangup();
     if (this.buf && this.buf.role !== role) void this.flush();
     if (!this.buf) this.buf = { role, text: "" };
     this.buf.text += text;
+    // The caller speaking again cancels a pending hang-up, unless it is more
+    // goodbye or a breath the transcriber wrote down ("[inhale]").
+    if (role === "user" && this.hangupTimer && !closingWords(this.buf.text)) this.cancelHangup();
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => void this.flush(), 2500);
   }
@@ -256,24 +377,33 @@ export class LiveCall {
     const text = b?.text.replace(/\s+/g, " ").trim();
     if (!b || !text) return;
     this.lines.push({ role: b.role, text, at: new Date().toISOString() });
-    // Both said goodbye, in either order.
+    // Both said goodbye, in either order; or the caller asked to be hung up
+    // on, which needs no goodbye back. Noise lines change nothing.
     if (b.role === "user") {
-      this.callerBye = callerSaysBye(text);
-      if (this.callerBye && Date.now() - this.voiceByeAt < 15_000) this.scheduleHangup();
+      if (!isNoise(text)) {
+        this.callerBye = callerSaysBye(text);
+        this.hangupAsked = callerAsksHangup(text);
+      }
+      if (this.callerBye && Date.now() - this.voiceByeAt < 15_000) this.scheduleHangup(HANGUP_AFTER_MS);
+      else if (this.hangupAsked) this.scheduleHangup(HANGUP_ON_REQUEST_MS);
     } else if (voiceSaysBye(text)) {
       this.voiceByeAt = Date.now();
-      if (this.callerBye) this.scheduleHangup();
+      if (this.callerBye || this.hangupAsked) this.scheduleHangup(HANGUP_AFTER_MS);
     }
     await this.persist();
   }
 
-  /** Both said goodbye: hang up once the caller has stayed quiet a moment. */
-  private scheduleHangup(): void {
+  /** Both said goodbye: hang up once the caller has stayed quiet a moment.
+   *  Checked again when it fires: words still being transcribed that are not
+   *  goodbye mean the caller is talking. */
+  private scheduleHangup(ms: number): void {
     this.cancelHangup();
     this.hangupTimer = setTimeout(() => {
+      this.hangupTimer = null;
+      if (this.buf?.role === "user" && !closingWords(this.buf.text)) return;
       console.log("live call hung up after goodbye", this.ourCallId);
       void this.finish("voice");
-    }, HANGUP_AFTER_MS);
+    }, ms);
   }
 
   private cancelHangup(): void {
@@ -313,6 +443,7 @@ export class LiveCall {
       at: Date.now(),
       claimed: false,
       answered: false,
+      voice: this.voiceGen,
     };
     this.handoffs.push(h);
     this.wake();
@@ -375,8 +506,17 @@ export class LiveCall {
     if (this.ended) return Response.json({ ok: false, ended: true });
     // About 500 tokens is the cap per append; a spoken answer is far shorter.
     const content = text.trim().slice(0, 1800);
-    if (final !== false) {
-      h.answered = true;
+    if (final !== false) h.answered = true;
+    if (h.voice !== this.voiceGen) {
+      // Delegated to a voice that has since been replaced; the new one knows
+      // no such delegation, so it is told in plain words.
+      if (final !== false)
+        this.send({
+          type: "session.instructions.append",
+          delegation_id: null,
+          content: `The answer to the caller's earlier request ("${h.request.slice(0, 200)}") has arrived from their session. Tell them briefly, at the next natural pause: ${content}`,
+        });
+    } else if (final !== false) {
       this.send({ type: "session.commentary.append", delegation_id: h.id, content });
     } else {
       this.send({ type: "session.thinking.append", delegation_id: h.id, content });
@@ -405,22 +545,34 @@ export class LiveCall {
     if (typeof text !== "string" || !text.trim()) return new Response("bad context", { status: 400 });
     if (this.ended) return Response.json({ ok: false, ended: true });
     const all = text.trim().slice(0, 12_000);
-    for (let i = 0; i < all.length; i += 1600) {
-      (this.live ? (m: unknown) => this.send(m) : (m: unknown) => this.earlyNotes.push(m))({
+    this.notes.push(all);
+    for (const m of this.noteMessages(all)) (this.live ? (x: unknown) => this.send(x) : (x: unknown) => this.earlyNotes.push(x))(m);
+    return Response.json({ ok: true });
+  }
+
+  private noteMessages(all: string): unknown[] {
+    const out: unknown[] = [];
+    for (let i = 0; i < all.length; i += 1600)
+      out.push({
         type: "session.thinking.append",
         delegation_id: null,
         content: `${i ? "(continued) " : "Background on the session, from its terminal: "}${all.slice(i, i + 1600)}`,
       });
-    }
-    return Response.json({ ok: true });
+    return out;
   }
 
   private async finish(by: "phone" | "voice"): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.cancelHangup();
+    if (this.phoneGoneTimer) clearTimeout(this.phoneGoneTimer);
+    this.phoneGoneTimer = null;
+    this.voiceGen++;
     this.send({ type: "session.close" });
     if (by === "voice" && this.cfg?.callSid && this.cfg.accountSid)
-      await telnyx.hangupTexmlCall(this.env.TELNYX_API_KEY, this.cfg.accountSid, this.cfg.callSid).catch(() => {});
+      await telnyx
+        .hangupTexmlCall(this.env.TELNYX_API_KEY, this.cfg.accountSid, this.cfg.callSid)
+        .catch((err) => console.error("live hangup failed", this.ourCallId, (err as Error).message));
     try {
       this.phone?.close(1000, "done");
     } catch {
@@ -433,3 +585,9 @@ export class LiveCall {
     this.ws = null;
   }
 }
+
+/** Caller words that do not count as talking on: more goodbye, or a noise
+ *  the transcriber wrote down in brackets. */
+const closingWords = (text: string): boolean => isNoise(text) || callerSaysBye(text);
+
+const isNoise = (text: string): boolean => !text.replace(/\[[^\]]*\]?/g, "").replace(/[^\p{L}\p{N}]/gu, "");

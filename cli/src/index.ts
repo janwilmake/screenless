@@ -714,12 +714,13 @@ async function watch(args: string[]): Promise<void> {
       offline = true;
     }
 
-    if (next?.live && !liveCalls.has(next.live)) {
+    // A call whose serving ended can come back: the line reconnected while
+    // the caller was still on it. Serve it again, keeping what was done.
+    if (next?.live && !serving.has(next.live)) {
       const callId = next.live;
+      const before = liveCalls.get(callId);
       if (!asJson) console.log(`\n${c.green("☎")} ${c.bold("live call")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the call`)}`);
-      liveCalls.set(
-        callId,
-        serveLiveCall({
+      const served = serveLiveCall({
           apiUrl: cfg.apiUrl,
           token: cfg.token,
           callId,
@@ -727,15 +728,15 @@ async function watch(args: string[]): Promise<void> {
           sessionId,
           cli: process.argv[1],
           log: (line) => !asJson && console.log(`  ${line}`),
-          brief: brief?.current(),
-          forkBrief: !!brief,
+          brief: before ? undefined : brief?.current(),
+          forkBrief: !before && !!brief,
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
             serving.delete(callId);
             if (!asJson) console.log(c.dim(`  live call ${callId.slice(0, 8)} ended`));
-          }),
-      );
+          });
+      liveCalls.set(callId, before ? Promise.all([before, served]).then((r) => r.flat()) : served);
       serving.add(callId);
     }
 

@@ -1,7 +1,7 @@
 # Intent, resolved
 
 Last updated: 2026-10-15 — covers sessions 1–9 in full (through the 03:35
-prompt on 22 Aug), plus the live-call rows from session 12. Sessions 10–11 are
+prompt on 22 Aug), plus the live-call rows from sessions 12–13. Sessions 10–11 are
 in their own files.
 If the session files carry prompts newer than that, this document is behind
 them and they win.
@@ -37,6 +37,7 @@ team infrastructure, and its final prompt reframed it as tooling.)*
 | The call brief nightly and the edition weekly from the same Saturday sitting *(was: both nightly from one reading; before that, two loops)* | built, unrun |
 | The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built — still true on live calls: the voice has no tools and hands requests to the caller's own terminal |
 | **Call your Claude session**: ring in while your own terminal watches, and every request is handed *during the call* to a fork of the Claude Code session where `/screenless` was armed; the answer is spoken back *(session 12; before this, the session only acted after the call)* | **built and proven** on scripted PSTN calls: a commit question answered in 10 s, and a forked session's code word recalled in 7 s; no human call yet |
+| The line hangs up by itself once both sides said goodbye, or the caller asked it to, and never on someone still talking; a dropped voice or phone stream mid-call does not end the call *(session 13: the session-12 version was proven on a scripted call but failed on Jan's first real one, because a mid-call socket drop had already marked the call ended)* | built — unit-checked against the lines of call 28180e09; not yet deployed or called |
 | Live calls gated: reads and local work in the project only; push, deploy, send, delete and secrets wait for the session after the call | built — gate unit-checked and exercised in forks |
 | The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
