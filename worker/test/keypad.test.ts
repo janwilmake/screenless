@@ -18,7 +18,7 @@ function press(pad: Keypad, keys: string, start = 0): string[] {
 
 test("'#' ends an entry", () => {
   const pad = new Keypad();
-  assert.deepEqual(press(pad, "3333#"), ["3333"]);
+  assert.deepEqual(press(pad, "5170#"), ["5170"]);
   assert.equal(pad.typing, false);
   assert.deepEqual(press(pad, "12#45#"), ["12", "45"]);
 });
@@ -51,11 +51,11 @@ test("keys that stop end the entry after the timeout, not before", () => {
 });
 
 test("a keyed PIN checks against the stored hash", async () => {
-  const stored = await hashPin("3333");
+  const stored = await hashPin("5170");
   const pad = new Keypad();
-  const [entry] = press(pad, "3333#");
+  const [entry] = press(pad, "5170#");
   assert.equal(await verifyPin(entry, stored), true);
-  const [wrong] = press(pad, "3334#");
+  const [wrong] = press(pad, "5171#");
   assert.equal(await verifyPin(wrong, stored), false);
 });
 
@@ -81,7 +81,7 @@ test("what the voice is told never carries digits", () => {
 
 test("a spoken PIN is cut from the transcript", () => {
   const cases: Array<[string, string]> = [
-    ["My PIN is 3333.", "My PIN is [number removed]."],
+    ["My PIN is 6092.", "My PIN is [number removed]."],
     ["it's 4 8 2 1", "it's [number removed]"],
     ["four eight two one", "[number removed]"],
     ["Four, eight, two, one, hash", "[number removed], hash"],

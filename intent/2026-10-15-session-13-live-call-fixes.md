@@ -246,7 +246,7 @@ Decisions made here, for Jan to overrule:
 
 Jan, after testing ffcd830 (deploy 7e3a90b1):
 
-> just tested screenless again. i did 3333# but the pin didnt work and it said 'going on without your pin' in the end. and also i really dont like this voice, can we do the pin convo with the ai voice already?
+> just tested screenless again. i did [PIN]# but the pin didnt work and it said 'going on without your pin' in the end. and also i really dont like this voice, can we do the pin convo with the ai voice already?
 
 The brief this session was given (by Jan, through the orchestrator), in
 substance: find the `<Gather>` bug and put it on record; move the PIN prompt
@@ -266,7 +266,7 @@ this is read off the docs, not seen. Telnyx's TeXML OpenAPI (`calls.json`,
 `TexmlGatherWebhookSchema`) documents `Digits` as "conditional, only present
 when input is dtmf" and `SpeechResult` as "only present when input is speech".
 The Gather was `input="dtmf speech"`. With both, the callback carried no
-`Digits` for the keyed 3333#, and an empty or absent `SpeechResult`, so
+`Digits` for the keyed PIN and #, and an empty or absent `SpeechResult`, so
 `pinFromGather` returned "" and `answerPin` took its `!said` branch: "Going on
 without your PIN." Twilio's Gather sends `Digits` in that mode; Telnyx's, by
 its schema, does not. Two smaller things on record: Telnyx's Gather has no
