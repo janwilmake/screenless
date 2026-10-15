@@ -257,6 +257,16 @@ export class Brief {
     }
   }
 
+  /** What a teammate hears: the condensed brief, never the owner's own
+   *  words verbatim; before it exists, only the repository and machine. */
+  forTeammate(): string {
+    if (this.condensed) return this.condensed;
+    return this.raw
+      .split("\n\n")
+      .filter((p) => !/^(The owner's latest requests|The session's latest replies)/.test(p))
+      .join("\n\n");
+  }
+
   current(): string {
     if (!this.condensed) return this.raw;
     // The condensed brief may lag the log by a minute or two; the latest

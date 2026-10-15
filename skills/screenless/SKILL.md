@@ -61,6 +61,12 @@ thing the user has to know.
    is addressed in Slack — add `--name <name>`, so the voice answers as that
    name instead of "your Claude session".
 
+   Only when the user asks for it: `--brief-for team` (or a comma-separated
+   list of teammates' emails) lets teammates who ring in without a live
+   watcher of their own hear this session's brief. They hear where things
+   stand; nothing they ask runs during the call, and it reaches this session
+   afterwards as a `TEAMMATE REQUEST`. The default is the owner only.
+
    It polls every few seconds in this process, no model, registering a
    heartbeat so the Worker knows this terminal is live. While one of your own
    calls is live it stays up and answers it (see above). It **blocks until one

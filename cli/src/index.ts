@@ -577,6 +577,8 @@ interface WatchNext {
   call?: WatchCall;
   /** A ring-in of yours in progress, answered live by this terminal. */
   live?: string;
+  /** Set when that ring-in is a teammate hearing this session's brief. */
+  liveCaller?: { name: string; you: boolean };
 }
 
 function printWatchCall(call: WatchCall, asJson: boolean, live: ForkResult[] = []): void {
@@ -664,6 +666,12 @@ async function watch(args: string[]): Promise<void> {
   // What the voice knows the moment it picks up (see brief.ts). Its name:
   // what the session goes by elsewhere, such as in Slack.
   const name = argFlag(args, "--name") || process.env.SCREENLESS_NAME || "";
+  // Who else may hear this session's brief when they ring in without a live
+  // watcher of their own: nobody by default, the whole team, or the members
+  // with these emails. They hear the brief; nothing they ask runs here.
+  const briefFor = (argFlag(args, "--brief-for") || "owner").toLowerCase();
+  if (!/^(owner|team|[^,\s]+@[^,\s]+(,[^,\s]+@[^,\s]+)*)$/.test(briefFor))
+    die("--brief-for takes owner, team, or a comma-separated list of teammates' emails");
   const brief = live && !args.includes("--no-brief")
     ? new Brief({ sessionId, cwd: process.cwd(), name, model: !args.includes("--no-brief-model") })
     : null;
@@ -690,6 +698,8 @@ async function watch(args: string[]): Promise<void> {
             }`,
           ),
         );
+      if (live && briefFor !== "owner")
+        console.log(c.dim(`  teammates who ring in (${briefFor === "team" ? "the whole team" : briefFor}) hear this session's brief; their requests wait for after the call`));
     } catch {
       /* the banner is decoration; the loop below is the product */
     }
@@ -698,7 +708,8 @@ async function watch(args: string[]): Promise<void> {
   const nextUrl =
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
     `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}` +
-    (name ? `&name=${encodeURIComponent(name)}` : "");
+    (name ? `&name=${encodeURIComponent(name)}` : "") +
+    (live && briefFor !== "owner" ? `&share=${encodeURIComponent(briefFor)}` : "");
   if (liveOnly && !live) die("--live-only needs Claude Code (`claude`) on this machine");
   let offline = false;
 
@@ -727,8 +738,13 @@ async function watch(args: string[]): Promise<void> {
       const before = liveCalls.get(callId);
       const tokens = sessionId ? contextTokens(sessionId, process.cwd()) : null;
       const forkRequests = !!sessionId && (tokens ?? 0) <= forkLimit;
+      const teammate = next.liveCaller && !next.liveCaller.you ? next.liveCaller.name || "a teammate" : undefined;
       if (!asJson) {
-        console.log(`\n${c.green("☎")} ${c.bold("live call")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the call`)}`);
+        console.log(
+          `\n${c.green("☎")} ${c.bold("live call")} ${c.dim(
+            `· ${callId.slice(0, 8)} · ${teammate ? `${teammate} hears this session's brief` : "answering during the call"}`,
+          )}`,
+        );
         if (sessionId && !forkRequests)
           console.log(c.dim(`    session holds ${Math.round((tokens ?? 0) / 1000)}k tokens: requests run fresh with the brief, not in a fork (--fork to force)`));
       }
@@ -740,9 +756,10 @@ async function watch(args: string[]): Promise<void> {
           sessionId,
           cli: process.argv[1],
           log: (line) => !asJson && console.log(`  ${line}`),
-          brief: before ? undefined : brief?.current(),
+          brief: before ? undefined : teammate ? brief?.forTeammate() : brief?.current(),
           forkBrief: !before && !!brief,
           forkRequests,
+          teammate,
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
@@ -1296,6 +1313,11 @@ ${c.bold("Watch options")}
   --no-live            never answer during a call; ring-ins are recorded only
   --fork               always run live requests in a fork of this session,
                        even when it is too long to load quickly (150k tokens)
+  --brief-for <who>    who else hears this session's brief when they ring in
+                       with no live watcher of their own: owner (default),
+                       team, or teammates' emails, comma-separated. They
+                       hear where things stand; their requests are not run
+                       during the call
   --no-fork            run live requests in a fresh claude -p, not a fork of
                        the Claude Code session this was started from
   --name <name>        what the voice calls itself, e.g. the name this session

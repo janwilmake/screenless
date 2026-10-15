@@ -83,6 +83,21 @@ What landed:
   code, so a real outage can be told apart. Reproduced locally with a server
   that drops a request's connection: plain fetch throws `UND_ERR_SOCKET`,
   `fetchRetry` gets the answer.
+- **Teammates can hear a session's brief, if its owner says so.** A
+  teammate who runs a live watcher of their own already got their own
+  session's brief when they rang in: routing goes by the caller's own
+  watcher, and that comes first. New: `screenless watch --brief-for team`
+  (or a list of teammates' emails; default `owner`) lets a teammate with no
+  live watcher hear *this* session's brief. The voice greets them as the
+  owner's session and answers from the notes. Nothing a teammate asks runs
+  during the call: each handoff is answered "noted for after the call", and
+  the call reaches a session afterwards as a `TEAMMATE REQUEST`, as any
+  ring-in does. The reason is the architecture's own: forks run on the
+  owner's machine with the owner's MCPs and logins, and the hyre session
+  reads Wijnand's inbox. For the same reason a teammate never gets the
+  owner's prompts verbatim, only the condensed brief (or, before it exists,
+  the repository and machine facts), and the session's own summary is asked
+  to leave out personal data and private mail.
 
 Still open:
 
@@ -90,6 +105,11 @@ Still open:
   "bye".
 - The speed-up is measured per fork, not on a call. Answers that need real
   work still take as long as the work.
+- Teammate briefs are not exercised end to end: the prefix query was
+  checked on SQLite, the rest only typechecks. It needs a deploy and a
+  teammate's call, with the owner's watcher armed with `--brief-for team`.
+- If the owner and a teammate are on live calls at once, the second
+  overwrites the first's `livecall:` slot for the owner's watcher.
 - The keep-alive cause of the flapping is inferred, not seen: no Worker logs
   were available here. The error code in the offline line will show it.
 - Jan's account still carries the name Wijnand until he runs

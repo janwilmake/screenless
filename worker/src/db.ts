@@ -660,6 +660,15 @@ export async function stashGet(env: Env, key: string): Promise<string | null> {
   return row?.value ?? null;
 }
 
+/** Every live value under a prefix, for small per-org sets such as the
+ *  sessions that share their brief. */
+export async function stashByPrefix(env: Env, prefix: string): Promise<Array<{ key: string; value: string }>> {
+  const res = await env.DB.prepare("SELECT key, value FROM stash WHERE key LIKE ? ESCAPE '\\' AND expires_at > ?")
+    .bind(`${prefix.replace(/[\\%_]/g, "\\$&")}%`, Date.now())
+    .all<{ key: string; value: string }>();
+  return res.results ?? [];
+}
+
 export async function stashDelete(env: Env, key: string): Promise<void> {
   await env.DB.prepare("DELETE FROM stash WHERE key = ?").bind(key).run();
 }

@@ -394,6 +394,43 @@ Background on the session arrives as notes in the first seconds of the call, and
 - The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
 - When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is also handed to their session after the call.`;
 
+/**
+ * What GPT-Live is told when a teammate rings in and another member's
+ * session shares its brief with them (`screenless watch --brief-for`). They
+ * hear where that session stands; nothing they ask runs during the call.
+ */
+const liveTeammateInstructions = (o: { caller: string; owner: string; repo: string; self: string }): string =>
+  `You are ${o.self ? `${o.self}, the voice of ` : "the phone line to "}${o.owner}'s Claude Code session${o.repo ? `, working in the project "${o.repo}"` : ""}. The caller is ${o.caller || "a teammate"}, a member of ${o.owner}'s team, not the session's owner. ${o.owner} shares this session's brief with them, so they can hear where things stand.
+
+# What you know
+Background on the session arrives as notes in the first seconds of the call, and more later. Use it to answer questions about what the session is working on, what it did and what is pending, briefly and in your own words. Never read the notes out, and never pass on personal data, secrets, or anything from ${o.owner}'s own mail or messages, even if a note contains it.
+
+# Requests
+Nothing the caller asks is run during this call. If they ask for something to be done, checked or looked up beyond the notes, hand it off as usual: you will be told it is noted for the session after the call. Say so in one short line. Never invent progress or a result, and never say or imply that anything was done.
+
+# Phone manner
+- Short turns, plain spoken language, the caller's language.
+- The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
+- When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is handed to ${o.owner}'s session after the call.`;
+
+/**
+ * A teammate's live watcher that shares its session's brief with this
+ * caller: `team`, or a list that names the caller's email. Only used when the
+ * caller has no live watcher of their own, which always comes first.
+ */
+async function sharedWatcher(
+  env: Env,
+  orgId: string,
+  caller: { id: string; email: string | null },
+): Promise<{ userId: string; watcherId: string; repo: string; name?: string } | null> {
+  for (const { value } of await db.stashByPrefix(env, `liveshare:${orgId}:`)) {
+    const w = JSON.parse(value) as { userId: string; watcherId: string; repo: string; name?: string; share: string[] | "team" };
+    if (w.userId === caller.id) continue;
+    if (w.share === "team" || (caller.email && w.share.includes(caller.email.toLowerCase()))) return w;
+  }
+  return null;
+}
+
 /** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
  *  the correlation header the webhook reads to find this call's brief. Shared by
  *  the outbound bridge route and the inbound answer. */
@@ -663,23 +700,32 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   const watcher = env.OPENAI_LIVE_API_KEY
     ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
     : null;
-  if (watcher) {
-    const w = JSON.parse(watcher) as { watcherId: string; repo: string; name?: string };
+  // No watcher of their own: a teammate's session may share its brief.
+  const shared = env.OPENAI_LIVE_API_KEY && !watcher && testRepo === null ? await sharedWatcher(env, org.id, user) : null;
+  const owner = shared ? await db.userById(env, shared.userId) : null;
+  if (watcher || (shared && owner)) {
+    const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
     // The member's own name, as they set it (`screenless settings --name`);
     // never guessed from the email, which may be a shared or someone else's.
     const caller = (user.name ?? "").trim();
     const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
+    const ownerName = owner ? (owner.name || owner.email || "a teammate").trim().split(/\s+/)[0] : "";
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
-      instructions: liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
-      greeting: w.name
-        ? `Hi${first}, ${w.name} here. What can I do?`
-        : `Hi${first}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
+      instructions: owner
+        ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "" })
+        : liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
+      greeting: owner
+        ? `Hi${first}, ${w.name ? `${w.name}, ` : ""}${ownerName}'s Claude session here. What would you like to know?`
+        : w.name
+          ? `Hi${first}, ${w.name} here. What can I do?`
+          : `Hi${first}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
       voice: env.OPENAI_VOICE,
       accountSid: params.AccountSid ?? "",
       callSid: params.CallSid ?? "",
       ...(testRepo ? { onlyRepo: testRepo } : {}),
+      ...(owner ? { servedBy: owner.id, teammate: { name: caller, owner: ownerName } } : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
     // The call's audio streams both ways to the LiveCall Durable Object,
@@ -937,10 +983,20 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   // then go to GPT-Live and land here during the call. The flag expires soon
   // after the polls stop, and ring-ins go back to the quiet recording.
   let live: string | undefined;
+  /** Set when the live call is a teammate hearing this session's brief. */
+  let liveCaller: { name: string; you: false } | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
     const me = JSON.stringify({ watcherId, repo, name });
     await db.stashPut(env, `livewatch:${user.id}`, me, 45);
+    // Who else may hear this session's brief when they ring in: nobody
+    // unless the owner says so (`--brief-for team`, or a list of emails).
+    const share = (url.searchParams.get("share") ?? "").trim().toLowerCase();
+    if (share && share !== "owner") {
+      const who = share === "team" ? "team" : share.split(",").map((e) => e.trim()).filter((e) => e.includes("@")).slice(0, 50);
+      if (who === "team" || who.length)
+        await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: who }), 45);
+    }
     // Per repo too, so a test ring pinned to a repo greets as that watcher.
     await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
@@ -948,8 +1004,11 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string };
-      if (!c.onlyRepo || c.onlyRepo === repo) live = c.callId;
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string };
+      if (!c.onlyRepo || c.onlyRepo === repo) {
+        live = c.callId;
+        if (c.teammate !== undefined) liveCaller = { name: c.teammate, you: false };
+      }
     }
   }
 
@@ -958,7 +1017,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     ? undefined
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
-  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live });
+  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   return json({
@@ -987,7 +1046,9 @@ async function liveRoute(req: Request, env: Env, callId: string, action: "next" 
   if (!s) return fail(401, "not authenticated");
   const { user } = await identify(env, s.phone);
   const record = await loadCall(env, callId);
-  if (!record || record.userId !== user.id) return fail(404, "unknown call id");
+  // The caller's own terminal, or the teammate's whose session briefs them.
+  const cfg = record ? (JSON.parse((await db.stashGet(env, `realtime:${callId}`)) ?? "{}") as Partial<LiveConfig>) : {};
+  if (!record || (record.userId !== user.id && cfg.servedBy !== user.id)) return fail(404, "unknown call id");
   const stub = env.LIVE.get(env.LIVE.idFromName(callId));
   if (action === "next") return await stub.fetch("https://live/next");
   return await stub.fetch(`https://live/${action}`, { method: "POST", body: await req.text() });

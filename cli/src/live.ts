@@ -324,6 +324,8 @@ export async function serveLiveCall(o: {
   /** Run each request in a fork of the session. Off for a session too long
    *  to load quickly: a fresh run gets the brief and the session's summary. */
   forkRequests?: boolean;
+  /** A teammate is calling to hear this session's brief, not its owner. */
+  teammate?: string;
 }): Promise<ForkResult[]> {
   const results: ForkResult[] = [];
   // What a fresh run knows of the session: the brief, and C once it is in.
@@ -351,8 +353,9 @@ export async function serveLiveCall(o: {
         sessionId: o.sessionId,
         cli: o.cli,
         onStep: () => undefined,
-        prompt:
-          "Your owner is calling you on the phone right now, and a voice model is talking with them. Brief that voice so it can answer questions about where things stand without asking you: in at most 120 words of plain sentences, say what we are working on, what was done last, what is pending or blocked, and anything the owner will probably ask about. Answer from what you already know in this session; use no tools unless something essential is missing.",
+        prompt: o.teammate
+          ? `${o.teammate}, a teammate of your owner, is calling the phone line right now, and your owner shares this session's brief with teammates. Brief the voice that talks with them: in at most 120 words of plain sentences, say what we are working on, what was done last, and what is pending or blocked. Only what is fine for a teammate to hear: no personal data, no secrets, nothing from your owner's own mail or private messages. Answer from what you already know in this session; use no tools.`
+          : "Your owner is calling you on the phone right now, and a voice model is talking with them. Brief that voice so it can answer questions about where things stand without asking you: in at most 120 words of plain sentences, say what we are working on, what was done last, what is pending or blocked, and anything the owner will probably ask about. Answer from what you already know in this session; use no tools unless something essential is missing.",
       },
     ).then(async (r) => {
       if (r.ok) {

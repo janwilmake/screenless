@@ -49,6 +49,12 @@ export interface LiveConfig {
   callSid: string;
   /** Test rings only: the one watcher repo allowed to serve this call. */
   onlyRepo?: string;
+  /** The member whose session serves the call: the caller, or a teammate
+   *  who shares their session's brief with the caller. */
+  servedBy?: string;
+  /** Set when the caller is not the session's owner: they hear its brief,
+   *  and nothing they ask is run during the call. */
+  teammate?: { name: string; owner: string };
 }
 
 type Line = { role: "user" | "assistant"; text: string; at: string };
@@ -193,7 +199,12 @@ export class LiveCall {
       phone.close(1011, "voice unavailable");
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
-    await db.stashPut(this.env, `livecall:${cfg.userId}`, JSON.stringify({ callId, onlyRepo: cfg.onlyRepo }), 7200);
+    await db.stashPut(
+      this.env,
+      `livecall:${cfg.servedBy ?? cfg.userId}`,
+      JSON.stringify({ callId, onlyRepo: cfg.onlyRepo, teammate: cfg.teammate?.name }),
+      7200,
+    );
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -465,6 +476,18 @@ export class LiveCall {
   private async delegate(id: string): Promise<void> {
     // The caller's words may still be in the buffer when the voice decides.
     if (this.buf?.role === "user") await this.flush();
+    // A teammate hears the brief; their requests are not run on the owner's
+    // machine during the call. They reach the session afterwards, marked as
+    // a teammate's, like any ring-in.
+    if (this.cfg?.teammate) {
+      this.handedOffUpTo = this.lines.length;
+      this.send({
+        type: "session.commentary.append",
+        delegation_id: id,
+        content: `This is ${this.cfg.teammate.owner}'s session, and requests from teammates are not run during a call. Tell the caller it is noted: the session gets it after the call, from this call's transcript.`,
+      });
+      return;
+    }
     const said = this.lines.slice(this.handedOffUpTo).filter((l) => l.role === "user").map((l) => l.text);
     const lastCaller = [...this.lines].reverse().find((l) => l.role === "user")?.text ?? "";
     this.handedOffUpTo = this.lines.length;
@@ -617,7 +640,7 @@ export class LiveCall {
     }
     await this.flush();
     if (this.lines.length) await this.persist();
-    await db.stashDelete(this.env, `livecall:${this.userId}`).catch(() => {});
+    await db.stashDelete(this.env, `livecall:${this.cfg?.servedBy ?? this.userId}`).catch(() => {});
     this.wake();
     this.ws = null;
   }
