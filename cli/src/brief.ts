@@ -34,6 +34,29 @@ function sessionLog(sessionId: string, cwd: string): string | null {
   return null;
 }
 
+/**
+ * How many tokens the session's context held at its last turn, read from
+ * that turn's usage in the log. A fork has to load all of it before it says
+ * a word: a 528k-token session took 15 s and $0.21 to answer "OK", where a
+ * fresh run took 5 s and a cent.
+ */
+export function contextTokens(sessionId: string, cwd: string): number | null {
+  const log = sessionLog(sessionId, cwd);
+  if (!log) return null;
+  const lines = tail(log, 400_000);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"assistant"')) continue;
+    try {
+      const r = JSON.parse(lines[i]) as { type?: string; isSidechain?: boolean; message?: { usage?: Record<string, number> } };
+      const u = r.type === "assistant" && !r.isSidechain ? r.message?.usage : undefined;
+      if (u) return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+    } catch {
+      /* a line cut by the tail */
+    }
+  }
+  return null;
+}
+
 /** The last `bytes` of a file, from the first whole line. Session logs grow
  *  to megabytes; the brief only needs the end. */
 function tail(path: string, bytes = 600_000): string[] {

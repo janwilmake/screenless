@@ -3,7 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
 import { gateHook, serveLiveCall, type ForkResult } from "./live.js";
-import { Brief } from "./brief.js";
+import { Brief, contextTokens } from "./brief.js";
 
 /**
  * The zone this machine is set to.
@@ -653,6 +653,11 @@ async function watch(args: string[]): Promise<void> {
   const liveOnly = args.includes("--live-only");
   const live = !args.includes("--no-live") && spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
   const sessionId = args.includes("--no-fork") ? undefined : process.env.CLAUDE_CODE_SESSION_ID || undefined;
+  // Past this many tokens of context a fork is slow and dear to start (a
+  // 528k-token session: 15 s and $0.21 per answer, against 5 s and a cent
+  // fresh), so requests run fresh with the brief instead. Checked per call,
+  // as the session grows. --fork forks regardless.
+  const forkLimit = args.includes("--fork") ? Infinity : 150_000;
   // A live watcher polls faster: a ring-in must find its terminal within the
   // first seconds of the call, not ten seconds in.
   const interval = Math.max(3, Number(argFlag(args, "--interval") ?? (live ? 4 : 10))) * 1000;
@@ -719,7 +724,13 @@ async function watch(args: string[]): Promise<void> {
     if (next?.live && !serving.has(next.live)) {
       const callId = next.live;
       const before = liveCalls.get(callId);
-      if (!asJson) console.log(`\n${c.green("☎")} ${c.bold("live call")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the call`)}`);
+      const tokens = sessionId ? contextTokens(sessionId, process.cwd()) : null;
+      const forkRequests = !!sessionId && (tokens ?? 0) <= forkLimit;
+      if (!asJson) {
+        console.log(`\n${c.green("☎")} ${c.bold("live call")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the call`)}`);
+        if (sessionId && !forkRequests)
+          console.log(c.dim(`    session holds ${Math.round((tokens ?? 0) / 1000)}k tokens: requests run fresh with the brief, not in a fork (--fork to force)`));
+      }
       const served = serveLiveCall({
           apiUrl: cfg.apiUrl,
           token: cfg.token,
@@ -730,6 +741,7 @@ async function watch(args: string[]): Promise<void> {
           log: (line) => !asJson && console.log(`  ${line}`),
           brief: before ? undefined : brief?.current(),
           forkBrief: !before && !!brief,
+          forkRequests,
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
@@ -1275,6 +1287,8 @@ ${c.bold("Watch options")}
   --live-only          answer your calls live, but never take finished calls
                        (leave those for your main session's watcher)
   --no-live            never answer during a call; ring-ins are recorded only
+  --fork               always run live requests in a fork of this session,
+                       even when it is too long to load quickly (150k tokens)
   --no-fork            run live requests in a fresh claude -p, not a fork of
                        the Claude Code session this was started from
   --name <name>        what the voice calls itself, e.g. the name this session

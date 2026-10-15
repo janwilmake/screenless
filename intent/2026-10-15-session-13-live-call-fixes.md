@@ -30,10 +30,26 @@ What landed:
   pending hang-up. Real speech still cancels it, and the timer re-checks
   that the caller is not mid-sentence when it fires.
 
+- **Faster answers: a long session is no longer forked per request.**
+  Measured on this server with "Reply with just the word OK": a fork of the
+  hyre session (529k tokens of context) took 15.5 s and $0.21; a fresh
+  `claude -p` took 5.3 s and $0.01 once cached (3.1 s without MCP servers,
+  kept on because forks need MCP reads). The watcher now reads the session's
+  context size from the last turn's usage in its log, and past 150k tokens
+  runs each request fresh, handed the pickup brief and the session's own
+  summary (C), which still comes from one fork at pickup. `--fork` forks
+  regardless. The voice is also told to answer "can you say more?" and the
+  like from its notes rather than delegate them, since every handoff costs
+  seconds. The 4 s watcher poll the fork blamed on the call only applies to
+  finding the call at pickup; requests during the call were already a
+  long-poll that wakes at once, so it was left alone.
+
 Still open:
 
 - Not verified on a call: needs a worker deploy, then a call that ends with
   "bye".
+- The speed-up is measured per fork, not on a call. Answers that need real
+  work still take as long as the work.
 
 ## Prompts
 
