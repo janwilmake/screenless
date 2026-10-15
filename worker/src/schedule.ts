@@ -32,6 +32,8 @@ export interface Settings {
   termsAcceptedAt: number;
   email: string;
   emailVerifiedAt: number;
+  /** What the line calls you. */
+  name: string;
   updatedAt: number;
 }
 
@@ -43,6 +45,7 @@ export function settingsOf(user: db.User): Settings {
     termsAcceptedAt: user.terms_accepted_at,
     email: user.email ?? "",
     emailVerifiedAt: user.email_verified_at,
+    name: user.name,
     updatedAt: user.settings_updated_at,
   };
 }
@@ -60,6 +63,7 @@ export interface SettingsPatch {
   acceptTerms?: unknown;
   email?: unknown;
   emailVerifiedAt?: unknown;
+  name?: unknown;
 }
 
 /**
@@ -110,6 +114,13 @@ export async function updateSettings(
   if (patch.acceptTerms === true) {
     sets.push("terms_accepted_at = ?");
     binds.push(Date.now());
+  }
+
+  if (patch.name !== undefined) {
+    if (typeof patch.name !== "string" || patch.name.trim().length > 80)
+      return { ok: false, error: "name must be text, at most 80 characters" };
+    sets.push("name = ?");
+    binds.push(patch.name.trim());
   }
 
   if (patch.callEnabled !== undefined) {

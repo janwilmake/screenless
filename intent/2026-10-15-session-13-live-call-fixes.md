@@ -44,6 +44,20 @@ What landed:
   finding the call at pickup; requests during the call were already a
   long-poll that wakes at once, so it was left alone.
 
+- **The greeting waits for the caller, and uses the name they set.** The
+  call opened with "Hi Wijnand, Cody" interleaved with Jan still talking to
+  someone in the room. The Durable Object now measures the loudness of the
+  caller's audio (over an adaptive noise floor, so a street does not count
+  as talking) and says the greeting only after 0.7 s of quiet, at most 6 s
+  in, and not at all if the voice already answered by itself; "exactly and
+  in full" became "stop at once if the caller speaks". The wrong name was
+  not taken from the email: no code does that. It is the `name` stored on
+  the member whose verified phone rang, typed at invite time for the
+  wijnand@hyre.io account. A guess from the mailbox was tried and dropped,
+  because it would have left a real Wijnand nameless for good. Instead a
+  member sets their own name, `screenless settings --name "Jan"`, and an
+  unset name greets with none.
+
 Still open:
 
 - Not verified on a call: needs a worker deploy, then a call that ends with
@@ -95,3 +109,7 @@ verbatim), where it bears on what was asked:
 > Bye bye
 > Please hang up
 > Please hang up
+- Jan's account still carries the name Wijnand until he runs
+  `screenless settings --name "Jan"` against the deployed worker.
+- The loudness threshold (500, or three times the noise floor) is set from
+  synthetic audio, not tuned on a real line.

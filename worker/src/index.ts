@@ -665,11 +665,14 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     : null;
   if (watcher) {
     const w = JSON.parse(watcher) as { watcherId: string; repo: string; name?: string };
-    const first = user.name ? ` ${user.name.split(" ")[0]}` : "";
+    // The member's own name, as they set it (`screenless settings --name`);
+    // never guessed from the email, which may be a shared or someone else's.
+    const caller = (user.name ?? "").trim();
+    const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
-      instructions: liveInboundInstructions({ name: user.name ?? "", repo: w.repo, self: w.name ?? "" }),
+      instructions: liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
       greeting: w.name
         ? `Hi${first}, ${w.name} here. What can I do?`
         : `Hi${first}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,

@@ -794,6 +794,8 @@ interface Settings {
   nextCallAt: number;
   /** The team line — ring it any time to leave a spoken request. */
   inboundNumber: string;
+  /** What the line calls you. */
+  name?: string;
 }
 
 function showSettings(s: Settings): void {
@@ -808,6 +810,7 @@ function showSettings(s: Settings): void {
     `${c.bold("next call")}   ${s.callEnabled ? `${when.toLocaleString()} ${c.dim(`(${away})`)}` : c.red("paused")}`,
   );
   console.log(`${c.bold("team line")}   ${s.inboundNumber} ${c.dim("— ring it, talk after the beep, hang up")}`);
+  console.log(`${c.bold("your name")}   ${s.name || c.dim("not set — the line greets you without one (--name)")}`);
 }
 
 async function settings(args: string[]): Promise<void> {
@@ -824,8 +827,10 @@ async function settings(args: string[]): Promise<void> {
   if (at) patch.callAt = at;
   if (args.includes("--pause")) patch.callEnabled = false;
   if (args.includes("--resume")) patch.callEnabled = true;
+  const name = argFlag(args, "--name");
+  if (name !== undefined) patch.name = name;
 
-  const changed = Boolean(at) || args.includes("--pause") || args.includes("--resume");
+  const changed = Boolean(at) || name !== undefined || args.includes("--pause") || args.includes("--resume");
 
   const result = Object.keys(patch).length
     ? await api<Settings>(cfg.apiUrl, "/settings", {
@@ -1265,6 +1270,7 @@ ${c.bold("Call options")}
 ${c.bold("Settings options")}
   --at HH:MM           local time of the morning call, 24-hour (default 08:00)
   --pause / --resume   stop or restart the scheduled call
+  --name "<name>"      what the line calls you when you ring in ("" clears it)
   --json               machine-readable, for the loop
 
   Your timezone is not a setting — it is read from this machine every time,

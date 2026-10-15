@@ -77,6 +77,10 @@ const POLL_HOLD_MS = 20_000;
 const PHONE_GRACE_MS = 6_000;
 /** Voice sessions restarted per call before giving up and hanging up. */
 const MAX_VOICE_RESTARTS = 3;
+/** The greeting waits for this much quiet from the caller... */
+const GREET_AFTER_QUIET_MS = 700;
+/** ...but no longer than this: a line that stays silent reads as dead. */
+const GREET_WAIT_MAX_MS = 6_000;
 
 export class LiveCall {
   /** GPT-Live's WebSocket. */
@@ -96,6 +100,12 @@ export class LiveCall {
   /** Every background note so far, replayed into a restarted voice. */
   private notes: string[] = [];
   private phoneGoneTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the caller's audio last carried speech, by its loudness. */
+  private callerSpeechAt = 0;
+  /** The caller's line noise, so a street does not count as talking. */
+  private noiseFloor = 200;
+  /** The voice has said something, so a late greeting would be odd. */
+  private voiceSpoke = false;
   private ourCallId = "";
   private userId = "";
   private cfg: LiveConfig | null = null;
@@ -259,6 +269,9 @@ export class LiveCall {
       return;
     }
     if (msg.event === "media" && msg.media?.payload && msg.media.track !== "outbound") {
+      const level = loudness(msg.media.payload);
+      this.noiseFloor = level < this.noiseFloor ? level : this.noiseFloor + (level - this.noiseFloor) * 0.01;
+      if (level > Math.max(500, this.noiseFloor * 3)) this.callerSpeechAt = Date.now();
       if (this.live) this.send({ type: "session.input_audio.append", audio: msg.media.payload });
       else if (this.early.length < 250) this.early.push(msg.media.payload);
     } else if (msg.event === "stop") {
@@ -290,7 +303,10 @@ export class LiveCall {
 
     switch (msg.type) {
       case "session.output_audio.delta":
-        if (msg.delta) this.toPhone(msg.delta);
+        if (msg.delta) {
+          this.voiceSpoke = true;
+          this.toPhone(msg.delta);
+        }
         break;
       case "session.started":
         this.live = true;
@@ -301,13 +317,7 @@ export class LiveCall {
         }
         for (const note of this.earlyNotes.splice(0)) this.send(note);
         this.greeted = true;
-        // A phone that answers in silence reads as a dead line. Exact words,
-        // as an instruction: GPT-Live has no "speak now" in client mode.
-        this.send({
-          type: "session.instructions.append",
-          delegation_id: null,
-          content: `Immediately say the following, exactly and in full, then wait for the caller: "${greeting}"`,
-        });
+        this.greetWhenQuiet(greeting);
         break;
       case "session.input_transcript.delta":
         this.delta("user", msg.delta ?? "");
@@ -328,6 +338,33 @@ export class LiveCall {
       default:
         if (msg.type && !msg.type.endsWith(".delta")) console.log("live event", msg.type);
     }
+  }
+
+  /**
+   * A phone that answers in silence reads as a dead line, so the voice is
+   * told to greet. Exact words, as an instruction: GPT-Live has no "speak
+   * now" in client mode. But not over the caller: on Jan's first call he was
+   * still talking to someone in the room, and the greeting came out between
+   * his words. So it waits for a pause, and is dropped if the voice has
+   * already answered him by itself.
+   */
+  private greetWhenQuiet(greeting: string): void {
+    const gen = this.voiceGen;
+    const start = Date.now();
+    const tick = () => {
+      if (this.ended || gen !== this.voiceGen || this.voiceSpoke) return;
+      const quiet = Date.now() - this.callerSpeechAt >= GREET_AFTER_QUIET_MS;
+      if (!quiet && Date.now() - start < GREET_WAIT_MAX_MS) {
+        setTimeout(tick, 100);
+        return;
+      }
+      this.send({
+        type: "session.instructions.append",
+        delegation_id: null,
+        content: `Now say the following, exactly, then wait for the caller: "${greeting}" If the caller starts speaking, stop at once and listen.`,
+      });
+    };
+    tick();
   }
 
   /** A replacement voice joins a call already under way: it gets the notes
@@ -589,5 +626,23 @@ export class LiveCall {
 /** Caller words that do not count as talking on: more goodbye, or a noise
  *  the transcriber wrote down in brackets. */
 const closingWords = (text: string): boolean => isNoise(text) || callerSaysBye(text);
+
+/** Mean absolute amplitude of one frame of 8-bit mu-law audio. Speech on a
+ *  phone line runs to the thousands; a quiet line stays in the low hundreds. */
+function loudness(b64: string): number {
+  let bytes: string;
+  try {
+    bytes = atob(b64);
+  } catch {
+    return 0;
+  }
+  let sum = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const u = ~bytes.charCodeAt(i) & 0xff;
+    const mag = (((u & 0x0f) << 3) + 0x84) << ((u >> 4) & 7);
+    sum += mag - 0x84;
+  }
+  return bytes.length ? sum / bytes.length : 0;
+}
 
 const isNoise = (text: string): boolean => !text.replace(/\[[^\]]*\]?/g, "").replace(/[^\p{L}\p{N}]/gu, "");
