@@ -7,92 +7,18 @@
  * watcher was armed in, so it knows what that session knows, and the answer
  * goes back to be spoken. Several can run at once; the voice keeps talking.
  *
- * Nobody is at the keyboard during a call, and caller id is a weak identity,
- * so every tool call of a fork passes the gate below: reading and local work
- * in the project are allowed, anything that leaves the machine or cannot be
- * undone is refused and left for the session after the call.
+ * Every tool call of a fork passes the gate below. Only the session's owner
+ * can make a call run requests, so the gate allows what the session may do,
+ * and refuses only secrets: every answer is spoken aloud.
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
 
 /* -------------------------------------------------------------------- gate */
 
 export type Decision = { decision: "allow" | "deny"; reason: string };
-
-const READ_TOOLS = new Set([
-  "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "TodoWrite", "TaskOutput",
-  "ToolSearch", "Agent", "Task", "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ListAgents",
-]);
-const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-
-/** Read-only shell commands. */
-const READ_COMMANDS: RegExp[] = [
-  /^git (log|show|diff|status|blame|rev-parse|rev-list|ls-files|ls-tree|shortlog|describe|reflog|show-ref|for-each-ref|cat-file|count-objects|name-rev|merge-base|grep|whatchanged|cherry)\b/,
-  /^git (stash list|config --get|config -l|config --list|worktree list)\b/,
-  /^git (branch|tag)( (-a|-r|-v|-vv|-l|--list|--all|--show-current|--contains \S+|--merged|--no-merged))*$/,
-  /^git remote( -v)?$/,
-  /^gh (pr|issue|run|release|repo|workflow) (view|list|diff|checks|status)\b/,
-  /^gh search\b/,
-  /^gh api (?!.*(-X|--method)\s*(POST|PUT|PATCH|DELETE))/i,
-  /^(ls|cat|head|tail|wc|grep|egrep|rg|pwd|echo|date|which|file|stat|du|df|tree|jq|sort|uniq|cut|tr|basename|dirname|realpath|nl)(\s|$)/,
-  /^xargs( -[0-9a-zA-Z]+)* (wc|grep|rg|cat|head|tail|ls|stat|file)\b/,
-  /^find\b(?!.*(-exec|-delete|-ok|-fprint))/,
-  /^(npm|pnpm|yarn) (ls|list|view|outdated|why)\b/,
-  /^(node|npm|git|python3?) --version$/,
-  // What is running on this machine: "how many agents do you have going?"
-  // was unanswerable on a call because these were refused. `ps` only in
-  // forms that cannot print environments (BSD `e`, macOS `-E`).
-  /^ps(\s+(-[A-DF-Za-z]+|-[A-DF-Za-z]*o\s*[\w,=%:-]+|-p\s*[\d,]+|-u\s*[\w,]+|aux|ax))*$/,
-  /^pgrep( -[a-zA-Z]+)* [\w.'"*^$|-]+$/,
-  /^screen -(ls|list)$/,
-  /^tmux (ls|list-sessions|list-windows|list-panes)\b/,
-  /^(uptime|whoami|id|hostname|nproc|sw_vers|vm_stat)$/,
-  /^(uname|free)( -[a-zA-Z]+)?$/,
-  /^top -b -n ?1( -[a-zA-Z]+)*$/,
-  /^(diff|cmp|readlink|command -v|type)\s/,
-];
-
-/** Local work that stays on this machine and can be undone: commits, tests,
- *  builds. No push, no deploy, no publish, no deleting. */
-const LOCAL_COMMANDS: RegExp[] = [
-  /^git (add|commit|fetch|switch|stash( (push|list|show|apply))?)\b/,
-  /^git checkout -b\b/,
-  /^(npm|pnpm|yarn|bun) (test|t)\b/,
-  /^(npm|pnpm|yarn|bun) run (?!.*\b(deploy|publish|release)\b)[\w:.-]*(test|build|typecheck|check|lint|format)[\w:.-]*\b/,
-  /^npx (tsc|vitest|jest|eslint|prettier|tsx)\b/,
-  /^node --test\b/,
-  /^(pytest|python3? -m (pytest|unittest)|go (test|build|vet)|cargo (test|build|check|clippy))\b/,
-  /^(mkdir|touch)\s/,
-];
-
-/** True when every part of a shell command is a read (or, with `local`, a
- *  local change). Pipes are fine; redirects and substitution are not. */
-export function shellKind(command: string): "read" | "local" | "other" {
-  // Quoted text is an argument, not shell syntax; a double-quoted string can
-  // still run $(...) or backticks, so those stay visible.
-  const c = command
-    .trim()
-    .replace(/'[^']*'/g, "''")
-    .replace(/"(?:[^"\\`$]|\\.)*"/g, '""')
-    .replace(/2>&1|2>\/dev\/null/g, "");
-  if (/[`<>\n]|\$\(/.test(c) || /&/.test(c.replace(/&&/g, ""))) return "other";
-  let kind: "read" | "local" = "read";
-  for (const part of c.split(/\|\||&&|\||;/)) {
-    const s = part
-      .trim()
-      .replace(/^cd [^ ]+$/, "pwd")
-      .replace(/^git (-C ("[^"]*"|\S+) |--no-pager )+/, "git ");
-    if (s === "" || READ_COMMANDS.some((r) => r.test(s))) continue;
-    if (LOCAL_COMMANDS.some((r) => r.test(s))) {
-      kind = "local";
-      continue;
-    }
-    return "other";
-  }
-  return kind;
-}
 
 /** Files a caller id should never be able to have read out over the phone. */
 // `.credentials.json` with its dot is Claude Code's own login. Of
@@ -105,37 +31,6 @@ const SECRET_PATH =
 const SECRET_IN_COMMAND =
   /(^|[\s'"=:/])(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|p12|pfx)|\.?credentials(\.json)?)(?=$|[\s'"|;&)])|\.(ssh|aws|gnupg|docker|kube)\/|\.screenless(\/(?!(lib|bin)\/(?![^\s'"]*\.\.))|(?=$|[\s'"|;&)]))|\bprintenv\b|^\s*env\s*($|\|)/i;
 
-const MCP_READ_VERB =
-  /^(get|list|search|read|query|fetch|find|view|describe|show|lookup|count|semantic[-_]search)[-_a-z]*$/i;
-
-/**
- * Whether an MCP tool only reads. Many servers prefix their tools with their
- * own name (`slack_read_channel` on the `slack` server), which hides the verb,
- * so that prefix is dropped before the verb is checked.
- */
-export function isMcpRead(server: string, name: string): boolean {
-  const prefix = (server.split(/[-_]/).pop() ?? "").toLowerCase();
-  const bare = prefix && name.toLowerCase().startsWith(prefix + "_") ? name.slice(prefix.length + 1) : name;
-  return MCP_READ_VERB.test(bare);
-}
-
-/**
- * `agent-codemode call <server> <tool> …` (or `codemode call …`) runs an MCP
- * tool from the shell. It is allowed when that tool only reads and the command
- * is one plain call with quoted arguments — no pipe, chain or substitution.
- */
-export function isCodemodeRead(command: string): boolean {
-  const c = command
-    .trim()
-    .replace(/'[^']*'/g, "''")
-    .replace(/"(?:[^"\\`$]|\\.)*"/g, '""')
-    .replace(/\s*2>&1|\s*2>\/dev\/null/g, "");
-  const m = /^(?:\S*\/)?(?:agent-)?codemode call ([\w.-]+) ([\w.-]+)((?: --(?:json|arg) (?:''|""|\S+)| --(?:text|raw))*)$/.exec(c);
-  return !!m && isMcpRead(m[1], m[2]);
-}
-
-const LATER = "This is blocked during phone calls. Do not retry it or work around it: finish what you can, and end your answer with what is left for the session after the call.";
-
 /** The decision for one tool call of a fork. `cwd` is the project. */
 export function decide(tool: string, input: Record<string, unknown>, cwd: string): Decision {
   const path = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
@@ -143,32 +38,12 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
   if (abs && SECRET_PATH.test(abs))
     return { decision: "deny", reason: `Secrets are never read or changed on a phone call (${path}).` };
 
-  if (READ_TOOLS.has(tool)) return { decision: "allow", reason: "read" };
-  if (EDIT_TOOLS.has(tool)) {
-    const inside = abs === cwd || abs.startsWith(cwd + sep) || abs.startsWith("/tmp/") || abs.startsWith("/private/tmp/");
-    return inside
-      ? { decision: "allow", reason: "edit inside the project" }
-      : { decision: "deny", reason: `Only files inside the project can change during a call. ${LATER}` };
-  }
-  if (tool === "Bash") {
-    if (SECRET_IN_COMMAND.test(String(input.command ?? "")))
-      return { decision: "deny", reason: "Secrets are never read or changed on a phone call." };
-    const kind = shellKind(String(input.command ?? ""));
-    if (kind !== "other") return { decision: "allow", reason: kind };
-    if (isCodemodeRead(String(input.command ?? ""))) return { decision: "allow", reason: "MCP read" };
-    return {
-      decision: "deny",
-      reason: `During a call only read-only commands and local work (git add/commit, tests, builds) run, as one plain command or pipeline: no loops, $(...), redirects, push, deploy, delete or network writes. If a plainer read-only command answers the question, use that. Otherwise do not work around it: finish what you can, and end your answer with what is left for the session after the call.`,
-    };
-  }
-  if (tool.startsWith("mcp__")) {
-    if (/^mcp__(computer-use|claude-in-chrome|remote-devices)__/.test(tool))
-      return { decision: "deny", reason: `No browser or computer control during a call. ${LATER}` };
-    const [, server = "", name = ""] = tool.split("__");
-    if (isMcpRead(server, name)) return { decision: "allow", reason: "MCP read" };
-    return { decision: "deny", reason: `MCP tools that change or send something wait until after the call. ${LATER}` };
-  }
-  return { decision: "deny", reason: `${tool} is not allowed during a call. ${LATER}` };
+  if (tool === "Bash" && SECRET_IN_COMMAND.test(String(input.command ?? "")))
+    return { decision: "deny", reason: "Secrets are never read or changed on a phone call." };
+  // Only the session's owner can make a call run requests, so a call may do
+  // anything the session may: send, push, deploy, edit outside the project.
+  // Secrets stay out, because every answer is spoken aloud.
+  return { decision: "allow", reason: "the owner's own call" };
 }
 
 /** `screenless gate`: the PreToolUse hook every fork runs. Reads the hook
@@ -200,7 +75,9 @@ const PHONE_RULES = `You are answering a phone call. The owner of this Claude Co
 - Do it now and fast. A good answer in under a minute beats a perfect one in five. Stop as soon as you can answer.
 - The request is transcribed speech and may have recognition errors. Read it sensibly. If it is truly ambiguous, answer with one short clarifying question.
 - Your final message is spoken on the phone: one to three short spoken sentences. No markdown, code, file paths, URLs, IDs or lists unless they asked for them. Never include secrets or personal data.
-- You may read anything in the project and do local work: edit files, run tests and builds, commit. Pushing, deploying, publishing, sending messages, deleting, and anything outside the project are blocked during calls. If the request needs that, do what you can, and end with what is left, so the session can finish it after the call.`;
+- You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools (Slack, Linear, email). Do what the caller asked for, and say in your answer what you did and who it went to.
+- The project's own rules still hold. Where they ask for a person's yes first (a merge, a production write, a deletion), ask the caller for it on the call, and act on a clear yes.
+- Never read out a secret: no token, key, password or .env value.`;
 
 export interface Handoff {
   id: string;

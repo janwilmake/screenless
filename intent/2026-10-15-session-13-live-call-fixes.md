@@ -181,3 +181,20 @@ checks the verb, and allows one plain `agent-codemode call <server> <tool>`
 (or `codemode call …`) when that tool reads. Sends, pipes, chains and
 `$(...)` stay refused. Checked with a 17-case table (Slack, Linear, Intercom
 reads allowed; sends, reactions, notes, pipes, chains, substitution refused).
+
+## Follow-up: no limits on the owner's own calls (hyre loop session, 17:35)
+
+Jan, after a call where the fork could not DM Tamas:
+
+> yoooo the call from screenless still seems to bne unable to send slack messages etc during the call. any idea why?
+
+> why blocking any actions?????
+
+What landed: the gate allows everything the session may do on the owner's own
+calls (only the owner's calls run requests; a teammate's call never does).
+It still refuses secrets, because every answer is spoken aloud. The fork's
+phone rules say the same, and keep the project's own "ask for a yes first"
+rules: the fork asks the caller on the call.
+
+Open risk, raised with Jan before deploy: caller id can be spoofed, and the
+gate was the guard against a spoofed owner number.
