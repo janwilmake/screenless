@@ -6,8 +6,10 @@
  * ways), and this object relays it to a GPT-Live session over OpenAI's own
  * WebSocket, which takes and returns the same phone audio. (GPT-Live over SIP
  * would skip the relay, but inbound SIP for Live is gated per project.) The
- * voice's output is a real-time stream, so it is passed straight through;
- * nothing is buffered here that could keep talking over a caller.
+ * voice's output is passed straight through, but it arrives faster than real
+ * time, so Telnyx holds a queue of it. Over a WebSocket GPT-Live does not cut
+ * that queue when the caller talks over it (only WebRTC and SIP do), so we
+ * clear it ourselves: see `bargeIn`.
  *
  * What is new is client delegation: when the voice decides a request needs
  * the caller's machine, it emits `session.delegation.created`, and we park
@@ -117,6 +119,9 @@ const UPDATE_GAP_MS = 15_000;
 const KEY_AUDIO_HOLD = 10;
 /** Caller audio is muted this long after the last key, for its tone's tail. */
 const KEY_MUTE_MS = 700;
+/** Loud caller frames in a row (20 ms each) that count as talking over the
+ *  voice. A click or a burst of line noise is shorter. */
+const BARGE_FRAMES = 6;
 
 /** Told to the voice when the caller has a PIN that has not been keyed yet. */
 const PIN_NOTE =
@@ -194,6 +199,10 @@ export class LiveCall {
   private voiceVoicedAt = 0;
   /** When the last output chunk arrived. */
   private outAt = 0;
+  /** When the voice audio sent to Telnyx so far ends playing, about. */
+  private playsUntil = 0;
+  /** Loud caller frames in a row (BARGE_FRAMES). */
+  private loudRun = 0;
 
   constructor(
     private state: DurableObjectState,
@@ -348,7 +357,10 @@ export class LiveCall {
     if (msg.event === "media" && msg.media?.payload && msg.media.track !== "outbound") {
       const level = loudness(msg.media.payload);
       this.noiseFloor = level < this.noiseFloor ? level : this.noiseFloor + (level - this.noiseFloor) * 0.01;
-      if (level > Math.max(500, this.noiseFloor * 3)) this.callerSpeechAt = Date.now();
+      if (level > Math.max(500, this.noiseFloor * 3)) {
+        this.callerSpeechAt = Date.now();
+        if (++this.loudRun === BARGE_FRAMES) this.bargeIn("loud");
+      } else this.loudRun = 0;
       this.toVoice(msg.media.payload);
     } else if (msg.event === "dtmf") {
       if (this.cfg?.pin) this.onKey(msg.dtmf?.digit ?? "");
@@ -522,6 +534,8 @@ export class LiveCall {
         this.greetWhenQuiet(greeting);
         break;
       case "session.input_transcript.delta":
+        // The first words of a caller line: they may be talking over the voice.
+        if (this.buf?.role !== "user" && msg.delta && !isNoise(msg.delta)) this.bargeIn("words");
         this.delta("user", msg.delta ?? "");
         break;
       case "session.output_transcript.delta":
@@ -902,6 +916,27 @@ export class LiveCall {
     } catch {
       /* the caller hung up */
     }
+    // 8 kHz mu-law: 8 bytes a millisecond.
+    this.playsUntil = Math.max(Date.now(), this.playsUntil) + b64Bytes(payload) / 8;
+  }
+
+  /**
+   * The caller talks while voice audio is still queued at Telnyx: drop the
+   * queue, or they hear the voice talk on over them. GPT-Live over a
+   * WebSocket sends no interruption event, and OpenAI's docs leave dropping
+   * queued audio to the client. Not while a PIN is awaited: the caller is
+   * keying, and the voice's prompt for it should play out.
+   */
+  private bargeIn(by: "loud" | "words"): void {
+    const queuedMs = Math.round(this.playsUntil - Date.now());
+    if (queuedMs <= 0 || this.cfg?.pin || !this.phone) return;
+    try {
+      this.phone.send(JSON.stringify({ event: "clear" }));
+    } catch {
+      return;
+    }
+    this.playsUntil = 0;
+    log({ ev: "live barge-in", call: this.ourCallId, gen: this.voiceGen, by, queuedMs });
   }
 
   /** The call is over, from either end. When the voice ended first, the
