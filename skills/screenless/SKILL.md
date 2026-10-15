@@ -34,6 +34,17 @@ and local work in the project — no push, deploy, send or delete — and what i
 cannot do waits for this session after the call. The watcher prints the mode
 when a live call starts.
 
+**Progress during a live call.** Work that takes longer than about 20 seconds
+may tell the caller how it is going while it runs: `screenless update "Still
+on it: the tests pass, now checking the logs."` The voice says it at the next
+pause, as progress, and the final answer still follows as usual. A fork (and
+any agent it starts) has the call and its request in its environment, so the
+plain command is enough; from anywhere else it reaches your own call in
+progress, or name it with `screenless update <callId> "<text>"`. One short
+spoken sentence, worth hearing, at most one every 20 seconds or so — the line
+says one sent sooner silently — and never instead of the answer. The gate
+allows it in both modes, as long as its text is plain words in quotes.
+
 It does **not** build the paper or the morning brief — that is the optional
 `morning-pr-review` skill, armed separately. This skill only takes calls and
 acts on them.

@@ -803,6 +803,35 @@ async function doneCmd(args: string[]): Promise<void> {
   console.log(`${c.green("✓")} ${callId} handled`);
 }
 
+/**
+ * `screenless update [<callId>] "<text>"`: a short progress note, said in the
+ * call going on now. For an agent working on a caller's request that takes a
+ * while ("still on it, I found the failing test"). The fork a live request
+ * runs in has the call and the request in its environment; anywhere else the
+ * Worker picks your own call in progress. It never ends the request: the
+ * final answer is still what the agent finishes with.
+ */
+async function updateCmd(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const words = args.filter((a) => !a.startsWith("--"));
+  const given = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(words[0] ?? "") ? words.shift() : undefined;
+  const text = words.join(" ").trim();
+  if (!text) die('usage: screenless update [<callId>] "<short progress note>"');
+  const envCall = process.env.SCREENLESS_CALL_ID || undefined;
+  const callId = given ?? envCall ?? "current";
+  // The request id belongs to the call it came with.
+  const id = callId === envCall ? process.env.SCREENLESS_REQUEST_ID || undefined : undefined;
+  const r = await api<{ ok: boolean; spoken?: boolean; ended?: boolean; answered?: boolean; reason?: string }>(
+    cfg.apiUrl,
+    `/live/${callId}/update`,
+    { method: "POST", token: cfg.token, body: { text, id } },
+  );
+  if (r.ended) die("the call has ended");
+  if (r.answered) die("that request was already answered");
+  console.log(r.spoken ? `${c.green("✓")} said in the call` : `${c.dim("·")} passed on quietly (${r.reason ?? "not spoken"})`);
+}
+
 /* ---------------------------------------------------------------- settings */
 
 interface Settings {
@@ -1285,6 +1314,8 @@ ${c.bold("Usage")}
   screenless watch                           take calls: answer yours live, then exit
                                              with each finished call
   screenless done <callId>                   mark a watched call as handled
+  screenless update [<callId>] "<text>"      say a short progress note in the
+                                             live call now going on
   screenless team                            your team: members, credit, the page
   screenless transcript [--wait] [--json]    what was decided on the last call
   screenless wait [--once|--peek]            block until tonight's run is due
@@ -1405,6 +1436,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   test,
   watch,
   done: doneCmd,
+  update: updateCmd,
   gate: gateHook,
   team: teamCmd,
   transcript,

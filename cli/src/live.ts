@@ -56,6 +56,9 @@ const READ_COMMANDS: RegExp[] = [
   /^(uname|free)( -[a-zA-Z]+)?$/,
   /^top -b -n ?1( -[a-zA-Z]+)*$/,
   /^(diff|cmp|readlink|command -v|type)\s/,
+  // A progress note to the caller, who hears the final answer anyway. Its
+  // text must be plain words or quoted, so nothing in it runs.
+  /^(\S*\/)?screenless update( [0-9a-f-]{36})?( ''| ""| [\w.,:!?%'-]+)+$/,
 ];
 
 /** Local work that stays on this machine and can be undone: commits, tests,
@@ -210,7 +213,8 @@ const PHONE_BASE = `You are answering a phone call. The owner of this Claude Cod
 
 - Do it now and fast. A good answer in under a minute beats a perfect one in five. Stop as soon as you can answer.
 - The request is transcribed speech and may have recognition errors. Read it sensibly. If it is truly ambiguous, answer with one short clarifying question.
-- Your final message is spoken on the phone: one to three short spoken sentences. No markdown, code, file paths, URLs, IDs or lists unless they asked for them. Never include secrets or personal data.`;
+- Your final message is spoken on the phone: one to three short spoken sentences. No markdown, code, file paths, URLs, IDs or lists unless they asked for them. Never include secrets or personal data.
+- When the work will take longer than about 20 seconds, you may tell the caller how it is going with \`screenless update "<one short spoken sentence>"\`, such as "Still on it: the tests pass, now checking the logs." Only for something worth hearing, at most one every 20 seconds or so, never for quick work, and never instead of the answer: your final message is still the answer. Agents you start for this request may send one the same way.`;
 
 /** The fork's rules, per call mode: what it may do and why. */
 export function phoneRules(mode: CallMode): string {
@@ -253,7 +257,17 @@ export interface ForkResult {
  */
 export function runFork(
   h: Handoff,
-  o: { cwd: string; sessionId?: string; cli: string; mode: CallMode; onStep: (step: string) => void; prompt?: string; background?: string },
+  o: {
+    cwd: string;
+    sessionId?: string;
+    cli: string;
+    mode: CallMode;
+    onStep: (step: string) => void;
+    prompt?: string;
+    background?: string;
+    /** The live call, so `screenless update` in the fork reaches this request. */
+    callId?: string;
+  },
 ): Promise<ForkResult> {
   const started = Date.now();
   const standIn =
@@ -289,7 +303,14 @@ export function runFork(
       // The fork is its own session; it must not think it is the parent.
       // The gate reads the call's mode from here; anything but `full` is
       // restricted, so a fork started without it cannot do more.
-      env: { ...process.env, SCREENLESS_PROJECT: o.cwd, SCREENLESS_CALL_MODE: o.mode, CLAUDE_CODE_SESSION_ID: "" },
+      env: {
+        ...process.env,
+        SCREENLESS_PROJECT: o.cwd,
+        SCREENLESS_CALL_MODE: o.mode,
+        CLAUDE_CODE_SESSION_ID: "",
+        SCREENLESS_CALL_ID: o.callId ?? "",
+        SCREENLESS_REQUEST_ID: o.callId ? h.id : "",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let final = "";
@@ -472,6 +493,7 @@ export async function serveLiveCall(o: {
         sessionId: o.forkRequests === false ? undefined : o.sessionId,
         background: [o.brief, summary && `The session's own summary: ${summary}`].filter(Boolean).join("\n\n"),
         cli: o.cli,
+        callId: o.callId,
         mode: requestMode(h, mode),
         onStep: (step) => {
           o.log(`  · ${step}`);

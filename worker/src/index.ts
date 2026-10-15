@@ -387,6 +387,7 @@ Background on the session arrives as notes in the first seconds of the call, and
 
 # Results
 - A result arrives as commentary. Say it briefly and naturally, in at most three short sentences, and keep its meaning exact: names, numbers and yes-or-no answers word for word.
+- On longer work the session may also send progress, as commentary that starts "Still working on it". Say it in one short sentence at a natural pause, never over the caller, and make clear it is not done yet. It is not the result: the result still follows, and you say that too when it arrives.
 - Never read out code, long lists, file paths, URLs or secrets. Summarise, and offer more detail if they want it.
 - If a result says something cannot be done during a call, tell the caller it is queued for their session after the call.
 
@@ -1074,10 +1075,17 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
  * The watcher's side of a live call: long-poll for delegated requests, and
  * post back what to say. Only the caller's own terminal may touch the call.
  */
-async function liveRoute(req: Request, env: Env, callId: string, action: "next" | "result" | "context"): Promise<Response> {
+async function liveRoute(req: Request, env: Env, callId: string, action: "next" | "result" | "context" | "update"): Promise<Response> {
   const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated");
   const { user } = await identify(env, s.phone);
+  // `current` is the caller's own call in progress, for `screenless update`
+  // run by an agent that was never told the call's id.
+  if (callId === "current") {
+    const current = await db.stashGet(env, `livecall:${user.id}`);
+    if (!current) return fail(404, "no live call right now");
+    callId = (JSON.parse(current) as { callId: string }).callId;
+  }
   const record = await loadCall(env, callId);
   // The caller's own terminal, or the teammate's whose session briefs them.
   const cfg = record ? (JSON.parse((await db.stashGet(env, `realtime:${callId}`)) ?? "{}") as Partial<LiveConfig>) : {};
@@ -1396,9 +1404,9 @@ export default {
         const stub = env.LIVE.get(env.LIVE.idFromName(streamMatch[1]));
         return await stub.fetch(`https://live/stream?call=${streamMatch[1]}`, req);
       }
-      const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result|context)$/);
+      const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result|context|update)$/);
       if (liveMatch && (method === "GET") === (liveMatch[2] === "next"))
-        return await liveRoute(req, env, liveMatch[1], liveMatch[2] as "next" | "result" | "context");
+        return await liveRoute(req, env, liveMatch[1], liveMatch[2] as "next" | "result" | "context" | "update");
 
       // Who am I, org-wise. Also what `screenless team` prints before it
       // opens the page.

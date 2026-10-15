@@ -24,6 +24,13 @@ const table = [
   [...["Edit", { file_path: "src/a.ts" }], "allow", "allow"],
   [...bash("git add -A && git commit -m wip"), "allow", "allow"],
   [...bash("npm test"), "allow", "allow"],
+  // A progress note to the caller runs in both modes, as long as nothing in it runs.
+  [...bash('screenless update "Still on it: the tests pass, now the logs."'), "allow", "allow"],
+  [...bash("screenless update 28180e09-aaaa-bbbb-cccc-0123456789ab 'found it'"), "allow", "allow"],
+  [...bash("~/.screenless/bin/screenless update 'found the bug'"), "allow", "allow"],
+  [...bash('screenless update "$(cat notes.txt)"'), "deny", "allow"],
+  [...bash("screenless update 'x' && git push"), "deny", "allow"],
+  [...bash("screenless settings --pin 1234"), "deny", "allow"],
   // Anything that leaves the machine runs only on a proven call.
   [...bash("git push origin main"), "deny", "allow"],
   [...bash("npm run deploy"), "deny", "allow"],
@@ -63,6 +70,7 @@ test("the fork's rules name its mode", () => {
   assert.match(phoneRules("full"), /full mode/);
   assert.match(phoneRules("restricted"), /restricted mode/);
   assert.doesNotMatch(phoneRules("restricted"), /push, deploy, and send/);
+  for (const mode of ["full", "restricted"]) assert.match(phoneRules(mode), /screenless update/);
 });
 
 test("a PIN keyed mid-call makes later requests full, not earlier ones", () => {

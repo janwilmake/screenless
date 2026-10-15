@@ -97,10 +97,18 @@ const POLL_HOLD_MS = 20_000;
 const PHONE_GRACE_MS = 6_000;
 /** Voice sessions restarted per call before giving up and hanging up. */
 const MAX_VOICE_RESTARTS = 3;
-/** The greeting waits for this much quiet from the caller... */
-const GREET_AFTER_QUIET_MS = 700;
-/** ...but no longer than this: a line that stays silent reads as dead. */
+/** The greeting and a progress update wait for this much quiet from the
+ *  caller... */
+const CALLER_PAUSE_MS = 700;
+/** ...but the greeting no longer than this: a line that stays silent reads
+ *  as dead. */
 const GREET_WAIT_MAX_MS = 6_000;
+/** A progress update is dropped rather than said once this stale. */
+const UPDATE_WAIT_MAX_MS = 10_000;
+/** Spoken progress updates per call at most this often; one sent sooner is
+ *  passed on silently, so the voice can still use it when asked. A call that
+ *  is all "still working" is worse than one that waits. */
+const UPDATE_GAP_MS = 15_000;
 
 /** Caller audio held back while a PIN is awaited, in 20 ms frames: a key's
  *  tone may reach the stream before its `dtmf` event, and must not reach the
@@ -174,6 +182,8 @@ export class LiveCall {
   private checking: Promise<void> = Promise.resolve();
   /** Said to the voice before it was live; sent once it is. */
   private voiceQueue: unknown[] = [];
+  /** When a progress update was last spoken. */
+  private updateAt = 0;
 
   constructor(
     private state: DurableObjectState,
@@ -186,6 +196,7 @@ export class LiveCall {
     if (req.method === "GET" && url.pathname === "/next") return this.next();
     if (req.method === "POST" && url.pathname === "/result") return this.result(await req.json());
     if (req.method === "POST" && url.pathname === "/context") return this.context(await req.json());
+    if (req.method === "POST" && url.pathname === "/update") return this.update(await req.json());
     return new Response("not found", { status: 404 });
   }
 
@@ -509,19 +520,24 @@ export class LiveCall {
    */
   private greetWhenQuiet(greeting: string): void {
     const gen = this.voiceGen;
-    const start = Date.now();
-    const tick = () => {
-      if (this.ended || gen !== this.voiceGen || this.voiceSpoke) return;
-      const quiet = Date.now() - this.callerSpeechAt >= GREET_AFTER_QUIET_MS;
-      if (!quiet && Date.now() - start < GREET_WAIT_MAX_MS) {
-        setTimeout(tick, 100);
-        return;
-      }
+    this.afterCallerPause(GREET_WAIT_MAX_MS, () => {
+      if (gen !== this.voiceGen || this.voiceSpoke) return;
       this.send({
         type: "session.instructions.append",
         delegation_id: null,
         content: `Now say the following, exactly, then wait for the caller: "${greeting}" If the caller starts speaking, stop at once and listen.`,
       });
+    });
+  }
+
+  /** Runs `fn` once the caller has paused, or after `maxMs` regardless. */
+  private afterCallerPause(maxMs: number, fn: () => void, onTimeout?: () => void): void {
+    const start = Date.now();
+    const tick = () => {
+      if (this.ended) return;
+      if (Date.now() - this.callerSpeechAt >= CALLER_PAUSE_MS) return fn();
+      if (Date.now() - start >= maxMs) return (onTimeout ?? fn)();
+      setTimeout(tick, 100);
     };
     tick();
   }
@@ -735,6 +751,45 @@ export class LiveCall {
       this.send({ type: "session.thinking.append", delegation_id: h.id, content });
     }
     return Response.json({ ok: true });
+  }
+
+  /**
+   * A progress note the caller's session chose to say mid-request
+   * (`screenless update`): "still working, I found X". Commentary, which the
+   * voice paraphrases aloud, on the request's own delegation; OpenAI's
+   * client-delegation guide allows several per delegation, and none of them
+   * closes it, so the final answer still arrives and is said as usual. Not an
+   * instruction: an instruction can cut the voice off mid-sentence. And not
+   * over the caller: it waits for a pause, and is dropped if none comes soon.
+   * Without an id it is about the latest request still running.
+   */
+  private async update(body: unknown): Promise<Response> {
+    const { id, text } = (body ?? {}) as { id?: string; text?: string };
+    if (typeof text !== "string" || !text.trim()) return new Response("bad update", { status: 400 });
+    if (this.ended) return Response.json({ ok: false, ended: true });
+    // A teammate hears the brief, not the owner's work in progress.
+    if (this.cfg?.teammate) return Response.json({ ok: false, error: "a teammate's call takes no updates" }, { status: 403 });
+    const h = id ? this.handoffs.find((x) => x.id === id) : [...this.handoffs].reverse().find((x) => !x.answered);
+    if (id && !h) return Response.json({ ok: false, error: "unknown request" }, { status: 404 });
+    if (h?.answered) return Response.json({ ok: false, answered: true });
+    const said = text.trim().replace(/\s+/g, " ").slice(0, 400);
+    const content = `Still working on it; the full answer comes later. So far: ${said}`;
+    // The voice that took the request is the only one that knows its id.
+    const delegation_id = h && h.voice === this.voiceGen ? h.id : null;
+    if (Date.now() - this.updateAt < UPDATE_GAP_MS) {
+      this.send({ type: "session.thinking.append", delegation_id, content });
+      return Response.json({ ok: true, spoken: false, reason: "an update was just said" });
+    }
+    this.updateAt = Date.now();
+    this.afterCallerPause(
+      UPDATE_WAIT_MAX_MS,
+      () => {
+        if (h?.answered) return;
+        this.send({ type: "session.commentary.append", delegation_id: h && h.voice === this.voiceGen ? h.id : null, content });
+      },
+      () => this.send({ type: "session.thinking.append", delegation_id: h && h.voice === this.voiceGen ? h.id : null, content }),
+    );
+    return Response.json({ ok: true, spoken: true });
   }
 
   private toPhone(payload: string): void {
