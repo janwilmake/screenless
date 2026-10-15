@@ -138,6 +138,15 @@
   // Parked edition PDFs, keyed outbox/<id> — the one thing too big for a row.
   "r2_buckets": [{ "binding": "OUTBOX", "bucket_name": "screenless-outbox" }],
 
+  // Workers Logs: every console line and invocation, kept by Cloudflare so a
+  // failed call can be read after the fact (the PIN of 15 October could not:
+  // nothing was kept). Log events, never digits — no PIN, and no phone number.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "invocation_logs": true }
+  },
+
   // Places any brief whose call time has come, drains the mail outbox, and
   // sends the verify-your-phone reminders. Five minutes is well inside what a
   // caller perceives — a call at 08:03 is a call at eight.

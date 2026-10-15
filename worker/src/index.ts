@@ -1684,7 +1684,7 @@ async function sweepBriefs(env: Env): Promise<void> {
     if (!billing.entitled(env, org)) {
       // Not dropped: if they top up tomorrow, tomorrow's brief is what should
       // ring, and this one will have aged out of KV by then anyway.
-      console.log(`brief skipped, org out of credit`, phone);
+      console.log(`brief skipped, org out of credit`, user.id);
       continue;
     }
 
@@ -1709,7 +1709,7 @@ async function sweepBriefs(env: Env): Promise<void> {
     if (result.ok) {
       brief.callId = result.callId;
       await schedule.saveBrief(env, phone, brief);
-      console.log(`brief placed`, phone, result.callId);
+      console.log(`brief placed`, user.id, result.callId);
     } else {
       // Held rather than retried on the next tick: something is wrong with
       // Telnyx or the account, and re-dialling every five minutes turns one
@@ -1717,7 +1717,7 @@ async function sweepBriefs(env: Env): Promise<void> {
       brief.status = "parked";
       brief.dueAt = null;
       await schedule.saveBrief(env, phone, brief);
-      console.error(`brief failed to place`, phone, result.error);
+      console.error(`brief failed to place`, user.id, result.error);
     }
   }
 }
