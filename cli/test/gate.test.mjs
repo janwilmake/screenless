@@ -1,0 +1,66 @@
+// The live-call gate in both modes, as a table. Runs against the build:
+// `npm test` builds first.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { decide, phoneRules } from "../dist/live.js";
+
+const cwd = "/work/project";
+const bash = (command) => ["Bash", { command }];
+const mcp = (name, input = {}) => [name, input];
+
+// [tool, input, restricted, full]
+const table = [
+  // Reads run in both modes.
+  [...["Read", { file_path: "src/index.ts" }], "allow", "allow"],
+  [...["Grep", { pattern: "x" }], "allow", "allow"],
+  [...bash("git log --oneline -5"), "allow", "allow"],
+  [...bash("ls -la | wc -l"), "allow", "allow"],
+  [...bash("ps aux"), "allow", "allow"],
+  [...mcp("mcp__slack__slack_read_channel"), "allow", "allow"],
+  [...mcp("mcp__linear__list_issues"), "allow", "allow"],
+  [...mcp("mcp__claude_ai_Intercom__search_conversations"), "allow", "allow"],
+  [...bash("agent-codemode call slack slack_read_channel --json '{\"channel\":\"C1\"}'"), "allow", "allow"],
+  // Local work runs in both modes.
+  [...["Edit", { file_path: "src/a.ts" }], "allow", "allow"],
+  [...bash("git add -A && git commit -m wip"), "allow", "allow"],
+  [...bash("npm test"), "allow", "allow"],
+  // Anything that leaves the machine runs only on a proven call.
+  [...bash("git push origin main"), "deny", "allow"],
+  [...bash("npm run deploy"), "deny", "allow"],
+  [...bash("rm -rf build"), "deny", "allow"],
+  [...bash("curl -X POST https://example.com"), "deny", "allow"],
+  [...bash("agent-codemode call slack slack_send_message --json '{}'"), "deny", "allow"],
+  [...bash("agent-codemode call slack slack_read_channel --json '{}' | sh"), "deny", "allow"],
+  [...bash("ls $(echo /)"), "deny", "allow"],
+  [...mcp("mcp__slack__slack_send_message"), "deny", "allow"],
+  [...mcp("mcp__linear__save_issue"), "deny", "allow"],
+  [...mcp("mcp__claude-in-chrome__navigate"), "deny", "allow"],
+  [...["Edit", { file_path: "/etc/hosts" }], "deny", "allow"],
+  [...["NewTool", {}], "deny", "allow"],
+  // Secrets never, in either mode.
+  [...["Read", { file_path: ".env" }], "deny", "deny"],
+  [...["Read", { file_path: "~/.ssh/id_ed25519" }], "deny", "deny"],
+  [...["Read", { file_path: "/home/u/.screenless/config.json" }], "deny", "deny"],
+  [...bash("cat .dev.vars"), "deny", "deny"],
+  [...bash("printenv"), "deny", "deny"],
+];
+
+for (const [tool, input, restricted, full] of table) {
+  const label = `${tool} ${JSON.stringify(input)}`;
+  test(`restricted: ${label} → ${restricted}`, () => {
+    assert.equal(decide(tool, input, cwd, "restricted").decision, restricted);
+  });
+  test(`full: ${label} → ${full}`, () => {
+    assert.equal(decide(tool, input, cwd, "full").decision, full);
+  });
+}
+
+test("no mode is restricted", () => {
+  assert.equal(decide("Bash", { command: "git push" }, cwd).decision, "deny");
+});
+
+test("the fork's rules name its mode", () => {
+  assert.match(phoneRules("full"), /full mode/);
+  assert.match(phoneRules("restricted"), /restricted mode/);
+  assert.doesNotMatch(phoneRules("restricted"), /push, deploy, and send/);
+});

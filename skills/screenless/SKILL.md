@@ -24,10 +24,14 @@ session's own summary 10–20 s in. The brief stays on this machine between
 calls. When this session is too long to fork quickly (over 150k tokens),
 requests run in a fresh `claude -p` handed that brief and summary instead,
 because a fork of a 500k-token session takes 15 s before it says a word. A
-gate holds
-every fork to reading and local work in the project — no push, deploy, send,
-delete or secrets — so what a call cannot do waits for this session after the
-call.
+gate holds every fork to the call's mode. A call is **full** when the carrier
+verified your number (STIR/SHAKEN attestation A) or you said your PIN at pickup
+(`screenless settings --pin <4–8 digits>` sets it): it may do anything this
+session may, except read secrets. Any other call is **restricted**, because a
+caller id alone can be spoofed: reading (files, read-only shell, MCP reads)
+and local work in the project — no push, deploy, send or delete — and what it
+cannot do waits for this session after the call. The watcher prints the mode
+when a live call starts.
 
 It does **not** build the paper or the morning brief — that is the optional
 `morning-pr-review` skill, armed separately. This skill only takes calls and

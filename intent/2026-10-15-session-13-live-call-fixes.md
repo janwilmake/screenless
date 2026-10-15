@@ -198,3 +198,46 @@ rules: the fork asks the caller on the call.
 
 Open risk, raised with Jan before deploy: caller id can be spoofed, and the
 gate was the guard against a spoofed owner number.
+
+## Follow-up: a caller check before full rights ships (agent session, 17:40)
+
+Jan, on the open risk above:
+
+> how does the verified-number check work? i think that should be the default if it s secure and if its not carried by the call, the pin should be a fallback
+
+The brief this session was given (by Jan, through the orchestrator), verbatim
+in substance: attestation first — when the carrier verified the caller id with
+STIR/SHAKEN attestation A and the signature validated, the owner's call gets
+full rights; log the attestation value (not the number) per inbound call. PIN
+fallback — with no A attestation, ask for the owner's spoken PIN at pickup
+(`screenless settings --pin <4–8 digits>`), store only a salted hash, never
+log it, compare in the Worker, not in the voice model's prompt; three wrong
+tries and the call stays restricted. Restricted mode — no attestation and no
+PIN — brings back the read-only gate of fe96bb7. `screenless settings` shows
+whether a PIN is set and the last call's attestation. A teammate's call never
+runs requests. Deploy after tests; do not set a PIN, Jan picks it.
+
+What Telnyx passes (its TeXML OpenAPI schema, `calls.json`): `ShakenStirAttestation`
+("A", "B", "C") and `ShakenStirValidated` (boolean), "only present if
+shaken_stir_data is available", which needs the TeXML application's
+`inbound.shaken_stir_enabled` (default false). The schema documents them on the
+status callbacks; whether the first TeXML request carries them is not
+documented, so the Worker logs the attestation and the *names* of the fields
+the request carries. Calls from outside North America carry no attestation at
+all, so for Jan's Dutch number the PIN is the expected path.
+
+Decisions made here, for Jan to overrule:
+
+- The PIN is collected by a TeXML `<Gather input="dtmf speech">` *before* the
+  voice connects, not by the GPT-Live voice. Keyed or spoken both work. The
+  voice model never hears it and it is never in a transcript, which the brief's
+  "never log it, not in the voice model's prompt" asks for and a spoken PIN
+  inside the live conversation could not guarantee.
+- Silence at the prompt goes on restricted at once, so a call that only wants
+  to talk is not held up. Ten wrong PINs in an hour stop the prompt for that
+  hour, so ringing again and again cannot walk through four digits.
+- The restricted gate is fe96bb7's as it was: reads, read-only shell, MCP reads
+  (server-prefixed names, `agent-codemode call` reads), and local work in the
+  project (edit, commit, tests). The mode reaches the fork as
+  `SCREENLESS_CALL_MODE`; anything but `full` is restricted. Scripted test
+  rings are restricted.

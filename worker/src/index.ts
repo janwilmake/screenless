@@ -99,6 +99,7 @@ export interface Env {
 export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
 import type { LiveConfig } from "./live";
+import * as pin from "./pin";
 
 /**
  * Sessions last a year.
@@ -676,6 +677,17 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     return sayHangup("Your team is out of screenless credit. An admin can top it up on the billing page. Goodbye.");
   }
 
+  // What the carrier vouched for, logged without the number so we can see
+  // what real calls carry, and kept on the member for `screenless settings`.
+  const attestation = pin.attestationOf(params);
+  // Telnyx documents these fields on its status callbacks; the names of what
+  // the TeXML request itself carries (never the values) show whether it has them.
+  console.log("inbound attestation", pin.describeAttestation(attestation), Object.keys(params).sort().join(","));
+  await env.DB.prepare("UPDATE users SET last_attestation = ? WHERE id = ?")
+    .bind(JSON.stringify({ ...attestation, at: Date.now() }), user.id)
+    .run()
+    .catch(() => undefined);
+
   // OpenAI Realtime answers the ring-in and bridges over SIP. It stays quiet —
   // the caller is most likely leaving a request, not looking for a chat — and
   // speaks only if asked, becoming a normal conversation once they do. The
@@ -710,9 +722,15 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     const caller = (user.name ?? "").trim();
     const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
     const ownerName = owner ? (owner.name || owner.email || "a teammate").trim().split(/\s+/)[0] : "";
+    // The owner's own call does anything the session may only when the
+    // number is proven: attestation A, or the PIN asked for below. A test
+    // ring and a teammate's call are restricted (a teammate's runs nothing).
+    const full = !owner && !testRepo && pin.attested(attestation);
+    const askPin = !owner && !testRepo && !full && Boolean(user.pin_hash) && !(await pinLockedOut(env, user.id));
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
+      mode: full ? "full" : "restricted",
       instructions: owner
         ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "" })
         : liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
@@ -728,15 +746,8 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
       ...(owner ? { servedBy: owner.id, teammate: { name: caller, owner: ownerName } } : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
-    // The call's audio streams both ways to the LiveCall Durable Object,
-    // which relays it to GPT-Live. The pauses only keep the call up (180 s is
-    // the most one <Pause> takes; an invalid length ends the call at once);
-    // the Durable Object hangs up when the conversation ends.
-    const t = await webhookToken(`live:${callId}`, env.SESSION_SECRET);
-    return xml(
-      `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="PCMU" bidirectionalMode="rtp" bidirectionalCodec="PCMU" bidirectionalSamplingRate="8000"/></Start>` +
-        '<Pause length="180"/>'.repeat(40),
-    );
+    if (askPin) return xml(await pinGatherXml(env, origin, callId, "Key in your PIN and press hash, or say it. Or wait, to go on without it."));
+    return xml(await liveStreamXml(env, callId));
   }
   await db.stashPut(
     env,
@@ -747,6 +758,72 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
 }
 
+
+/** The TeXML that streams a live call's audio both ways to the LiveCall
+ *  Durable Object, which relays it to GPT-Live. The pauses only keep the call
+ *  up (180 s is the most one <Pause> takes; an invalid length ends the call
+ *  at once); the Durable Object hangs up when the conversation ends. */
+async function liveStreamXml(env: Env, callId: string): Promise<string> {
+  const t = await webhookToken(`live:${callId}`, env.SESSION_SECRET);
+  return (
+    `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="PCMU" bidirectionalMode="rtp" bidirectionalCodec="PCMU" bidirectionalSamplingRate="8000"/></Start>` +
+    '<Pause length="180"/>'.repeat(40)
+  );
+}
+
+/** Asks for the PIN before the voice is connected, so the voice model never
+ *  hears it. Silence falls through to the redirect: on without it. */
+async function pinGatherXml(env: Env, origin: string, callId: string, prompt: string): Promise<string> {
+  const t = await webhookToken(`pin:${callId}`, env.SESSION_SECRET);
+  const action = `${origin}/texml/pin/${callId}?t=${t}`;
+  return (
+    `<Gather input="dtmf speech" action="${action}" finishOnKey="#" timeout="6" maxDigits="8" language="en-US">${sayXml(prompt)}</Gather>` +
+    `<Redirect method="POST">${action}&amp;none=1</Redirect>`
+  );
+}
+
+async function pinLockedOut(env: Env, userId: string): Promise<boolean> {
+  return Number((await db.stashGet(env, `pinfail:${userId}`)) ?? 0) >= pin.PIN_FAILS_PER_HOUR;
+}
+
+/**
+ * The PIN the caller keyed or said, checked here against the stored hash.
+ * Right gives the call full rights; silence, three wrong tries, or too many
+ * wrong tries this hour go on restricted. The PIN is never logged.
+ */
+async function answerPin(req: Request, env: Env, callId: string): Promise<Response> {
+  const url = new URL(req.url);
+  if (!safeEqual(url.searchParams.get("t") ?? "", await webhookToken(`pin:${callId}`, env.SESSION_SECRET)))
+    return fail(403, "bad webhook token");
+  const raw = await db.stashGet(env, `realtime:${callId}`);
+  if (!raw) return sayHangup("Sorry, this call was lost. Please ring again.");
+  const cfg = JSON.parse(raw) as LiveConfig;
+  const user = await db.userById(env, cfg.userId);
+  if (!user) return sayHangup("Sorry, this call was lost. Please ring again.");
+
+  const restricted = async (why: string) =>
+    xml(`${sayXml(`${why} I can talk and look things up; anything that sends or changes something waits for after the call.`)}${await liveStreamXml(env, callId)}`);
+
+  const params = url.searchParams.get("none") ? {} : { ...Object.fromEntries(url.searchParams), ...(await inboundBody(req)) };
+  const said = pin.pinFromGather(params);
+  if (!said) return restricted("Going on without your PIN.");
+
+  if (await pin.verifyPin(said, { hash: user.pin_hash, salt: user.pin_salt })) {
+    cfg.mode = "full";
+    await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
+    await db.stashDelete(env, `pinfail:${user.id}`).catch(() => undefined);
+    console.log("inbound pin", "accepted");
+    return xml(`${sayXml("Thanks.")}${await liveStreamXml(env, callId)}`);
+  }
+
+  const tries = Number((await db.stashGet(env, `pintries:${callId}`)) ?? 0) + 1;
+  await db.stashPut(env, `pintries:${callId}`, String(tries), 3600);
+  const fails = Number((await db.stashGet(env, `pinfail:${user.id}`)) ?? 0) + 1;
+  await db.stashPut(env, `pinfail:${user.id}`, String(fails), 3600);
+  console.log("inbound pin", "wrong", tries);
+  if (tries >= pin.PIN_TRIES || fails >= pin.PIN_FAILS_PER_HOUR) return restricted("That PIN is not right.");
+  return xml(await pinGatherXml(env, url.origin, callId, "That is not right. Try again."));
+}
 
 /**
  * Closes a ring-in.
@@ -985,6 +1062,9 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   let live: string | undefined;
   /** Set when the live call is a teammate hearing this session's brief. */
   let liveCaller: { name: string; you: false } | undefined;
+  /** What the call's requests may do: `full` only when the caller was proven
+   *  (attestation A or the PIN); the watcher hands it to the fork's gate. */
+  let liveMode: "full" | "restricted" | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
     const me = JSON.stringify({ watcherId, repo, name });
@@ -1004,9 +1084,10 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; mode?: string };
       if (!c.onlyRepo || c.onlyRepo === repo) {
         live = c.callId;
+        liveMode = c.mode === "full" ? "full" : "restricted";
         if (c.teammate !== undefined) liveCaller = { name: c.teammate, you: false };
       }
     }
@@ -1017,7 +1098,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     ? undefined
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
-  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller });
+  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   return json({
@@ -1301,6 +1382,9 @@ export default {
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
         return await answerInbound(req, env, origin);
+      // The PIN a ring-in keyed or said, before its voice is connected.
+      const pinMatch = path.match(/^\/texml\/pin\/([\w-]+)$/);
+      if (pinMatch && (method === "POST" || method === "GET")) return await answerPin(req, env, pinMatch[1]);
       // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
       // to OpenAI, stamped with this call's correlation header.
       const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);

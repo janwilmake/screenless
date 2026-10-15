@@ -35,12 +35,17 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
+import type { CallMode } from "./pin";
 import { callerSaysBye, callerAsksHangup, voiceSaysBye, HANGUP_AFTER_MS, HANGUP_ON_REQUEST_MS } from "./farewell";
 
 /** What answerInbound parks for a live ring-in, read when the audio arrives. */
 export interface LiveConfig {
   engine: "live";
   userId: string;
+  /** What the call's requests may do on the owner's machine: `full` once the
+   *  caller is proven (attestation A or the PIN, see pin.ts), `restricted`
+   *  otherwise: talk and read, the rest after the call. */
+  mode: CallMode;
   instructions: string;
   greeting: string;
   voice: string;
@@ -87,6 +92,10 @@ const MAX_VOICE_RESTARTS = 3;
 const GREET_AFTER_QUIET_MS = 700;
 /** ...but no longer than this: a line that stays silent reads as dead. */
 const GREET_WAIT_MAX_MS = 6_000;
+
+/** Told to the voice of a call whose caller was not proven. */
+const RESTRICTED_NOTE =
+  "This call is restricted: the caller's number was not verified by the carrier and no PIN was given. Their session can look things up and answer questions during the call, but anything that sends, changes, pushes or deploys waits for the session after the call. When a result says so, tell the caller it is queued for after the call.";
 
 export class LiveCall {
   /** GPT-Live's WebSocket. */
@@ -202,7 +211,7 @@ export class LiveCall {
     await db.stashPut(
       this.env,
       `livecall:${cfg.servedBy ?? cfg.userId}`,
-      JSON.stringify({ callId, onlyRepo: cfg.onlyRepo, teammate: cfg.teammate?.name }),
+      JSON.stringify({ callId, onlyRepo: cfg.onlyRepo, teammate: cfg.teammate?.name, mode: cfg.mode }),
       7200,
     );
     return new Response(null, { status: 101, webSocket: pair[0] });
@@ -239,7 +248,7 @@ export class LiveCall {
       type: "session.start",
       session: {
         model: "gpt-live-1",
-        instructions: cfg.instructions,
+        instructions: cfg.mode === "full" || cfg.teammate ? cfg.instructions : `${cfg.instructions}\n\n${RESTRICTED_NOTE}`,
         audio: { format: { type: "audio/pcmu", rate: 8000 }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
@@ -554,6 +563,7 @@ export class LiveCall {
     }
     return Response.json({
       ended: this.ended,
+      mode: this.cfg?.mode === "full" ? "full" : "restricted",
       handoffs: open.map(({ id, request, context, at }) => ({ id, request, context, at })),
     });
   }

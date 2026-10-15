@@ -7,7 +7,8 @@
     "deploy": "cd ../site && ./build.sh && cd ../worker && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "voices": "node scripts/voices.mjs",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node --test \"test/*.test.ts\""
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260811.1",

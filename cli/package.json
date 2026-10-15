@@ -15,7 +15,8 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "tsc && node --test \"test/*.test.mjs\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

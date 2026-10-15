@@ -109,9 +109,14 @@ delegation*: still no tools, but each request it cannot answer is handed to
 the Claude Code session it was armed in and sends back what to say. The work
 still happens on your machine with your access. Because nobody is at the
 keyboard and caller id is weak, every fork passes a PreToolUse gate
-(`screenless gate`, `cli/src/live.ts`): reads and local work in the project
-only; push, deploy, send, delete and secrets wait for the session after the
-call.
+(`screenless gate`, `cli/src/live.ts`) in the mode the Worker gave the call
+(session 13, `worker/src/pin.ts`). A `restricted` call — the default — gets
+reads and local work in the project only; push, deploy, send and delete wait
+for the session after the call. A `full` call, where the carrier attested the
+number (STIR/SHAKEN A, validated) or the caller said their PIN in a TeXML
+`<Gather>` before the voice connects, may do what the session may. Secrets are
+refused in both. The PIN is checked in the Worker against a salted hash and
+never reaches the voice model, a transcript or a log.
 
 ## Conventions
 

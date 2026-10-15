@@ -7,18 +7,97 @@
  * watcher was armed in, so it knows what that session knows, and the answer
  * goes back to be spoken. Several can run at once; the voice keeps talking.
  *
- * Every tool call of a fork passes the gate below. Only the session's owner
- * can make a call run requests, so the gate allows what the session may do,
- * and refuses only secrets: every answer is spoken aloud.
+ * Only the session's owner can make a call run requests, and every tool call
+ * of a fork passes the gate below, in the mode the Worker gave the call. A
+ * `full` call — the carrier vouched for the number (STIR/SHAKEN A) or the
+ * caller said their PIN — may do what the session may. Any other call is
+ * `restricted`, because a caller id alone is easy to spoof: reading and local
+ * work in the project, and nothing that leaves the machine or cannot be
+ * undone. Both refuse secrets: every answer is spoken aloud.
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
 /* -------------------------------------------------------------------- gate */
 
 export type Decision = { decision: "allow" | "deny"; reason: string };
+export type CallMode = "full" | "restricted";
+
+const READ_TOOLS = new Set([
+  "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "TodoWrite", "TaskOutput",
+  "ToolSearch", "Agent", "Task", "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ListAgents",
+]);
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+/** Read-only shell commands. */
+const READ_COMMANDS: RegExp[] = [
+  /^git (log|show|diff|status|blame|rev-parse|rev-list|ls-files|ls-tree|shortlog|describe|reflog|show-ref|for-each-ref|cat-file|count-objects|name-rev|merge-base|grep|whatchanged|cherry)\b/,
+  /^git (stash list|config --get|config -l|config --list|worktree list)\b/,
+  /^git (branch|tag)( (-a|-r|-v|-vv|-l|--list|--all|--show-current|--contains \S+|--merged|--no-merged))*$/,
+  /^git remote( -v)?$/,
+  /^gh (pr|issue|run|release|repo|workflow) (view|list|diff|checks|status)\b/,
+  /^gh search\b/,
+  /^gh api (?!.*(-X|--method)\s*(POST|PUT|PATCH|DELETE))/i,
+  /^(ls|cat|head|tail|wc|grep|egrep|rg|pwd|echo|date|which|file|stat|du|df|tree|jq|sort|uniq|cut|tr|basename|dirname|realpath|nl)(\s|$)/,
+  /^xargs( -[0-9a-zA-Z]+)* (wc|grep|rg|cat|head|tail|ls|stat|file)\b/,
+  /^find\b(?!.*(-exec|-delete|-ok|-fprint))/,
+  /^(npm|pnpm|yarn) (ls|list|view|outdated|why)\b/,
+  /^(node|npm|git|python3?) --version$/,
+  // What is running on this machine: "how many agents do you have going?"
+  // was unanswerable on a call because these were refused. `ps` only in
+  // forms that cannot print environments (BSD `e`, macOS `-E`).
+  /^ps(\s+(-[A-DF-Za-z]+|-[A-DF-Za-z]*o\s*[\w,=%:-]+|-p\s*[\d,]+|-u\s*[\w,]+|aux|ax))*$/,
+  /^pgrep( -[a-zA-Z]+)* [\w.'"*^$|-]+$/,
+  /^screen -(ls|list)$/,
+  /^tmux (ls|list-sessions|list-windows|list-panes)\b/,
+  /^(uptime|whoami|id|hostname|nproc|sw_vers|vm_stat)$/,
+  /^(uname|free)( -[a-zA-Z]+)?$/,
+  /^top -b -n ?1( -[a-zA-Z]+)*$/,
+  /^(diff|cmp|readlink|command -v|type)\s/,
+];
+
+/** Local work that stays on this machine and can be undone: commits, tests,
+ *  builds. No push, no deploy, no publish, no deleting. */
+const LOCAL_COMMANDS: RegExp[] = [
+  /^git (add|commit|fetch|switch|stash( (push|list|show|apply))?)\b/,
+  /^git checkout -b\b/,
+  /^(npm|pnpm|yarn|bun) (test|t)\b/,
+  /^(npm|pnpm|yarn|bun) run (?!.*\b(deploy|publish|release)\b)[\w:.-]*(test|build|typecheck|check|lint|format)[\w:.-]*\b/,
+  /^npx (tsc|vitest|jest|eslint|prettier|tsx)\b/,
+  /^node --test\b/,
+  /^(pytest|python3? -m (pytest|unittest)|go (test|build|vet)|cargo (test|build|check|clippy))\b/,
+  /^(mkdir|touch)\s/,
+];
+
+/** True when every part of a shell command is a read (or, with `local`, a
+ *  local change). Pipes are fine; redirects and substitution are not. */
+export function shellKind(command: string): "read" | "local" | "other" {
+  // Quoted text is an argument, not shell syntax; a double-quoted string can
+  // still run $(...) or backticks, so those stay visible.
+  const c = command
+    .trim()
+    .replace(/'[^']*'/g, "''")
+    .replace(/"(?:[^"\\`$]|\\.)*"/g, '""')
+    .replace(/2>&1|2>\/dev\/null/g, "");
+  if (/[`<>\n]|\$\(/.test(c) || /&/.test(c.replace(/&&/g, ""))) return "other";
+  let kind: "read" | "local" = "read";
+  for (const part of c.split(/\|\||&&|\||;/)) {
+    const s = part
+      .trim()
+      .replace(/^cd [^ ]+$/, "pwd")
+      .replace(/^git (-C ("[^"]*"|\S+) |--no-pager )+/, "git ");
+    if (s === "" || READ_COMMANDS.some((r) => r.test(s))) continue;
+    if (LOCAL_COMMANDS.some((r) => r.test(s))) {
+      kind = "local";
+      continue;
+    }
+    return "other";
+  }
+  return kind;
+}
+
 
 /** Files a caller id should never be able to have read out over the phone. */
 // `.credentials.json` with its dot is Claude Code's own login. Of
@@ -31,8 +110,40 @@ const SECRET_PATH =
 const SECRET_IN_COMMAND =
   /(^|[\s'"=:/])(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|p12|pfx)|\.?credentials(\.json)?)(?=$|[\s'"|;&)])|\.(ssh|aws|gnupg|docker|kube)\/|\.screenless(\/(?!(lib|bin)\/(?![^\s'"]*\.\.))|(?=$|[\s'"|;&)]))|\bprintenv\b|^\s*env\s*($|\|)/i;
 
-/** The decision for one tool call of a fork. `cwd` is the project. */
-export function decide(tool: string, input: Record<string, unknown>, cwd: string): Decision {
+const MCP_READ_VERB =
+  /^(get|list|search|read|query|fetch|find|view|describe|show|lookup|count|semantic[-_]search)[-_a-z]*$/i;
+
+/**
+ * Whether an MCP tool only reads. Many servers prefix their tools with their
+ * own name (`slack_read_channel` on the `slack` server), which hides the verb,
+ * so that prefix is dropped before the verb is checked.
+ */
+export function isMcpRead(server: string, name: string): boolean {
+  const prefix = (server.split(/[-_]/).pop() ?? "").toLowerCase();
+  const bare = prefix && name.toLowerCase().startsWith(prefix + "_") ? name.slice(prefix.length + 1) : name;
+  return MCP_READ_VERB.test(bare);
+}
+
+/**
+ * `agent-codemode call <server> <tool> …` (or `codemode call …`) runs an MCP
+ * tool from the shell. It is allowed when that tool only reads and the command
+ * is one plain call with quoted arguments — no pipe, chain or substitution.
+ */
+export function isCodemodeRead(command: string): boolean {
+  const c = command
+    .trim()
+    .replace(/'[^']*'/g, "''")
+    .replace(/"(?:[^"\\`$]|\\.)*"/g, '""')
+    .replace(/\s*2>&1|\s*2>\/dev\/null/g, "");
+  const m = /^(?:\S*\/)?(?:agent-)?codemode call ([\w.-]+) ([\w.-]+)((?: --(?:json|arg) (?:''|""|\S+)| --(?:text|raw))*)$/.exec(c);
+  return !!m && isMcpRead(m[1], m[2]);
+}
+
+const LATER = "This is blocked during phone calls. Do not retry it or work around it: finish what you can, and end your answer with what is left for the session after the call.";
+
+/** The decision for one tool call of a fork. `cwd` is the project; anything
+ *  but an explicit `full` is restricted. */
+export function decide(tool: string, input: Record<string, unknown>, cwd: string, mode: CallMode = "restricted"): Decision {
   const path = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
   const abs = path ? resolve(cwd, path.replace(/^~(?=\/)/, homedir())) : "";
   if (abs && SECRET_PATH.test(abs))
@@ -40,10 +151,34 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
 
   if (tool === "Bash" && SECRET_IN_COMMAND.test(String(input.command ?? "")))
     return { decision: "deny", reason: "Secrets are never read or changed on a phone call." };
-  // Only the session's owner can make a call run requests, so a call may do
-  // anything the session may: send, push, deploy, edit outside the project.
-  // Secrets stay out, because every answer is spoken aloud.
-  return { decision: "allow", reason: "the owner's own call" };
+  // A proven owner may do anything the session may: send, push, deploy,
+  // edit outside the project.
+  if (mode === "full") return { decision: "allow", reason: "the owner's own call" };
+
+  if (READ_TOOLS.has(tool)) return { decision: "allow", reason: "read" };
+  if (EDIT_TOOLS.has(tool)) {
+    const inside = abs === cwd || abs.startsWith(cwd + sep) || abs.startsWith("/tmp/") || abs.startsWith("/private/tmp/");
+    return inside
+      ? { decision: "allow", reason: "edit inside the project" }
+      : { decision: "deny", reason: `Only files inside the project can change during a call. ${LATER}` };
+  }
+  if (tool === "Bash") {
+    const kind = shellKind(String(input.command ?? ""));
+    if (kind !== "other") return { decision: "allow", reason: kind };
+    if (isCodemodeRead(String(input.command ?? ""))) return { decision: "allow", reason: "MCP read" };
+    return {
+      decision: "deny",
+      reason: `During a call only read-only commands and local work (git add/commit, tests, builds) run, as one plain command or pipeline: no loops, $(...), redirects, push, deploy, delete or network writes. If a plainer read-only command answers the question, use that. Otherwise do not work around it: finish what you can, and end your answer with what is left for the session after the call.`,
+    };
+  }
+  if (tool.startsWith("mcp__")) {
+    if (/^mcp__(computer-use|claude-in-chrome|remote-devices)__/.test(tool))
+      return { decision: "deny", reason: `No browser or computer control during a call. ${LATER}` };
+    const [, server = "", name = ""] = tool.split("__");
+    if (isMcpRead(server, name)) return { decision: "allow", reason: "MCP read" };
+    return { decision: "deny", reason: `MCP tools that change or send something wait until after the call. ${LATER}` };
+  }
+  return { decision: "deny", reason: `${tool} is not allowed during a call. ${LATER}` };
 }
 
 /** `screenless gate`: the PreToolUse hook every fork runs. Reads the hook
@@ -58,8 +193,9 @@ export async function gateHook(): Promise<void> {
     /* an unreadable call is denied below */
   }
   const project = process.env.SCREENLESS_PROJECT || input.cwd || process.cwd();
+  const mode: CallMode = process.env.SCREENLESS_CALL_MODE === "full" ? "full" : "restricted";
   const d = input.tool_name
-    ? decide(input.tool_name, input.tool_input ?? {}, project)
+    ? decide(input.tool_name, input.tool_input ?? {}, project, mode)
     : { decision: "deny" as const, reason: "unreadable tool call" };
   process.stdout.write(
     JSON.stringify({
@@ -70,14 +206,23 @@ export async function gateHook(): Promise<void> {
 
 /* -------------------------------------------------------------------- fork */
 
-const PHONE_RULES = `You are answering a phone call. The owner of this Claude Code session is calling through screenless, away from their keyboard. A voice model talks with them and handed you their request; it will speak your final message to them.
+const PHONE_BASE = `You are answering a phone call. The owner of this Claude Code session is calling through screenless, away from their keyboard. A voice model talks with them and handed you their request; it will speak your final message to them.
 
 - Do it now and fast. A good answer in under a minute beats a perfect one in five. Stop as soon as you can answer.
 - The request is transcribed speech and may have recognition errors. Read it sensibly. If it is truly ambiguous, answer with one short clarifying question.
-- Your final message is spoken on the phone: one to three short spoken sentences. No markdown, code, file paths, URLs, IDs or lists unless they asked for them. Never include secrets or personal data.
-- You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools (Slack, Linear, email). Do what the caller asked for, and say in your answer what you did and who it went to.
+- Your final message is spoken on the phone: one to three short spoken sentences. No markdown, code, file paths, URLs, IDs or lists unless they asked for them. Never include secrets or personal data.`;
+
+/** The fork's rules, per call mode: what it may do and why. */
+export function phoneRules(mode: CallMode): string {
+  return mode === "full"
+    ? `${PHONE_BASE}
+- This call is in full mode: the caller was verified (by the carrier or by their PIN). You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools (Slack, Linear, email). Do what the caller asked for, and say in your answer what you did and who it went to.
 - The project's own rules still hold. Where they ask for a person's yes first (a merge, a production write, a deletion), ask the caller for it on the call, and act on a clear yes.
+- Never read out a secret: no token, key, password or .env value.`
+    : `${PHONE_BASE}
+- This call is in restricted mode: the caller's number was not verified and no PIN was given, so it could be someone else. You may read anything in the project, read through MCP tools, and do local work: edit files, run tests and builds, commit. Pushing, deploying, publishing, sending messages, deleting, and anything outside the project are blocked during this call. If the request needs that, do what you can, and end with what is left, so the session can finish it after the call.
 - Never read out a secret: no token, key, password or .env value.`;
+}
 
 export interface Handoff {
   id: string;
@@ -101,7 +246,7 @@ export interface ForkResult {
  */
 export function runFork(
   h: Handoff,
-  o: { cwd: string; sessionId?: string; cli: string; onStep: (step: string) => void; prompt?: string; background?: string },
+  o: { cwd: string; sessionId?: string; cli: string; mode: CallMode; onStep: (step: string) => void; prompt?: string; background?: string },
 ): Promise<ForkResult> {
   const started = Date.now();
   const standIn =
@@ -125,7 +270,7 @@ export function runFork(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    PHONE_RULES,
+    phoneRules(o.mode),
     "--settings",
     JSON.stringify(settings),
     ...(o.sessionId ? ["--resume", o.sessionId, "--fork-session"] : ["--no-session-persistence"]),
@@ -135,7 +280,9 @@ export function runFork(
     const child = spawn("claude", args, {
       cwd: o.cwd,
       // The fork is its own session; it must not think it is the parent.
-      env: { ...process.env, SCREENLESS_PROJECT: o.cwd, CLAUDE_CODE_SESSION_ID: "" },
+      // The gate reads the call's mode from here; anything but `full` is
+      // restricted, so a fork started without it cannot do more.
+      env: { ...process.env, SCREENLESS_PROJECT: o.cwd, SCREENLESS_CALL_MODE: o.mode, CLAUDE_CODE_SESSION_ID: "" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let final = "";
@@ -231,7 +378,10 @@ export async function serveLiveCall(o: {
   forkRequests?: boolean;
   /** A teammate is calling to hear this session's brief, not its owner. */
   teammate?: string;
+  /** What the Worker said the call may do; each poll may confirm it. */
+  mode?: CallMode;
 }): Promise<ForkResult[]> {
+  let mode: CallMode = o.mode === "full" ? "full" : "restricted";
   const results: ForkResult[] = [];
   // What a fresh run knows of the session: the brief, and C once it is in.
   let summary = "";
@@ -257,6 +407,8 @@ export async function serveLiveCall(o: {
         cwd: o.cwd,
         sessionId: o.sessionId,
         cli: o.cli,
+        // The brief only reads what the session knows.
+        mode: "restricted",
         onStep: () => undefined,
         prompt: o.teammate
           ? `${o.teammate}, a teammate of your owner, is calling the phone line right now, and your owner shares this session's brief with teammates. Brief the voice that talks with them: in at most 120 words of plain sentences, say what we are working on, what was done last, and what is pending or blocked. Only what is fine for a teammate to hear: no personal data, no secrets, nothing from your owner's own mail or private messages. Answer from what you already know in this session; use no tools.`
@@ -281,13 +433,15 @@ export async function serveLiveCall(o: {
 
   let failures = 0;
   for (;;) {
-    let next: { ended: boolean; handoffs: Handoff[] } | null = null;
+    let next: { ended: boolean; mode?: CallMode; handoffs: Handoff[] } | null = null;
     try {
       const res = await fetch(`${o.apiUrl}/live/${o.callId}/next`, { headers: auth });
       if (res.status === 404) break;
       if (res.ok) {
-        next = (await res.json()) as { ended: boolean; handoffs: Handoff[] };
+        next = (await res.json()) as { ended: boolean; mode?: CallMode; handoffs: Handoff[] };
         failures = 0;
+        // The call's own word wins over the watcher poll's.
+        if (next.mode) mode = next.mode === "full" ? "full" : "restricted";
       }
     } catch {
       /* a dropped long-poll is retried below */
@@ -306,6 +460,7 @@ export async function serveLiveCall(o: {
         sessionId: o.forkRequests === false ? undefined : o.sessionId,
         background: [o.brief, summary && `The session's own summary: ${summary}`].filter(Boolean).join("\n\n"),
         cli: o.cli,
+        mode,
         onStep: (step) => {
           o.log(`  · ${step}`);
           // Enough for the voice to answer "how is it going?" honestly.
