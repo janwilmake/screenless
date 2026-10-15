@@ -108,6 +108,32 @@ const SECRET_IN_COMMAND =
 const MCP_READ_VERB =
   /^(get|list|search|read|query|fetch|find|view|describe|show|lookup|count|semantic[-_]search)[-_a-z]*$/i;
 
+/**
+ * Whether an MCP tool only reads. Many servers prefix their tools with their
+ * own name (`slack_read_channel` on the `slack` server), which hides the verb,
+ * so that prefix is dropped before the verb is checked.
+ */
+export function isMcpRead(server: string, name: string): boolean {
+  const prefix = (server.split(/[-_]/).pop() ?? "").toLowerCase();
+  const bare = prefix && name.toLowerCase().startsWith(prefix + "_") ? name.slice(prefix.length + 1) : name;
+  return MCP_READ_VERB.test(bare);
+}
+
+/**
+ * `agent-codemode call <server> <tool> …` (or `codemode call …`) runs an MCP
+ * tool from the shell. It is allowed when that tool only reads and the command
+ * is one plain call with quoted arguments — no pipe, chain or substitution.
+ */
+export function isCodemodeRead(command: string): boolean {
+  const c = command
+    .trim()
+    .replace(/'[^']*'/g, "''")
+    .replace(/"(?:[^"\\`$]|\\.)*"/g, '""')
+    .replace(/\s*2>&1|\s*2>\/dev\/null/g, "");
+  const m = /^(?:\S*\/)?(?:agent-)?codemode call ([\w.-]+) ([\w.-]+)((?: --(?:json|arg) (?:''|""|\S+)| --(?:text|raw))*)$/.exec(c);
+  return !!m && isMcpRead(m[1], m[2]);
+}
+
 const LATER = "This is blocked during phone calls. Do not retry it or work around it: finish what you can, and end your answer with what is left for the session after the call.";
 
 /** The decision for one tool call of a fork. `cwd` is the project. */
@@ -129,6 +155,7 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
       return { decision: "deny", reason: "Secrets are never read or changed on a phone call." };
     const kind = shellKind(String(input.command ?? ""));
     if (kind !== "other") return { decision: "allow", reason: kind };
+    if (isCodemodeRead(String(input.command ?? ""))) return { decision: "allow", reason: "MCP read" };
     return {
       decision: "deny",
       reason: `During a call only read-only commands and local work (git add/commit, tests, builds) run, as one plain command or pipeline: no loops, $(...), redirects, push, deploy, delete or network writes. If a plainer read-only command answers the question, use that. Otherwise do not work around it: finish what you can, and end your answer with what is left for the session after the call.`,
@@ -137,7 +164,8 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
   if (tool.startsWith("mcp__")) {
     if (/^mcp__(computer-use|claude-in-chrome|remote-devices)__/.test(tool))
       return { decision: "deny", reason: `No browser or computer control during a call. ${LATER}` };
-    if (MCP_READ_VERB.test(tool.split("__").pop() ?? "")) return { decision: "allow", reason: "MCP read" };
+    const [, server = "", name = ""] = tool.split("__");
+    if (isMcpRead(server, name)) return { decision: "allow", reason: "MCP read" };
     return { decision: "deny", reason: `MCP tools that change or send something wait until after the call. ${LATER}` };
   }
   return { decision: "deny", reason: `${tool} is not allowed during a call. ${LATER}` };

@@ -161,3 +161,23 @@ verbatim), where it bears on what was asked:
 > Bye bye
 > Please hang up
 > Please hang up
+
+## Follow-up: MCP reads on a call (hyre loop session, 16:50)
+
+On the same call Jan asked: "There's a few errors since last time we checked
+in MCP ATS errors. Can you analyze that and give me a rundown in that
+channel". The fork could not read Slack, so the work waited until after the
+call. Jan, afterwards in the session:
+
+> why was slack access blocked during the live call? that shouldnt be the case
+
+Cause: the gate checked the read verb on the whole tool name, and the Slack
+server prefixes its tools with its own name (`slack_read_channel`), so a read
+looked like a write. The fork's fallback, `agent-codemode call slack
+slack_read_channel …` in Bash, was not a read-only command either.
+
+What landed: the gate drops the server's own name from the tool before it
+checks the verb, and allows one plain `agent-codemode call <server> <tool>`
+(or `codemode call …`) when that tool reads. Sends, pipes, chains and
+`$(...)` stay refused. Checked with a 17-case table (Slack, Linear, Intercom
+reads allowed; sends, reactions, notes, pipes, chains, substitution refused).
