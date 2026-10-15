@@ -2,7 +2,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
-import { gateHook, serveLiveCall, type ForkResult } from "./live.js";
+import { fetchRetry, gateHook, serveLiveCall, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
 
 /**
@@ -705,17 +705,18 @@ async function watch(args: string[]): Promise<void> {
   for (;;) {
     let next: WatchNext | null = null;
     try {
-      const res = await fetch(nextUrl, { headers: { Authorization: `Bearer ${cfg.token}` } });
+      const res = await fetchRetry(nextUrl, { headers: { Authorization: `Bearer ${cfg.token}` } });
       if (res.status === 401) die("session expired — run `screenless setup` again");
       if (res.ok) {
         next = (await res.json()) as WatchNext;
         if (offline && !asJson) console.log(c.dim("  back online"));
         offline = false;
       }
-    } catch {
+    } catch (err) {
       // Offline is a state, not an error: laptops sleep, wifi drops. Say it
       // once and keep probing — the queue upstream is what makes this safe.
-      if (!offline && !asJson) console.log(c.dim("  can't reach the worker; retrying quietly"));
+      const why = (err as { cause?: { code?: string } }).cause?.code;
+      if (!offline && !asJson) console.log(c.dim(`  can't reach the worker${why ? ` (${why})` : ""}; retrying quietly`));
       offline = true;
     }
 

@@ -287,6 +287,23 @@ function short(input: unknown): string {
 /* -------------------------------------------------------------- the call */
 
 /**
+ * fetch, tried once more on a network error. Node reuses keep-alive
+ * connections, and one the far end closed while it sat idle (as the call's
+ * long-polls do once it ends) fails the next request outright; the retry
+ * gets a fresh connection. Jan's watcher printed "can't reach the worker"
+ * twice right after his call for this, and a fork's answer posted on such a
+ * connection would have been lost without a word.
+ */
+export async function fetchRetry(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    await new Promise((r) => setTimeout(r, 300));
+    return await fetch(url, init);
+  }
+}
+
+/**
  * Serves one live call until it ends and every fork has answered: long-polls
  * the worker for handed-off requests, runs each in its own fork, and posts
  * progress and the answer back. Resolves with what was done, for the
@@ -314,7 +331,7 @@ export async function serveLiveCall(o: {
   const running = new Set<Promise<void>>();
   const auth = { Authorization: `Bearer ${o.token}` };
   const context = (text: string) =>
-    fetch(`${o.apiUrl}/live/${o.callId}/context`, {
+    fetchRetry(`${o.apiUrl}/live/${o.callId}/context`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -348,7 +365,7 @@ export async function serveLiveCall(o: {
     void p.finally(() => running.delete(p));
   }
   const post = (id: string, text: string, final: boolean) =>
-    fetch(`${o.apiUrl}/live/${o.callId}/result`, {
+    fetchRetry(`${o.apiUrl}/live/${o.callId}/result`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({ id, text, final }),

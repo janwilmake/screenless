@@ -70,7 +70,19 @@ What landed:
   uncommitted files and the checkout instead of "one uncommitted change on
   dev" (it was a stray `tc.log`), and counts the Claude Code sessions running
   on the machine and where, by those with a terminal (forks have none).
-  Checked against a table of 22 allowed and 20 refused commands and paths.
+  Checked against a table of 16 allowed and 20 refused commands, and six
+  paths and tools.
+- **"can't reach the worker" after the call was the CLI, not the Worker.**
+  That line is printed only when `fetch` throws; a Worker error is an HTTP
+  status and prints nothing. It cleared on the next poll, twice, right as
+  the call's long-polls went idle: the mark of Node reusing a keep-alive
+  connection the far end had closed. Every watcher poll and every live post
+  now retries once on a network error (`fetchRetry`), which matters most for
+  the fork's answer: `post()` swallowed the error, so an answer sent on such
+  a connection was lost without a word. The offline line now names the error
+  code, so a real outage can be told apart. Reproduced locally with a server
+  that drops a request's connection: plain fetch throws `UND_ERR_SOCKET`,
+  `fetchRetry` gets the answer.
 
 Still open:
 
@@ -78,6 +90,8 @@ Still open:
   "bye".
 - The speed-up is measured per fork, not on a call. Answers that need real
   work still take as long as the work.
+- The keep-alive cause of the flapping is inferred, not seen: no Worker logs
+  were available here. The error code in the offline line will show it.
 - Jan's account still carries the name Wijnand until he runs
   `screenless settings --name "Jan"` against the deployed worker.
 - The loudness threshold (500, or three times the noise floor) is set from
