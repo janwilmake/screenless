@@ -2,6 +2,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
+import { gateHook, serveLiveCall, type ForkResult } from "./live.js";
 
 /**
  * The zone this machine is set to.
@@ -573,11 +574,13 @@ interface WatchNext {
   watchers: number;
   queued: number;
   call?: WatchCall;
+  /** A ring-in of yours in progress, answered live by this terminal. */
+  live?: string;
 }
 
-function printWatchCall(call: WatchCall, asJson: boolean): void {
+function printWatchCall(call: WatchCall, asJson: boolean, live: ForkResult[] = []): void {
   if (asJson) {
-    console.log(JSON.stringify(call, null, 2));
+    console.log(JSON.stringify(live.length ? { ...call, handledLive: live } : call, null, 2));
     return;
   }
   const at = new Date(call.createdAt).toLocaleTimeString();
@@ -607,6 +610,15 @@ function printWatchCall(call: WatchCall, asJson: boolean): void {
   } else {
     printTranscript(call.transcript ?? []);
   }
+
+  if (live.length) {
+    console.log(`\n${c.bold("handled live during the call")} ${c.dim("— by forks of this session; do not redo these")}`);
+    for (const r of live) {
+      console.log(`  ${r.ok ? c.green("✓") : c.red("✗")} ${r.request}`);
+      console.log(`    ${c.dim(r.answer)}`);
+    }
+    console.log(c.dim("  Do only what is left: anything a fork said waits for after the call, or that was asked but not handled."));
+  }
 }
 
 /**
@@ -632,7 +644,19 @@ async function watch(args: string[]): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
   const asJson = args.includes("--json");
-  const interval = Math.max(3, Number(argFlag(args, "--interval") ?? 10)) * 1000;
+
+  // Live handoffs need Claude Code on this machine. Armed inside a Claude Code
+  // session, each request runs in a fork of that session, so it knows what
+  // the session knows; anywhere else, in a fresh `claude -p`.
+  const { spawnSync } = await import("node:child_process");
+  const liveOnly = args.includes("--live-only");
+  const live = !args.includes("--no-live") && spawnSync("claude", ["--version"], { stdio: "ignore" }).status === 0;
+  const sessionId = args.includes("--no-fork") ? undefined : process.env.CLAUDE_CODE_SESSION_ID || undefined;
+  // A live watcher polls faster: a ring-in must find its terminal within the
+  // first seconds of the call, not ten seconds in.
+  const interval = Math.max(3, Number(argFlag(args, "--interval") ?? (live ? 4 : 10))) * 1000;
+  const liveCalls = new Map<string, Promise<ForkResult[]>>();
+  const serving = new Set<string>();
 
   const { randomBytes } = await import("node:crypto");
   const { basename } = await import("node:path");
@@ -645,6 +669,14 @@ async function watch(args: string[]): Promise<void> {
       const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
       console.log(`${c.bold(me.org.name)} ${c.dim(`· watching from ${repo} · team line ${me.inboundNumber}`)}`);
       console.log(c.dim("  blocks until a call or spoken request lands, prints it, and exits"));
+      if (live)
+        console.log(
+          c.dim(
+            `  live: ring the line and this terminal answers during the call, in ${
+              sessionId ? "a fork of this Claude Code session" : "a fresh claude -p"
+            }`,
+          ),
+        );
     } catch {
       /* the banner is decoration; the loop below is the product */
     }
@@ -652,7 +684,8 @@ async function watch(args: string[]): Promise<void> {
 
   const nextUrl =
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
-    `&repo=${encodeURIComponent(repo)}`;
+    `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}`;
+  if (liveOnly && !live) die("--live-only needs Claude Code (`claude`) on this machine");
   let offline = false;
 
   for (;;) {
@@ -672,8 +705,38 @@ async function watch(args: string[]): Promise<void> {
       offline = true;
     }
 
-    if (next?.ready && next.call) {
-      printWatchCall(next.call, asJson);
+    if (next?.live && !liveCalls.has(next.live)) {
+      const callId = next.live;
+      if (!asJson) console.log(`\n${c.green("☎")} ${c.bold("live call")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the call`)}`);
+      liveCalls.set(
+        callId,
+        serveLiveCall({
+          apiUrl: cfg.apiUrl,
+          token: cfg.token,
+          callId,
+          cwd: process.cwd(),
+          sessionId,
+          cli: process.argv[1],
+          log: (line) => !asJson && console.log(`  ${line}`),
+        })
+          .catch(() => [] as ForkResult[])
+          .finally(() => {
+            serving.delete(callId);
+            if (!asJson) console.log(c.dim(`  live call ${callId.slice(0, 8)} ended`));
+          }),
+      );
+      serving.add(callId);
+    }
+
+    // Never leave while a live call is being served: exiting would drop its
+    // requests. Another finished call waits in the queue meanwhile.
+    const busy = next?.call ? [...serving].some((id) => id !== next!.call!.callId) : false;
+    if (next?.ready && next.call && !busy) {
+      // A call answered live is delivered once its last fork has answered, so
+      // the session gets the whole story and does not redo the work.
+      const served = liveCalls.get(next.call.callId);
+      const results = served ? await served : [];
+      printWatchCall(next.call, asJson, results);
       console.log(`WORK ${next.call.callId}`);
       if (!asJson) console.log(c.dim(`  when applied: screenless done ${next.call.callId} — then watch again`));
       return;
@@ -1146,7 +1209,8 @@ ${c.bold("Usage")}
   screenless setup [--api <url>] [--voice]   verify your phone number by OTP
   screenless call "<prompt>" [options]       call now, or park it for later
   screenless test                            ring me now with a demo call
-  screenless watch                           block until a team call lands, then exit
+  screenless watch                           take calls: answer yours live, then exit
+                                             with each finished call
   screenless done <callId>                   mark a watched call as handled
   screenless team                            your team: members, credit, the page
   screenless transcript [--wait] [--json]    what was decided on the last call
@@ -1182,24 +1246,32 @@ ${c.bold("Settings options")}
   so moving country fixes the schedule by itself.
 
 ${c.bold("The line")}
-  Ring ${c.dim("screenless settings")}' number any time: no menu, no voice — a beep,
-  you talk, you hang up. The recording lands — transcribed — in whichever
-  teammate's terminal is running ${c.dim("screenless watch")}. Nothing watching? It
-  waits in the queue up to a week. A declined morning call goes back on the
-  shelf; the loop re-parks it for tomorrow.
+  Ring ${c.dim("screenless settings")}' number any time. While your own terminal runs
+  ${c.dim("screenless watch")} with Claude Code installed, the call is live: your session
+  answers during the call, each request in a fork of it. Otherwise the voice
+  just listens, and the transcript lands in whichever teammate's terminal is
+  watching. Nothing watching? It waits in the queue up to a week. A declined
+  morning call goes back on the shelf; the loop re-parks it for tomorrow.
 
 ${c.bold("Watch options")}
   (none)               block until one call or spoken request is delivered,
                        print it with a ${c.dim("WORK <callId>")} line, and exit — do the
                        work, run ${c.dim("screenless done <callId>")}, then watch again.
                        Undone calls are re-delivered, never lost
-  --interval <secs>    seconds between polls (default 10)
+  --interval <secs>    seconds between polls (default 4 with live, else 10)
+  --live-only          answer your calls live, but never take finished calls
+                       (leave those for your main session's watcher)
+  --no-live            never answer during a call; ring-ins are recorded only
+  --no-fork            run live requests in a fresh claude -p, not a fork of
+                       the Claude Code session this was started from
   --json               machine-readable calls
 
 ${c.bold("What the call does not do")}
   The assistant on the phone has no tools and takes no action. It collects
-  your decisions; your own loop reads ${c.dim("screenless transcript --json")} afterwards
-  and is what actually merges, comments and closes.
+  your decisions, or on a live call hands requests to your own terminal; your
+  machine is what reads, edits and commits. During a call a gate allows only
+  reads and local work in the project — pushes, deploys and messages wait for
+  your session after the call.
 
 ${c.bold("Wait options")}
   (none)               block until tonight's run is due, probing every 60s;
@@ -1244,6 +1316,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   test,
   watch,
   done: doneCmd,
+  gate: gateHook,
   team: teamCmd,
   transcript,
   wait,

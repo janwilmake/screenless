@@ -27,6 +27,9 @@ export interface Env {
   /** Per-call OpenAI Realtime session, keyed `realtime:<callId>`, so the
    *  incoming-call webhook can find the brief for a leg Telnyx bridged. */
   REALTIME: DurableObjectNamespace;
+  /** Per-call GPT-Live session for a ring-in a watcher can answer live,
+   *  keyed by our call id: the sideband plus the handoffs to the terminal. */
+  LIVE: DurableObjectNamespace;
 
   // secrets — set with `wrangler secret put <NAME>`
   TELNYX_API_KEY: string;
@@ -37,6 +40,12 @@ export interface Env {
   OPENAI_API_KEY: string;
   /** Verifies the `realtime.call.incoming` webhook (Standard Webhooks). */
   OPENAI_WEBHOOK_SECRET: string;
+  /** Optional. Guards /admin/test-ring, the scripted caller used to test the
+   *  line end to end without a person on the phone. Unset disables it. */
+  TEST_RING_SECRET: string;
+  /** Runs GPT-Live for live ring-ins. A key of a project with gpt-live-1
+   *  access; while unset, every ring-in is the quiet recording. */
+  OPENAI_LIVE_API_KEY: string;
   /**
    * Optional. While unset billing is inert: every org is entitled whatever its
    * balance says, which is what keeps `wrangler dev` usable.
@@ -80,9 +89,16 @@ export interface Env {
   OPENAI_REALTIME_MODEL: string;
   /** The Realtime voice, e.g. "marin". */
   OPENAI_VOICE: string;
+  /** A number on the Telnyx account that is not the line itself, used as the
+   *  caller id of /admin/test-ring. */
+  TEST_CALLER_NUMBER: string;
+  /** Verified numbers a test ring may ring in as, comma-separated. */
+  TEST_RING_AS: string;
 }
 
 export { RealtimeCall } from "./realtime";
+export { LiveCall } from "./live";
+import type { LiveConfig } from "./live";
 
 /**
  * Sessions last a year.
@@ -341,6 +357,35 @@ The caller may be on speakerphone, so you will sometimes hear your own voice ech
 
 Speak the caller's language. You have no tools and take no action of any kind — you cannot merge, comment, deploy, or change anything. Everything said on this call is transcribed and handed to the caller's own machine afterwards, which does the work. Never say or imply that you have done, or will do, anything.`;
 
+/**
+ * What GPT-Live is told when a ring-in reaches a caller whose terminal is
+ * watching with live handoffs on.
+ *
+ * This is the one place the voice is more than a note-taker, and the
+ * architectural rule still holds: it has no tools. "Delegating" hands the
+ * request to the caller's own Claude Code session on their own machine, which
+ * does the work and sends back what to say. The voice only speaks.
+ */
+const liveInboundInstructions = (o: { name: string; repo: string }): string =>
+  `You are the phone line to ${o.name ? `${o.name}'s` : "the caller's"} own Claude Code session, which is running on their computer${o.repo ? ` in the project "${o.repo}"` : ""}. The caller is its owner, calling from their verified phone, probably away from their keyboard.
+
+# Delegation policy
+- Delegate every request that needs their computer: anything about their code, project, repositories, pull requests, tickets, tests, builds, files, logs, email, calendar, or any tool their session has, and every request to do, change, check, run, write, fix or send something. Their session does the work and tells you what to say.
+- Delegate questions you cannot answer from this call alone. Never answer from your own knowledge about their project, never guess, and never say you have no access: delegate instead.
+- Do not delegate greetings, small talk, or follow-ups already answered in this call.
+- When you delegate, say one short line such as "Let me check." and stop. Never invent progress or a result while you wait. Results take 10 seconds to a few minutes; if the caller asks how it is going, say it is still working.
+- Several requests can run at once; delegate each one separately.
+
+# Results
+- A result arrives as commentary. Say it briefly and naturally, in at most three short sentences, and keep its meaning exact: names, numbers and yes-or-no answers word for word.
+- Never read out code, long lists, file paths, URLs or secrets. Summarise, and offer more detail if they want it.
+- If a result says something cannot be done during a call, tell the caller it is queued for their session after the call.
+
+# Phone manner
+- Short turns, plain spoken language, the caller's language.
+- The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
+- When the caller says goodbye, say goodbye briefly. Everything said is also handed to their session after the call.`;
+
 /** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
  *  the correlation header the webhook reads to find this call's brief. Shared by
  *  the outbound bridge route and the inbound answer. */
@@ -566,7 +611,7 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
 
   const params = await inboundBody(req);
-  const from = normalizeCallerId(params.From ?? params.from ?? "");
+  const from = await testCaller(env, normalizeCallerId(params.From ?? params.from ?? ""));
   if (!isE164(from)) return sayHangup("Sorry, I could not read your number. Goodbye.");
 
   const user = await db.userByPhone(env, from);
@@ -596,6 +641,34 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
+
+  // A caller whose own terminal is watching with live handoffs gets GPT-Live
+  // instead: a conversation in which their Claude Code session answers during
+  // the call. Everyone else keeps the quiet ring-in, so an old CLI changes
+  // nothing.
+  const watcher = env.OPENAI_LIVE_API_KEY ? await db.stashGet(env, `livewatch:${user.id}`) : null;
+  if (watcher) {
+    const w = JSON.parse(watcher) as { watcherId: string; repo: string };
+    const cfg: LiveConfig = {
+      engine: "live",
+      userId: user.id,
+      instructions: liveInboundInstructions({ name: user.name ?? "", repo: w.repo }),
+      greeting: `Hi${user.name ? ` ${user.name.split(" ")[0]}` : ""}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
+      voice: env.OPENAI_VOICE,
+      accountSid: params.AccountSid ?? "",
+      callSid: params.CallSid ?? "",
+    };
+    await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
+    // The call's audio streams both ways to the LiveCall Durable Object,
+    // which relays it to GPT-Live. The pauses only keep the call up (180 s is
+    // the most one <Pause> takes; an invalid length ends the call at once);
+    // the Durable Object hangs up when the conversation ends.
+    const t = await webhookToken(`live:${callId}`, env.SESSION_SECRET);
+    return xml(
+      `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="PCMU" bidirectionalMode="rtp" bidirectionalCodec="PCMU" bidirectionalSamplingRate="8000"/></Start>` +
+        '<Pause length="180"/>'.repeat(40),
+    );
+  }
   await db.stashPut(
     env,
     `realtime:${callId}`,
@@ -646,7 +719,7 @@ async function inboundStatus(req: Request, env: Env): Promise<Response> {
   const payload = await inboundBody(req);
   const status = String(payload.CallStatus ?? payload.call_status ?? "").toLowerCase();
   if (!["completed", "failed", "busy", "no-answer", "canceled"].includes(status)) return json({ ok: true });
-  const from = normalizeCallerId(String(payload.From ?? payload.from ?? ""));
+  const from = await testCaller(env, normalizeCallerId(String(payload.From ?? payload.from ?? "")));
   if (!isE164(from)) return json({ ok: true });
   await finishInbound(env, from, `status ${status}`);
   return json({ ok: true });
@@ -688,11 +761,14 @@ async function openaiWebhook(req: Request, env: Env): Promise<Response> {
     return json({ ok: true });
   }
   const cfg = JSON.parse(stashed) as {
+    engine?: "live";
     instructions: string;
     mode: "lead" | "quiet";
     greeting?: string;
     voice?: string;
   };
+  // Parked for GPT-Live, which has its own project and webhook.
+  if (cfg.engine === "live") return json({ ok: true });
 
   try {
     await openai.acceptCall(env.OPENAI_API_KEY, incoming.callId, {
@@ -821,14 +897,38 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   const startedAt = Number(url.searchParams.get("started")) || Date.now();
   const repo = url.searchParams.get("repo") ?? "";
   if (!/^[\w-]{6,64}$/.test(watcherId)) return fail(400, "watcher id required");
+  // A live-only watcher answers ring-ins during the call but takes no
+  // finished calls. Registered as the latest-started terminal, it is never
+  // the first choice for the queue, and it is never handed a call itself.
+  const liveOnly = url.searchParams.get("queue") === "0";
 
-  await db.heartbeatWatcher(env, org.id, { watcherId, userId: user.id, startedAt, repo });
+  await db.heartbeatWatcher(env, org.id, {
+    watcherId,
+    userId: user.id,
+    startedAt: liveOnly ? Number.MAX_SAFE_INTEGER : startedAt,
+    repo,
+  });
   const watchers = await db.liveWatchers(env, org.id);
 
-  const queue = await db.queuedCalls(env, org.id);
-  const found = queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
+  // A watcher that can run live handoffs says so on every poll. Your ring-ins
+  // then go to GPT-Live and land here during the call. The flag expires soon
+  // after the polls stop, and ring-ins go back to the quiet recording.
+  let live: string | undefined;
+  if (url.searchParams.get("live") === "1") {
+    await db.stashPut(env, `livewatch:${user.id}`, JSON.stringify({ watcherId, repo }), 45);
+    // Any of your live watchers may serve your call: each request is claimed
+    // once, so two terminals never run the same one, and a watcher re-armed
+    // mid-call picks the call back up.
+    const current = await db.stashGet(env, `livecall:${user.id}`);
+    if (current) live = (JSON.parse(current) as { callId: string }).callId;
+  }
 
-  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length });
+  const queue = await db.queuedCalls(env, org.id);
+  const found = liveOnly
+    ? undefined
+    : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
+
+  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   return json({
@@ -846,6 +946,21 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
       createdAt: found.record.createdAt,
     },
   });
+}
+
+/**
+ * The watcher's side of a live call: long-poll for delegated requests, and
+ * post back what to say. Only the caller's own terminal may touch the call.
+ */
+async function liveRoute(req: Request, env: Env, callId: string, action: "next" | "result"): Promise<Response> {
+  const s = await authed(req, env);
+  if (!s) return fail(401, "not authenticated");
+  const { user } = await identify(env, s.phone);
+  const record = await loadCall(env, callId);
+  if (!record || record.userId !== user.id) return fail(404, "unknown call id");
+  const stub = env.LIVE.get(env.LIVE.idFromName(callId));
+  if (action === "next") return await stub.fetch("https://live/next");
+  return await stub.fetch("https://live/result", { method: "POST", body: await req.text() });
 }
 
 /** Marks a queued call as taken, so no other watcher ever sees it again. */
@@ -995,6 +1110,60 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
   });
 }
 
+/**
+ * A scripted caller for testing the line end to end with nobody on the phone:
+ * Telnyx rings our own number from TEST_CALLER_NUMBER and reads the script
+ * with pauses in between, and the call record's transcript shows what the
+ * voice answered. The test number must be a verified user for the ring-in to
+ * be taken. Off unless TEST_RING_SECRET is set.
+ */
+async function testRing(req: Request, env: Env, origin: string): Promise<Response> {
+  const secret = req.headers.get("X-Test-Secret") ?? "";
+  if (!env.TEST_RING_SECRET || !env.TEST_CALLER_NUMBER || !safeEqual(secret, env.TEST_RING_SECRET))
+    return fail(403, "forbidden");
+  const { script, as } = (await req.json().catch(() => ({}))) as {
+    script?: Array<{ pause?: number; say?: string }>;
+    /** Ring in as this verified number, so the call reaches that user's
+     *  watcher. Only numbers listed in TEST_RING_AS. */
+    as?: string;
+  };
+  if (!Array.isArray(script) || !script.length) return fail(400, "script required");
+  const allowed = (env.TEST_RING_AS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (as && !allowed.includes(as)) return fail(403, "not a test-ring number");
+  if (as) await db.stashPut(env, `testas:${env.TEST_CALLER_NUMBER}`, as, 3600);
+  const id = crypto.randomUUID();
+  await db.stashPut(env, `testring:${id}`, JSON.stringify(script), 3600);
+  const t = await webhookToken(`testring:${id}`, env.SESSION_SECRET);
+  const res = await telnyx.initiateTexmlCall(env.TELNYX_API_KEY, env.TELNYX_TEXML_APP_ID, {
+    from: env.TEST_CALLER_NUMBER,
+    to: env.TELNYX_FROM_NUMBER,
+    url: `${origin}/texml/test-script/${id}?t=${t}`,
+    statusCallback: `${origin}/texml/test-status?t=${t}`,
+  });
+  return json({ ok: true, id, telnyx: res });
+}
+
+/** The number a scripted test ring stands in for, or the caller id as is. */
+async function testCaller(env: Env, from: string): Promise<string> {
+  if (!env.TEST_RING_SECRET || !env.TEST_CALLER_NUMBER || from !== env.TEST_CALLER_NUMBER) return from;
+  return (await db.stashGet(env, `testas:${from}`)) ?? from;
+}
+
+async function testScript(req: Request, env: Env, id: string): Promise<Response> {
+  const t = new URL(req.url).searchParams.get("t") ?? "";
+  if (!safeEqual(t, await webhookToken(`testring:${id}`, env.SESSION_SECRET))) return fail(403, "bad token");
+  const raw = await db.stashGet(env, `testring:${id}`);
+  if (!raw) return sayHangup("No script.");
+  const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const steps = (JSON.parse(raw) as Array<{ pause?: number; say?: string }>)
+    .map((st) =>
+      (st.pause ? `<Pause length="${Math.min(120, Math.max(1, Math.round(st.pause)))}"/>` : "") +
+      (st.say ? `<Say voice="female" language="en-US">${esc(st.say)}</Say>` : ""),
+    )
+    .join("");
+  return xml(`${steps}<Hangup/>`);
+}
+
 /* ------------------------------------------------------------------ router */
 
 /**
@@ -1079,11 +1248,26 @@ export default {
         return await createVerifyProfile(req, env);
       if (method === "GET" && path === "/admin/inbound-url")
         return await inboundUrl(req, env, origin);
+      if (method === "POST" && path === "/admin/test-ring") return await testRing(req, env, origin);
+      const scriptMatch = path.match(/^\/texml\/test-script\/([\w-]+)$/);
+      if (scriptMatch) return await testScript(req, env, scriptMatch[1]);
+      if (path === "/texml/test-status") return json({ ok: true });
 
       /* --------------------------------------------------------- watchers */
 
       if (method === "GET" && path === "/watch/next") return await watchNext(req, env);
       if (method === "POST" && path === "/watch/done") return await watchDone(req, env);
+      const streamMatch = path.match(/^\/live\/stream\/([\w-]+)$/);
+      if (streamMatch) {
+        const t = url.searchParams.get("t") ?? "";
+        if (!safeEqual(t, await webhookToken(`live:${streamMatch[1]}`, env.SESSION_SECRET)))
+          return fail(403, "bad token");
+        const stub = env.LIVE.get(env.LIVE.idFromName(streamMatch[1]));
+        return await stub.fetch(`https://live/stream?call=${streamMatch[1]}`, req);
+      }
+      const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result)$/);
+      if (liveMatch && ((method === "GET" && liveMatch[2] === "next") || (method === "POST" && liveMatch[2] === "result")))
+        return await liveRoute(req, env, liveMatch[1], liveMatch[2] as "next" | "result");
 
       // Who am I, org-wise. Also what `screenless team` prints before it
       // opens the page.

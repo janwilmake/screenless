@@ -11,6 +11,16 @@ Worker routes that finished call to exactly one watching terminal. This skill is
 that terminal: it waits for a call, then does what the call decided, on your own
 machine with the MCPs, browser and credentials you already have.
 
+**When you ring the line yourself while this is armed, the call is live.** A
+voice answers ("your Claude session in <repo> here"), and every request it
+cannot answer from the call itself is handed to this terminal *during* the
+call: `screenless watch` runs it as `claude -p` in a fork of this session (it
+reads `CLAUDE_CODE_SESSION_ID`), so it knows everything this session knows,
+and the answer is spoken back. Several requests can run at once. A gate holds
+every fork to reading and local work in the project — no push, deploy, send,
+delete or secrets — so what a call cannot do waits for this session after the
+call.
+
 It does **not** build the paper or the morning brief — that is the optional
 `morning-pr-review` skill, armed separately. This skill only takes calls and
 acts on them.
@@ -40,9 +50,10 @@ thing the user has to know.
    ```
 
    It polls every few seconds in this process, no model, registering a
-   heartbeat so the Worker knows this terminal is live. It **blocks until one
-   call is delivered**, prints it with a `WORK <callId>` line, and exits — the
-   exit is the point: it is what wakes the model to act. A call that ends while
+   heartbeat so the Worker knows this terminal is live. While one of your own
+   calls is live it stays up and answers it (see above). It **blocks until one
+   finished call is delivered**, prints it with a `WORK <callId>` line, and
+   exits — the exit is the point: it is what wakes the model to act. A call that ends while
    no terminal is watching waits in the team's queue up to a week, so arming
    this also drains any backlog, one call per arming.
 
@@ -67,7 +78,12 @@ You reach a tick two ways: the watcher exited because a call arrived (a
    it. **Whose words these are decides how you treat them**, and the watcher
    marks which:
 
-   - *Your own* call (marked `you`): you are acting on your own words. A
+   - *Your own* call (marked `you`): you are acting on your own words. If it
+     ends with **handled live during the call**, forks of this session already
+     did those requests (their changes are in the working tree, maybe
+     committed): do not redo them. Do only what is left — what a fork said must
+     wait until after the call (a push, a deploy, a message), and anything asked
+     that was not handled. A
      `request` is a prompt to act on in this repo; a `brief` call is a morning
      conversation — follow the `screenless-apply` skill (`APPLY.md` next to this
      file) with the transcript printed. For a morning call, the decisions

@@ -21,6 +21,11 @@ phone number wired to the terminals it runs. The number goes both ways:
   only ever reaches verified numbers on your own team.
 - **Watch** — `screenless watch` in a terminal is where the calls land. Arm it
   in your coding agent with **`/screenless`** and leave it open.
+- **Call your session** — ring the line yourself while `/screenless` is armed
+  and your own Claude Code session picks up. Ask what broke, what a PR does,
+  to fix a test: each request runs in a fork of that session on your machine,
+  and the answer is spoken back during the call. Pushes, deploys and messages
+  wait for the session after the call.
 
 The voice on the phone has no tools and no credentials. It collects decisions
 and hangs up; a terminal on your own machine — with the MCPs, the logged-in

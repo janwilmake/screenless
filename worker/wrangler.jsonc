@@ -98,16 +98,33 @@
     // screenless-inbound app the number is assigned to. It must have an
     // Outbound Voice Profile assigned, or the outbound SIP leg to OpenAI is
     // refused with 480 and the caller hears nothing.
-    "TELNYX_TEXML_APP_ID": "3027023992306271718"
+    "TELNYX_TEXML_APP_ID": "3027023992306271718",
+
+    // Caller id of /admin/test-ring, the scripted test caller: the old US
+    // number, still on the account and on the same application. It rings the
+    // line standing in for a number in TEST_RING_AS, so the live path can be
+    // tested with nobody on the phone. Off while TEST_RING_SECRET is unset.
+    "TEST_CALLER_NUMBER": "+16412153640",
+    // The verified numbers a test ring may stand in for, so it reaches that
+    // user's watcher. Only the owner's own.
+    "TEST_RING_AS": "+31681904650"
   },
 
   // One per live OpenAI Realtime call: it holds the control WebSocket for the
   // duration and writes the transcript into the call's D1 row. SQLite-backed
   // because new DO classes require it; we keep no DO storage of our own.
   "durable_objects": {
-    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeCall" }]
+    "bindings": [
+      { "name": "REALTIME", "class_name": "RealtimeCall" },
+      // A ring-in answered by GPT-Live: the sideband plus the requests handed
+      // to the caller's watching terminal during the call.
+      { "name": "LIVE", "class_name": "LiveCall" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeCall"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RealtimeCall"] },
+    { "tag": "v2", "new_sqlite_classes": ["LiveCall"] }
+  ],
 
   // All state: users, orgs, invites, ledger, calls, briefs, watchers, outbox,
   // codes and rate-limit counters. Schema in schema.sql:
@@ -136,4 +153,6 @@
   //   RESEND_API_KEY        — sends every mail this Worker writes
   //   OPENAI_API_KEY        — runs the Realtime conversation + voice
   //   OPENAI_WEBHOOK_SECRET — whsec_… from registering the webhook endpoint in OpenAI
+  //   TEST_RING_SECRET      — optional; enables /admin/test-ring
+  //   OPENAI_LIVE_API_KEY   — a key with gpt-live-1 access; unset turns live ring-ins off
 }

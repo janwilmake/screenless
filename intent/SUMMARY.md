@@ -1,7 +1,8 @@
 # Intent, resolved
 
-Last updated: 2026-08-22 — covers sessions 1–9, through the 03:35 prompt on
-22 Aug in session 9 (the leftover sweep and the real-`npx skills` installer).
+Last updated: 2026-10-15 — covers sessions 1–9 in full (through the 03:35
+prompt on 22 Aug), plus the live-call rows from session 12. Sessions 10–11 are
+in their own files.
 If the session files carry prompts newer than that, this document is behind
 them and they win.
 
@@ -34,7 +35,9 @@ team infrastructure, and its final prompt reframed it as tooling.)*
 | The paper and the morning brief are **two branded skills**, not the product; the CLI is tooling anyone builds skills on | built — reframed in the skill descriptions and the landing page; no third-party skill exists yet |
 | The landing page sells the team line and the tooling, not solo PR review; no false lines | **built and live** — rebuilt around the line + skills; the Stripe-cancel and caller-is-always-you falsehoods removed |
 | The call brief nightly and the edition weekly from the same Saturday sitting *(was: both nightly from one reading; before that, two loops)* | built, unrun |
-| The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built |
+| The phone assistant takes **no** action; the transcript goes to a terminal on the user's own machine, which acts | built — still true on live calls: the voice has no tools and hands requests to the caller's own terminal |
+| **Call your Claude session**: ring in while your own terminal watches, and every request is handed *during the call* to a fork of the Claude Code session where `/screenless` was armed; the answer is spoken back *(session 12; before this, the session only acted after the call)* | **built and proven** on scripted PSTN calls: a commit question answered in 10 s, and a forked session's code word recalled in 7 s; no human call yet |
+| Live calls gated: reads and local work in the project only; push, deploy, send, delete and secrets wait for the session after the call | built — gate unit-checked and exercised in forks |
 | The watcher exits the moment it receives a call, so the agent session is woken; the *loop* re-arming it is what never ends *(was: a terminal process that never ends — reversed once it was clear a process that never exits can never reactivate the model)* | **built and proven** — three real spoken requests plus a synthetic one delivered; exit-on-delivery verified |
 | One Worker on the apex: landing page, team page and API together; the site Worker deleted *(was: screenless.sh + api.screenless.sh as two Workers)* | **built and proven** — merged, deployed, all surfaces answering; api.screenless.sh kept as an alias for old CLI configs |
 | One store: KV removed entirely — settings on the user row, briefs/calls/watchers/outbox/codes/counters as tables, the team queue a *query* over calls, edition PDFs in R2 *(was: KV beside D1, two consistency models, and an org-queue array to maintain)* | **built and proven** — deployed, settings migrated, every CLI surface and a synthetic queued call re-verified on the new store |
@@ -70,7 +73,7 @@ team infrastructure, and its final prompt reframed it as tooling.)*
 
 | Intent | Status |
 |---|---|
-| A known caller who rings in hears **no voice at all** — straight to the record beep; only a stranger gets a robot voice, told to install screenless *(was: a "press 1 for the assistant" menu; before that, ring-ins always answered by the assistant)* | built — menu removed at 22:56; the recording path underneath it is **proven** by three real ring-ins, which also found the hangup/recordingStatusCallback bug |
+| *(Superseded for callers whose own terminal watches live — they get the GPT-Live conversation above. Session 10 had already replaced the beep with a quiet Realtime voice.)* A known caller who rings in hears **no voice at all** — straight to the record beep; only a stranger gets a robot voice, told to install screenless *(was: a "press 1 for the assistant" menu; before that, ring-ins always answered by the assistant)* | built — menu removed at 22:56; the recording path underneath it is **proven** by three real ring-ins, which also found the hangup/recordingStatusCallback bug |
 | ~~Press 1 = the assistant with the parked brief~~ — removed with the menu; ring-ins are always requests now, and a declined morning call's items roll into tomorrow's brief | proven once (21:38, in Dutch) before its removal |
 | No keypress = a recording, transcribed, delivered as a request to the team's terminal — not a conversation | **built and proven** — two spoken requests transcribed by Telnyx Whisper and delivered |
 | Requests route to the right terminal: your own first (earliest if you have two), else any teammate's watcher | **built and proven** — synthetic call exercised own-first, standby and dead-watcher failover; two real requests then routed live |

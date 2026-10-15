@@ -102,6 +102,17 @@ hosted service cannot have any of those without asking for credentials nobody
 should hand over. If you find yourself adding a tool to the assistant, or writing
 copy that implies the call changed something, you have broken the model.
 
+**Live calls keep the rule; only the timing changed** (session 12). When you
+ring in while your own terminal watches, the voice is GPT-Live with *client
+delegation*: still no tools, but each request it cannot answer is handed to
+`screenless watch` on your machine during the call, which runs it in a fork of
+the Claude Code session it was armed in and sends back what to say. The work
+still happens on your machine with your access. Because nobody is at the
+keyboard and caller id is weak, every fork passes a PreToolUse gate
+(`screenless gate`, `cli/src/live.ts`): reads and local work in the project
+only; push, deploy, send, delete and secrets wait for the session after the
+call.
+
 ## Conventions
 
 - Comments explain *why*, at the altitude of the decision. The existing code is
@@ -115,5 +126,5 @@ copy that implies the call changed something, you have broken the model.
   work you will lose. This is why it is gitignored rather than merely
   documented — a rule with an exception is a rule nobody checks.
 - The CLI has no dependencies, and should stay that way — it is distributed as
-  two plain `.js` files in a tarball, and every dependency added is a thing the
+  a few plain `.js` files in a tarball, and every dependency added is a thing the
   installer has to fetch.
