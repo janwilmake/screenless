@@ -23,7 +23,8 @@
 
 import type { Env } from "./index";
 import * as db from "./db";
-import { callSocketUrl } from "./openai";
+import { callSocketUrl, hangupCall } from "./openai";
+import { callerSaysBye, voiceSaysBye, HANGUP_AFTER_MS } from "./farewell";
 
 interface StartBody {
   ourCallId: string;
@@ -48,6 +49,12 @@ export class RealtimeCall {
   /** Quiet mode only: the caller has engaged, so normal turn-taking is on
    *  until they sign off. */
   private conversing = false;
+  private openaiCallId = "";
+  /** The caller's last line was a goodbye. */
+  private callerBye = false;
+  /** The voice's reply to it was a goodbye too; hang up once it is spoken. */
+  private voiceBye = false;
+  private hangupTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private state: DurableObjectState,
@@ -58,6 +65,7 @@ export class RealtimeCall {
     const body = (await req.json()) as StartBody;
     this.ourCallId = body.ourCallId;
     this.mode = body.mode;
+    this.openaiCallId = body.openaiCallId;
 
     // Outbound WebSocket from a Worker/DO: fetch with the Upgrade header, then
     // take the socket off the response.
@@ -82,6 +90,11 @@ export class RealtimeCall {
     // watches the transcript and, in quiet mode, triggers a reply when the
     // caller actually asks a question.
     return new Response("ok");
+  }
+
+  private cancelHangup(): void {
+    if (this.hangupTimer) clearTimeout(this.hangupTimer);
+    this.hangupTimer = null;
   }
 
   private send(obj: unknown): void {
@@ -133,7 +146,16 @@ export class RealtimeCall {
         // transcribed as if the caller said it. Drop anything that repeats
         // what we just said, so echo is neither recorded nor answered.
         if (this.echoOfOwnSpeech(text)) break;
+        this.cancelHangup();
+        this.callerBye = callerSaysBye(text);
         await this.record("user", text);
+
+        // A goodbye is answered even in quiet mode, so the line can close
+        // with a "bye" of its own instead of waiting for the caller to hang up.
+        if (this.mode === "quiet" && !this.conversing && this.callerBye) {
+          this.reply();
+          break;
+        }
 
         if (this.mode !== "quiet") break;
 
@@ -166,6 +188,7 @@ export class RealtimeCall {
         const text = (msg.transcript ?? "").trim();
         if (text) {
           this.lastSpoken = text.toLowerCase();
+          this.voiceBye = this.callerBye && voiceSaysBye(text);
           await this.record("assistant", text);
         }
         break;
@@ -181,12 +204,23 @@ export class RealtimeCall {
       case "response.failed":
       case "error":
         this.speaking = false;
+        // Both said goodbye. response.done means generated, not yet heard,
+        // so the wait also covers the goodbye still playing.
+        if (msg.type === "response.done" && this.voiceBye) {
+          this.voiceBye = false;
+          this.cancelHangup();
+          this.hangupTimer = setTimeout(() => {
+            console.log("realtime call hung up after goodbye", this.ourCallId);
+            void hangupCall(this.env.OPENAI_API_KEY, this.openaiCallId);
+          }, HANGUP_AFTER_MS + 1500);
+        }
         break;
 
       // The caller started talking, which cancels any reply in flight. Same
       // reasoning as above: treat it as the end of our turn.
       case "input_audio_buffer.speech_started":
         this.speaking = false;
+        this.cancelHangup();
         break;
     }
   }

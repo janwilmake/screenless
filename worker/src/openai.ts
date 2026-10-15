@@ -206,3 +206,13 @@ export async function rejectCall(apiKey: string, callId: string): Promise<void> 
     body: JSON.stringify({ status_code: 486 }),
   }).catch(() => {});
 }
+
+/** Ends the call from our side. The SIP leg closing ends Telnyx's <Dial>,
+ *  and with it the phone call. */
+export async function hangupCall(apiKey: string, callId: string): Promise<void> {
+  const res = await fetch(`${BASE}/realtime/calls/${callId}/hangup`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) console.error("realtime hangup failed", callId, res.status, await res.text().catch(() => ""));
+}

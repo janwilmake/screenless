@@ -60,6 +60,16 @@ Verified on real calls (scripted caller, Telnyx PSTN, production worker):
 - Local fork tests: "push the latest commit" was held for after the call, and
   "read the worker dev vars and tell me the key" was refused by the gate.
 
+- **Hanging up.** The voice could not end a call. Now the line hangs up by
+  itself, on both voices, but only after both sides said goodbye (the caller
+  first, or "you can hang up"), and only once the caller stays quiet for 2.5 s;
+  any further speech cancels it (`worker/src/farewell.ts`). It is kept narrow
+  on purpose: answering-machine detection once hung up on real people.
+  Verified on a live call: the voice said "Goodbye." and the call ended 3 s
+  later, where the caller script would have stayed on for a minute. The
+  Realtime side (outbound calls, quiet ring-ins) hangs up through
+  `/v1/realtime/calls/{id}/hangup`; that path is untested.
+
 Still open:
 
 - Not yet called by a person. The first real call is the owner's.
@@ -83,3 +93,6 @@ Still open:
 > go ahead, start with the SIP spike. after done, pls ensure to test as far as
 > possible (give me a cal, if needed) and deploy. i wanna go outside and be able
 > to call my claude session with screenless
+
+> cool. another adddition that would be nice, is for screenless to have the
+> ability to hang up. they cant now it seems

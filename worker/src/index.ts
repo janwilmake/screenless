@@ -317,6 +317,9 @@ below are only about being good on a phone, and never override it.
   detail, a name, or a number.
 - **Let them steer.** Answer their questions before moving on; skip what they
   want skipped; wrap up when they are done rather than pressing on.
+- **Ending the call.** When they say goodbye, or ask you to hang up, say a
+  short goodbye: the line hangs up by itself right after it. Never say goodbye
+  otherwise.
 - **Confirm decisions, not sentences.** When they actually decide something,
   play it back in a few words to be sure you have it right — a misheard
   decision is worse than none. Do not do this for ordinary replies: repeating
@@ -351,6 +354,8 @@ The caller is most likely leaving a feature request, a decision, or a note for t
 
 Stay silent until the caller asks you something directly. Once they do, they have started a conversation: from then on talk with them normally, turn by turn, as long as it lasts. You do not need a question mark to reply any more — just be a good listener who answers. Keep answers short and spoken, not written.
 
+If the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise.
+
 Go back to silent listening only when the caller signals they are finished with you — "that's all", "we're done", "just listen from here" — and then simply stop talking and let them keep recording their note.
 
 The caller may be on speakerphone, so you will sometimes hear your own voice echoed back. Never treat your own words as something the caller said, and never answer them. If the caller genuinely interrupts you, stop immediately and listen — that is always welcome.
@@ -384,7 +389,7 @@ const liveInboundInstructions = (o: { name: string; repo: string }): string =>
 # Phone manner
 - Short turns, plain spoken language, the caller's language.
 - The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
-- When the caller says goodbye, say goodbye briefly. Everything said is also handed to their session after the call.`;
+- When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is also handed to their session after the call.`;
 
 /** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
  *  the correlation header the webhook reads to find this call's brief. Shared by

@@ -26,6 +26,7 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
+import { callerSaysBye, voiceSaysBye, HANGUP_AFTER_MS } from "./farewell";
 
 /** What answerInbound parks for a live ring-in, read when the audio arrives. */
 export interface LiveConfig {
@@ -79,6 +80,10 @@ export class LiveCall {
   private handoffs: Handoff[] = [];
   private waiters: Array<() => void> = [];
   private ended = false;
+  /** The caller's last line was a goodbye. */
+  private callerBye = false;
+  /** Set after both said goodbye; the caller speaking again cancels it. */
+  private hangupTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private state: DurableObjectState,
@@ -226,6 +231,7 @@ export class LiveCall {
    *  pause, is what ends a line. */
   private delta(role: "user" | "assistant", text: string): void {
     if (!text) return;
+    if (role === "user" && text.trim()) this.cancelHangup();
     if (this.buf && this.buf.role !== role) void this.flush();
     if (!this.buf) this.buf = { role, text: "" };
     this.buf.text += text;
@@ -241,7 +247,23 @@ export class LiveCall {
     const text = b?.text.replace(/\s+/g, " ").trim();
     if (!b || !text) return;
     this.lines.push({ role: b.role, text, at: new Date().toISOString() });
+    if (b.role === "user") this.callerBye = callerSaysBye(text);
+    else if (this.callerBye && voiceSaysBye(text)) this.scheduleHangup();
     await this.persist();
+  }
+
+  /** Both said goodbye: hang up once the caller has stayed quiet a moment. */
+  private scheduleHangup(): void {
+    this.cancelHangup();
+    this.hangupTimer = setTimeout(() => {
+      console.log("live call hung up after goodbye", this.ourCallId);
+      void this.finish("voice");
+    }, HANGUP_AFTER_MS);
+  }
+
+  private cancelHangup(): void {
+    if (this.hangupTimer) clearTimeout(this.hangupTimer);
+    this.hangupTimer = null;
   }
 
   private async persist(): Promise<void> {
