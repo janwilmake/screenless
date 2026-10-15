@@ -57,6 +57,20 @@ What landed:
   because it would have left a real Wijnand nameless for good. Instead a
   member sets their own name, `screenless settings --name "Jan"`, and an
   unset name greets with none.
+- **The gate lets plainly read-only commands through; the brief names what
+  it knows.** "How many agents do you have running?" failed because
+  `screen -ls` and `ps` were refused. Now allowed: `ps` (in forms that cannot
+  print environments), `pgrep`, `screen -ls`, `tmux ls`, `uptime`, `uname`,
+  `whoami`, `top -b -n1`, `diff` and a few more, and the `ListAgents` tool.
+  Loops and `$(...)` stay refused, and the refusal now says a plainer command
+  may work. Of `~/.screenless` only the config is secret now (a fork could
+  not grep the CLI's own code); and `~/.claude/.credentials.json` — Claude
+  Code's own login — was readable because the leading dot slipped past the
+  `credentials` pattern; it is blocked now. The pickup brief names the
+  uncommitted files and the checkout instead of "one uncommitted change on
+  dev" (it was a stray `tc.log`), and counts the Claude Code sessions running
+  on the machine and where, by those with a terminal (forks have none).
+  Checked against a table of 22 allowed and 20 refused commands and paths.
 
 Still open:
 
@@ -64,6 +78,10 @@ Still open:
   "bye".
 - The speed-up is measured per fork, not on a call. Answers that need real
   work still take as long as the work.
+- Jan's account still carries the name Wijnand until he runs
+  `screenless settings --name "Jan"` against the deployed worker.
+- The loudness threshold (500, or three times the noise floor) is set from
+  synthetic audio, not tuned on a real line.
 
 ## Prompts
 
@@ -109,7 +127,3 @@ verbatim), where it bears on what was asked:
 > Bye bye
 > Please hang up
 > Please hang up
-- Jan's account still carries the name Wijnand until he runs
-  `screenless settings --name "Jan"` against the deployed worker.
-- The loudness threshold (500, or three times the noise floor) is set from
-  synthetic audio, not tuned on a real line.

@@ -23,7 +23,7 @@ export type Decision = { decision: "allow" | "deny"; reason: string };
 
 const READ_TOOLS = new Set([
   "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "TodoWrite", "TaskOutput",
-  "ToolSearch", "Agent", "Task", "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool",
+  "ToolSearch", "Agent", "Task", "Skill", "ListMcpResourcesTool", "ReadMcpResourceTool", "ListAgents",
 ]);
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -41,6 +41,17 @@ const READ_COMMANDS: RegExp[] = [
   /^find\b(?!.*(-exec|-delete|-ok|-fprint))/,
   /^(npm|pnpm|yarn) (ls|list|view|outdated|why)\b/,
   /^(node|npm|git|python3?) --version$/,
+  // What is running on this machine: "how many agents do you have going?"
+  // was unanswerable on a call because these were refused. `ps` only in
+  // forms that cannot print environments (BSD `e`, macOS `-E`).
+  /^ps(\s+(-[A-DF-Za-z]+|-[A-DF-Za-z]*o\s*[\w,=%:-]+|-p\s*[\d,]+|-u\s*[\w,]+|aux|ax))*$/,
+  /^pgrep( -[a-zA-Z]+)* [\w.'"*^$|-]+$/,
+  /^screen -(ls|list)$/,
+  /^tmux (ls|list-sessions|list-windows|list-panes)\b/,
+  /^(uptime|whoami|id|hostname|nproc|sw_vers|vm_stat)$/,
+  /^(uname|free)( -[a-zA-Z]+)?$/,
+  /^top -b -n ?1( -[a-zA-Z]+)*$/,
+  /^(diff|cmp|readlink|command -v|type)\s/,
 ];
 
 /** Local work that stays on this machine and can be undone: commits, tests,
@@ -84,12 +95,15 @@ export function shellKind(command: string): "read" | "local" | "other" {
 }
 
 /** Files a caller id should never be able to have read out over the phone. */
+// `.credentials.json` with its dot is Claude Code's own login. Of
+// ~/.screenless only the config (the line's token) is secret; lib/ is the
+// CLI's code, which a call may well be about.
 const SECRET_PATH =
-  /(^|\/)(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_[a-z0-9]+|[^/]*\.(pem|key|p12|pfx)|credentials(\.json)?|secrets?\.(json|ya?ml|toml))$|\/\.(ssh|aws|gnupg|docker|kube|screenless)\/|\/\.config\/[^/]+\/\.env/i;
+  /(^|\/)(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_[a-z0-9]+|[^/]*\.(pem|key|p12|pfx)|\.?credentials(\.json)?|secrets?\.(json|ya?ml|toml))$|\/\.(ssh|aws|gnupg|docker|kube)\/|\/\.screenless\/(?!(lib|bin)\/(?!.*\.\.))|\/\.config\/[^/]+\/\.env/i;
 
 /** The same files, named inside a shell command. */
 const SECRET_IN_COMMAND =
-  /(^|[\s'"=:/])(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|p12|pfx)|credentials(\.json)?)(?=$|[\s'"|;&)])|\.(ssh|aws|gnupg|docker|kube|screenless)\/|\bprintenv\b|^\s*env\s*($|\|)/i;
+  /(^|[\s'"=:/])(\.env(\.[\w.-]+)?|\.dev\.vars|\.npmrc|\.netrc|\.pgpass|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|p12|pfx)|\.?credentials(\.json)?)(?=$|[\s'"|;&)])|\.(ssh|aws|gnupg|docker|kube)\/|\.screenless(\/(?!(lib|bin)\/(?![^\s'"]*\.\.))|(?=$|[\s'"|;&)]))|\bprintenv\b|^\s*env\s*($|\|)/i;
 
 const MCP_READ_VERB =
   /^(get|list|search|read|query|fetch|find|view|describe|show|lookup|count|semantic[-_]search)[-_a-z]*$/i;
@@ -117,7 +131,7 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
     if (kind !== "other") return { decision: "allow", reason: kind };
     return {
       decision: "deny",
-      reason: `During a call only read-only commands and local work (git add/commit, tests, builds) run; no push, deploy, delete, network writes or redirects. ${LATER}`,
+      reason: `During a call only read-only commands and local work (git add/commit, tests, builds) run, as one plain command or pipeline: no loops, $(...), redirects, push, deploy, delete or network writes. If a plainer read-only command answers the question, use that. Otherwise do not work around it: finish what you can, and end your answer with what is left for the session after the call.`,
     };
   }
   if (tool.startsWith("mcp__")) {
