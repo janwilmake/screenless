@@ -371,8 +371,11 @@ Speak the caller's language. You have no tools and take no action of any kind â€
  * request to the caller's own Claude Code session on their own machine, which
  * does the work and sends back what to say. The voice only speaks.
  */
-const liveInboundInstructions = (o: { name: string; repo: string }): string =>
-  `You are the phone line to ${o.name ? `${o.name}'s` : "the caller's"} own Claude Code session, which is running on their computer${o.repo ? ` in the project "${o.repo}"` : ""}. The caller is its owner, calling from their verified phone, probably away from their keyboard.
+const liveInboundInstructions = (o: { name: string; repo: string; self: string }): string =>
+  `You are ${o.self ? `${o.self}, the voice of ` : "the phone line to "}${o.name ? `${o.name}'s` : "the caller's"} own Claude Code session, which is running on their computer${o.repo ? ` in the project "${o.repo}"` : ""}.${o.self ? ` Your name is ${o.self}; that is what the owner and their team call this session, also in Slack.` : ""} The caller is its owner, calling from their verified phone, probably away from their keyboard.
+
+# What you know
+Background on the session arrives as notes in the first seconds of the call, and more later. Use it to answer "where are we?", "what did you do?" and similar questions at once, without delegating. Do not read the notes out; answer what is asked, briefly.
 
 # Delegation policy
 - Delegate every request that needs their computer: anything about their code, project, repositories, pull requests, tickets, tests, builds, files, logs, email, calendar, or any tool their session has, and every request to do, change, check, run, write, fix or send something. Their session does the work and tells you what to say.
@@ -616,7 +619,13 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
 
   const params = await inboundBody(req);
-  const from = await testCaller(env, normalizeCallerId(params.From ?? params.from ?? ""));
+  const callerId = normalizeCallerId(params.From ?? params.from ?? "");
+  const from = await testCaller(env, callerId);
+  // A scripted test ring stands in for a real number, but must never reach
+  // that person's real session: its watcher repo is pinned, and the finished
+  // call is not queued.
+  const testRepo =
+    callerId !== from ? (await db.stashGet(env, `testrepo:${callerId}`)) ?? "" : null;
   if (!isE164(from)) return sayHangup("Sorry, I could not read your number. Goodbye.");
 
   const user = await db.userByPhone(env, from);
@@ -642,7 +651,7 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     status: "answered",
     inbound: true,
     kind: "brief",
-    queued: true,
+    queued: testRepo === null,
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
@@ -651,17 +660,23 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   // instead: a conversation in which their Claude Code session answers during
   // the call. Everyone else keeps the quiet ring-in, so an old CLI changes
   // nothing.
-  const watcher = env.OPENAI_LIVE_API_KEY ? await db.stashGet(env, `livewatch:${user.id}`) : null;
+  const watcher = env.OPENAI_LIVE_API_KEY
+    ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
+    : null;
   if (watcher) {
-    const w = JSON.parse(watcher) as { watcherId: string; repo: string };
+    const w = JSON.parse(watcher) as { watcherId: string; repo: string; name?: string };
+    const first = user.name ? ` ${user.name.split(" ")[0]}` : "";
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
-      instructions: liveInboundInstructions({ name: user.name ?? "", repo: w.repo }),
-      greeting: `Hi${user.name ? ` ${user.name.split(" ")[0]}` : ""}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
+      instructions: liveInboundInstructions({ name: user.name ?? "", repo: w.repo, self: w.name ?? "" }),
+      greeting: w.name
+        ? `Hi${first}, ${w.name} here. What can I do?`
+        : `Hi${first}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
       voice: env.OPENAI_VOICE,
       accountSid: params.AccountSid ?? "",
       callSid: params.CallSid ?? "",
+      ...(testRepo ? { onlyRepo: testRepo } : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
     // The call's audio streams both ways to the LiveCall Durable Object,
@@ -920,12 +935,19 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   // after the polls stop, and ring-ins go back to the quiet recording.
   let live: string | undefined;
   if (url.searchParams.get("live") === "1") {
-    await db.stashPut(env, `livewatch:${user.id}`, JSON.stringify({ watcherId, repo }), 45);
+    const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
+    const me = JSON.stringify({ watcherId, repo, name });
+    await db.stashPut(env, `livewatch:${user.id}`, me, 45);
+    // Per repo too, so a test ring pinned to a repo greets as that watcher.
+    await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
     // once, so two terminals never run the same one, and a watcher re-armed
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
-    if (current) live = (JSON.parse(current) as { callId: string }).callId;
+    if (current) {
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string };
+      if (!c.onlyRepo || c.onlyRepo === repo) live = c.callId;
+    }
   }
 
   const queue = await db.queuedCalls(env, org.id);
@@ -957,7 +979,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
  * The watcher's side of a live call: long-poll for delegated requests, and
  * post back what to say. Only the caller's own terminal may touch the call.
  */
-async function liveRoute(req: Request, env: Env, callId: string, action: "next" | "result"): Promise<Response> {
+async function liveRoute(req: Request, env: Env, callId: string, action: "next" | "result" | "context"): Promise<Response> {
   const s = await authed(req, env);
   if (!s) return fail(401, "not authenticated");
   const { user } = await identify(env, s.phone);
@@ -965,7 +987,7 @@ async function liveRoute(req: Request, env: Env, callId: string, action: "next" 
   if (!record || record.userId !== user.id) return fail(404, "unknown call id");
   const stub = env.LIVE.get(env.LIVE.idFromName(callId));
   if (action === "next") return await stub.fetch("https://live/next");
-  return await stub.fetch("https://live/result", { method: "POST", body: await req.text() });
+  return await stub.fetch(`https://live/${action}`, { method: "POST", body: await req.text() });
 }
 
 /** Marks a queued call as taken, so no other watcher ever sees it again. */
@@ -1126,16 +1148,23 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
   const secret = req.headers.get("X-Test-Secret") ?? "";
   if (!env.TEST_RING_SECRET || !env.TEST_CALLER_NUMBER || !safeEqual(secret, env.TEST_RING_SECRET))
     return fail(403, "forbidden");
-  const { script, as } = (await req.json().catch(() => ({}))) as {
+  const { script, as, repo } = (await req.json().catch(() => ({}))) as {
     script?: Array<{ pause?: number; say?: string }>;
     /** Ring in as this verified number, so the call reaches that user's
      *  watcher. Only numbers listed in TEST_RING_AS. */
     as?: string;
+    /** Only the watcher running in this repo may serve the call. Required
+     *  with `as`, so a test never reaches the real person's own session. */
+    repo?: string;
   };
   if (!Array.isArray(script) || !script.length) return fail(400, "script required");
   const allowed = (env.TEST_RING_AS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   if (as && !allowed.includes(as)) return fail(403, "not a test-ring number");
-  if (as) await db.stashPut(env, `testas:${env.TEST_CALLER_NUMBER}`, as, 3600);
+  if (as && !repo) return fail(400, "repo required with as");
+  if (as) {
+    await db.stashPut(env, `testas:${env.TEST_CALLER_NUMBER}`, as, 3600);
+    await db.stashPut(env, `testrepo:${env.TEST_CALLER_NUMBER}`, repo!, 3600);
+  }
   const id = crypto.randomUUID();
   await db.stashPut(env, `testring:${id}`, JSON.stringify(script), 3600);
   const t = await webhookToken(`testring:${id}`, env.SESSION_SECRET);
@@ -1270,9 +1299,9 @@ export default {
         const stub = env.LIVE.get(env.LIVE.idFromName(streamMatch[1]));
         return await stub.fetch(`https://live/stream?call=${streamMatch[1]}`, req);
       }
-      const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result)$/);
-      if (liveMatch && ((method === "GET" && liveMatch[2] === "next") || (method === "POST" && liveMatch[2] === "result")))
-        return await liveRoute(req, env, liveMatch[1], liveMatch[2] as "next" | "result");
+      const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result|context)$/);
+      if (liveMatch && (method === "GET") === (liveMatch[2] === "next"))
+        return await liveRoute(req, env, liveMatch[1], liveMatch[2] as "next" | "result" | "context");
 
       // Who am I, org-wise. Also what `screenless team` prints before it
       // opens the page.

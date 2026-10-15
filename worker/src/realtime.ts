@@ -54,6 +54,8 @@ export class RealtimeCall {
   private callerBye = false;
   /** The voice's reply to it was a goodbye too; hang up once it is spoken. */
   private voiceBye = false;
+  /** When the voice last said goodbye, for a caller goodbye that follows it. */
+  private voiceByeAt = 0;
   private hangupTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -90,6 +92,14 @@ export class RealtimeCall {
     // watches the transcript and, in quiet mode, triggers a reply when the
     // caller actually asks a question.
     return new Response("ok");
+  }
+
+  private scheduleHangup(ms: number): void {
+    this.cancelHangup();
+    this.hangupTimer = setTimeout(() => {
+      console.log("realtime call hung up after goodbye", this.ourCallId);
+      void hangupCall(this.env.OPENAI_API_KEY, this.openaiCallId);
+    }, ms);
   }
 
   private cancelHangup(): void {
@@ -150,6 +160,13 @@ export class RealtimeCall {
         this.callerBye = callerSaysBye(text);
         await this.record("user", text);
 
+        // The voice already said goodbye and the caller answers in kind:
+        // hang up without another reply.
+        if (this.callerBye && Date.now() - this.voiceByeAt < 15_000) {
+          this.scheduleHangup(HANGUP_AFTER_MS);
+          break;
+        }
+
         // A goodbye is answered even in quiet mode, so the line can close
         // with a "bye" of its own instead of waiting for the caller to hang up.
         if (this.mode === "quiet" && !this.conversing && this.callerBye) {
@@ -188,7 +205,9 @@ export class RealtimeCall {
         const text = (msg.transcript ?? "").trim();
         if (text) {
           this.lastSpoken = text.toLowerCase();
-          this.voiceBye = this.callerBye && voiceSaysBye(text);
+          const bye = voiceSaysBye(text);
+          if (bye) this.voiceByeAt = Date.now();
+          this.voiceBye = this.callerBye && bye;
           await this.record("assistant", text);
         }
         break;
@@ -208,11 +227,7 @@ export class RealtimeCall {
         // so the wait also covers the goodbye still playing.
         if (msg.type === "response.done" && this.voiceBye) {
           this.voiceBye = false;
-          this.cancelHangup();
-          this.hangupTimer = setTimeout(() => {
-            console.log("realtime call hung up after goodbye", this.ourCallId);
-            void hangupCall(this.env.OPENAI_API_KEY, this.openaiCallId);
-          }, HANGUP_AFTER_MS + 1500);
+          this.scheduleHangup(HANGUP_AFTER_MS + 1500);
         }
         break;
 

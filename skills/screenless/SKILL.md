@@ -16,7 +16,12 @@ voice answers ("your Claude session in <repo> here"), and every request it
 cannot answer from the call itself is handed to this terminal *during* the
 call: `screenless watch` runs it as `claude -p` in a fork of this session (it
 reads `CLAUDE_CODE_SESSION_ID`), so it knows everything this session knows,
-and the answer is spoken back. Several requests can run at once. A gate holds
+and the answer is spoken back. Several requests can run at once. The voice
+also knows where this session stands the moment it picks up: the watcher keeps
+a short brief of this session (its recent prompts and replies, condensed by a
+small model, plus git state) and hands it over at pickup, and a fork adds the
+session's own summary 10–20 s in. The brief stays on this machine between
+calls. A gate holds
 every fork to reading and local work in the project — no push, deploy, send,
 delete or secrets — so what a call cannot do waits for this session after the
 call.
@@ -48,6 +53,10 @@ thing the user has to know.
    ```
    screenless watch
    ```
+
+   If this session goes by a name — what people call it, for example how it
+   is addressed in Slack — add `--name <name>`, so the voice answers as that
+   name instead of "your Claude session".
 
    It polls every few seconds in this process, no model, registering a
    heartbeat so the Worker knows this terminal is live. While one of your own

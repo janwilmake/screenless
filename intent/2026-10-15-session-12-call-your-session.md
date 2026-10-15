@@ -70,6 +70,25 @@ Verified on real calls (scripted caller, Telnyx PSTN, production worker):
   Realtime side (outbound calls, quiet ring-ins) hangs up through
   `/v1/realtime/calls/{id}/hangup`; that path is untested.
 
+- **The voice knows the session at pickup, and its name.** The watcher keeps
+  a brief of the session on this machine (`cli/src/brief.ts`): (A) its title,
+  recent prompts and replies read from the session log, plus git state; (B)
+  condensed by haiku when the session changes. The brief is handed to the
+  voice as background notes while it says the greeting. (C) A fork of the
+  session adds its own summary 10–20 s in. Pickup never waits for any of it,
+  and the brief never sits on a server between calls. `--name cody` makes the
+  voice answer as Cody ("Hi Wijnand, Cody here"). Verified on a call: "where
+  are we, and what is the code word?" was answered from the brief, with no
+  handoff.
+  Found on the way: the session text said "just reply OK", haiku obeyed, and
+  the brief became "OK". The session text is now marked as data, and a brief
+  that short falls back to the raw one. Goodbyes also had to count in either
+  order (the voice's "Bye!" was transcribed before the caller's).
+- **Test rings are pinned.** Earlier test calls reached the owner's real hyre
+  watcher, and one was answered by a fork of that session. `test-ring` now
+  needs `repo`: only the watcher in that repo may serve the call, and the
+  finished call is not queued.
+
 Still open:
 
 - Not yet called by a person. The first real call is the owner's.
@@ -96,3 +115,16 @@ Still open:
 
 > cool. another adddition that would be nice, is for screenless to have the
 > ability to hang up. they cant now it seems
+
+> another question: when an incoming call comes in, would it be possible to
+> give any initial context upon picking up from the claude session? what are
+> our options here? ideally we'd have some session context and maybe other
+> context ready immediately and update that context so it always knows whats
+> going on a bit more already before picking up i think... wydt?
+
+> one more question: my session is addressable in slack as 'cody' so it'd be
+> great if it also knows its name is supposed to be cody, not 'claude
+> session'. can this be done? yes, i like u to build A+B+C this wouldnt slwo
+> down pickup time right?
+
+> is it also pushed?

@@ -38,6 +38,8 @@ export interface LiveConfig {
   /** The TeXML call, to hang up when the voice ends first. */
   accountSid: string;
   callSid: string;
+  /** Test rings only: the one watcher repo allowed to serve this call. */
+  onlyRepo?: string;
 }
 
 type Line = { role: "user" | "assistant"; text: string; at: string };
@@ -67,6 +69,8 @@ export class LiveCall {
   private phone: WebSocket | null = null;
   /** Caller audio that arrived before GPT-Live was ready. */
   private early: string[] = [];
+  /** Background notes that arrived before GPT-Live was ready. */
+  private earlyNotes: unknown[] = [];
   private live = false;
   private ourCallId = "";
   private userId = "";
@@ -82,6 +86,9 @@ export class LiveCall {
   private ended = false;
   /** The caller's last line was a goodbye. */
   private callerBye = false;
+  /** When the voice last said goodbye: the caller's own goodbye may come
+   *  just after it, transcribed a moment late. */
+  private voiceByeAt = 0;
   /** Set after both said goodbye; the caller speaking again cancels it. */
   private hangupTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -95,6 +102,7 @@ export class LiveCall {
     if (url.pathname === "/stream") return this.stream(req, url.searchParams.get("call") ?? "");
     if (req.method === "GET" && url.pathname === "/next") return this.next();
     if (req.method === "POST" && url.pathname === "/result") return this.result(await req.json());
+    if (req.method === "POST" && url.pathname === "/context") return this.context(await req.json());
     return new Response("not found", { status: 404 });
   }
 
@@ -150,7 +158,7 @@ export class LiveCall {
         delegation: { type: "client" },
       },
     });
-    await db.stashPut(this.env, `livecall:${cfg.userId}`, JSON.stringify({ callId }), 7200);
+    await db.stashPut(this.env, `livecall:${cfg.userId}`, JSON.stringify({ callId, onlyRepo: cfg.onlyRepo }), 7200);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -198,6 +206,7 @@ export class LiveCall {
       case "session.started":
         this.live = true;
         for (const audio of this.early.splice(0)) this.send({ type: "session.input_audio.append", audio });
+        for (const note of this.earlyNotes.splice(0)) this.send(note);
         // A phone that answers in silence reads as a dead line. Exact words,
         // as an instruction: GPT-Live has no "speak now" in client mode.
         this.send({
@@ -247,8 +256,14 @@ export class LiveCall {
     const text = b?.text.replace(/\s+/g, " ").trim();
     if (!b || !text) return;
     this.lines.push({ role: b.role, text, at: new Date().toISOString() });
-    if (b.role === "user") this.callerBye = callerSaysBye(text);
-    else if (this.callerBye && voiceSaysBye(text)) this.scheduleHangup();
+    // Both said goodbye, in either order.
+    if (b.role === "user") {
+      this.callerBye = callerSaysBye(text);
+      if (this.callerBye && Date.now() - this.voiceByeAt < 15_000) this.scheduleHangup();
+    } else if (voiceSaysBye(text)) {
+      this.voiceByeAt = Date.now();
+      if (this.callerBye) this.scheduleHangup();
+    }
     await this.persist();
   }
 
@@ -379,6 +394,27 @@ export class LiveCall {
 
   /** The call is over, from either end. When the voice ended first, the
    *  phone call is hung up too, or the caller sits in silence. */
+  /**
+   * Background from the caller's terminal: the brief at pickup, and the
+   * session's own words a little later. Thinking, not commentary: the voice
+   * knows it, but does not say it unless asked. Split under the ~500-token
+   * cap of one append.
+   */
+  private async context(body: unknown): Promise<Response> {
+    const { text } = (body ?? {}) as { text?: string };
+    if (typeof text !== "string" || !text.trim()) return new Response("bad context", { status: 400 });
+    if (this.ended) return Response.json({ ok: false, ended: true });
+    const all = text.trim().slice(0, 12_000);
+    for (let i = 0; i < all.length; i += 1600) {
+      (this.live ? (m: unknown) => this.send(m) : (m: unknown) => this.earlyNotes.push(m))({
+        type: "session.thinking.append",
+        delegation_id: null,
+        content: `${i ? "(continued) " : "Background on the session, from its terminal: "}${all.slice(i, i + 1600)}`,
+      });
+    }
+    return Response.json({ ok: true });
+  }
+
   private async finish(by: "phone" | "voice"): Promise<void> {
     if (this.ended) return;
     this.ended = true;

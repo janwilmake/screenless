@@ -180,10 +180,11 @@ export interface ForkResult {
  */
 export function runFork(
   h: Handoff,
-  o: { cwd: string; sessionId?: string; cli: string; onStep: (step: string) => void },
+  o: { cwd: string; sessionId?: string; cli: string; onStep: (step: string) => void; prompt?: string },
 ): Promise<ForkResult> {
   const started = Date.now();
-  const prompt = `The caller asked (transcribed speech): "${h.request}"\n\nThe call so far:\n${h.context || "(nothing yet)"}`;
+  const prompt =
+    o.prompt ?? `The caller asked (transcribed speech): "${h.request}"\n\nThe call so far:\n${h.context || "(nothing yet)"}`;
   const settings = {
     hooks: {
       PreToolUse: [
@@ -278,10 +279,47 @@ export async function serveLiveCall(o: {
   sessionId?: string;
   cli: string;
   log: (line: string) => void;
+  /** What the voice should know at once, from the watcher's brief (A/B). */
+  brief?: string;
+  /** Also have a fork of the session brief the voice in its own words (C). */
+  forkBrief?: boolean;
 }): Promise<ForkResult[]> {
   const results: ForkResult[] = [];
   const running = new Set<Promise<void>>();
   const auth = { Authorization: `Bearer ${o.token}` };
+  const context = (text: string) =>
+    fetch(`${o.apiUrl}/live/${o.callId}/context`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).catch(() => undefined);
+
+  // The brief goes out the moment the call is found, during the greeting.
+  if (o.brief) {
+    void context(o.brief);
+    o.log(`  briefed the voice (${o.brief.length} chars)`);
+  }
+  // C runs beside the call, never before it: pickup does not wait for it.
+  if (o.forkBrief && o.sessionId) {
+    const p = runFork(
+      { id: "brief", request: "(brief the voice)", context: "" },
+      {
+        cwd: o.cwd,
+        sessionId: o.sessionId,
+        cli: o.cli,
+        onStep: () => undefined,
+        prompt:
+          "Your owner is calling you on the phone right now, and a voice model is talking with them. Brief that voice so it can answer questions about where things stand without asking you: in at most 120 words of plain sentences, say what we are working on, what was done last, what is pending or blocked, and anything the owner will probably ask about. Answer from what you already know in this session; use no tools unless something essential is missing.",
+      },
+    ).then(async (r) => {
+      if (r.ok) {
+        await context(`The session itself adds: ${r.answer}`);
+        o.log(`  session briefed the voice in ${r.seconds}s`);
+      }
+    });
+    running.add(p);
+    void p.finally(() => running.delete(p));
+  }
   const post = (id: string, text: string, final: boolean) =>
     fetch(`${o.apiUrl}/live/${o.callId}/result`, {
       method: "POST",

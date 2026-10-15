@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
 import { gateHook, serveLiveCall, type ForkResult } from "./live.js";
+import { Brief } from "./brief.js";
 
 /**
  * The zone this machine is set to.
@@ -655,6 +656,13 @@ async function watch(args: string[]): Promise<void> {
   // A live watcher polls faster: a ring-in must find its terminal within the
   // first seconds of the call, not ten seconds in.
   const interval = Math.max(3, Number(argFlag(args, "--interval") ?? (live ? 4 : 10))) * 1000;
+  // What the voice knows the moment it picks up (see brief.ts). Its name:
+  // what the session goes by elsewhere, such as in Slack.
+  const name = argFlag(args, "--name") || process.env.SCREENLESS_NAME || "";
+  const brief = live && !args.includes("--no-brief")
+    ? new Brief({ sessionId, cwd: process.cwd(), name, model: !args.includes("--no-brief-model") })
+    : null;
+  brief?.refresh();
   const liveCalls = new Map<string, Promise<ForkResult[]>>();
   const serving = new Set<string>();
 
@@ -684,7 +692,8 @@ async function watch(args: string[]): Promise<void> {
 
   const nextUrl =
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
-    `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}`;
+    `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}` +
+    (name ? `&name=${encodeURIComponent(name)}` : "");
   if (liveOnly && !live) die("--live-only needs Claude Code (`claude`) on this machine");
   let offline = false;
 
@@ -718,6 +727,8 @@ async function watch(args: string[]): Promise<void> {
           sessionId,
           cli: process.argv[1],
           log: (line) => !asJson && console.log(`  ${line}`),
+          brief: brief?.current(),
+          forkBrief: !!brief,
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
@@ -742,6 +753,7 @@ async function watch(args: string[]): Promise<void> {
       return;
     }
 
+    brief?.refresh();
     await sleep(interval);
   }
 }
@@ -1264,6 +1276,11 @@ ${c.bold("Watch options")}
   --no-live            never answer during a call; ring-ins are recorded only
   --no-fork            run live requests in a fresh claude -p, not a fork of
                        the Claude Code session this was started from
+  --name <name>        what the voice calls itself, e.g. the name this session
+                       goes by in Slack (default: "your Claude session")
+  --no-brief           do not brief the voice about this session at pickup
+  --no-brief-model     brief it from the session log only, without a small
+                       model condensing it
   --json               machine-readable calls
 
 ${c.bold("What the call does not do")}
