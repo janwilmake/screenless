@@ -25,8 +25,9 @@ calls. When this session is too long to fork quickly (over 150k tokens),
 requests run in a fresh `claude -p` handed that brief and summary instead,
 because a fork of a 500k-token session takes 15 s before it says a word. A
 gate holds every fork to the call's mode. A call is **full** when the carrier
-verified your number (STIR/SHAKEN attestation A) or you said your PIN at pickup
-(`screenless settings --pin <4–8 digits>` sets it): it may do anything this
+verified your number (STIR/SHAKEN attestation A) or you key your PIN on the
+phone keypad when the voice asks for it, then hash (`screenless settings --pin
+<4–8 digits>` sets it; saying it aloud does not count): it may do anything this
 session may, except read secrets. Any other call is **restricted**, because a
 caller id alone can be spoofed: reading (files, read-only shell, MCP reads)
 and local work in the project — no push, deploy, send or delete — and what it

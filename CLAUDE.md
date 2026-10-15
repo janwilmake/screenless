@@ -113,10 +113,13 @@ keyboard and caller id is weak, every fork passes a PreToolUse gate
 (session 13, `worker/src/pin.ts`). A `restricted` call — the default — gets
 reads and local work in the project only; push, deploy, send and delete wait
 for the session after the call. A `full` call, where the carrier attested the
-number (STIR/SHAKEN A, validated) or the caller said their PIN in a TeXML
-`<Gather>` before the voice connects, may do what the session may. Secrets are
-refused in both. The PIN is checked in the Worker against a salted hash and
-never reaches the voice model, a transcript or a log.
+number (STIR/SHAKEN A, validated) or the caller keyed their PIN on the phone
+during the call, may do what the session may; the PIN flips the mode mid-call
+for requests made after it. The voice asks for it, but the keys are read off
+the media stream by the call's Durable Object (`worker/src/keypad.ts`) and
+checked there against a salted hash: the digits never reach the voice model,
+a transcript or a log. A PIN *said* aloud does not count and is cut from the
+transcript.
 
 ## Conventions
 

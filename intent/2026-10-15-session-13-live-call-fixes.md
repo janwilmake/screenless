@@ -241,3 +241,90 @@ Decisions made here, for Jan to overrule:
   project (edit, commit, tests). The mode reaches the fork as
   `SCREENLESS_CALL_MODE`; anything but `full` is restricted. Scripted test
   rings are restricted.
+
+## Follow-up: the PIN moves into the live voice (agent session, 15 Oct, 17:50)
+
+Jan, after testing ffcd830 (deploy 7e3a90b1):
+
+> just tested screenless again. i did 3333# but the pin didnt work and it said 'going on without your pin' in the end. and also i really dont like this voice, can we do the pin convo with the ai voice already?
+
+The brief this session was given (by Jan, through the orchestrator), in
+substance: find the `<Gather>` bug and put it on record; move the PIN prompt
+into the AI voice, with no TeXML `<Say>`/`<Gather>`; take the keys from the
+Telnyx media stream's `dtmf` events in the call's Durable Object, verify there
+with the same tries and lockout, tell the voice only "verified" or "not
+verified"; never put the digits in the voice's input, the transcript or a log;
+a spoken PIN does not count and must not be repeated; flip restricted to full
+mid-call and make the watcher's forks pick it up for later requests; turn on
+Workers observability, logging events and never digits; keep attestation A =
+full without a PIN. Test, deploy, reinstall the CLI. His PIN was set, and his
+last attestation was `{"level":"","validated":false}`: Telnyx passed no
+SHAKEN/STIR (the TeXML app's `inbound.shaken_stir_enabled` is probably off).
+
+**The Gather bug, from Telnyx's own schema.** No logs exist of the call, so
+this is read off the docs, not seen. Telnyx's TeXML OpenAPI (`calls.json`,
+`TexmlGatherWebhookSchema`) documents `Digits` as "conditional, only present
+when input is dtmf" and `SpeechResult` as "only present when input is speech".
+The Gather was `input="dtmf speech"`. With both, the callback carried no
+`Digits` for the keyed 3333#, and an empty or absent `SpeechResult`, so
+`pinFromGather` returned "" and `answerPin` took its `!said` branch: "Going on
+without your PIN." Twilio's Gather sends `Digits` in that mode; Telnyx's, by
+its schema, does not. Two smaller things on record: Telnyx's Gather has no
+`method` attribute (the action uses the TeXML application's method; the route
+accepted both, so not the bug), and whether keys pressed during the nested
+`<Say>` count is undocumented. A failed action POST would have gone to the
+application's failover URL rather than our `<Redirect>`, which makes the
+missing `Digits` the likelier of the two causes the report named.
+
+What landed:
+
+- **The PIN is asked by the live voice and keyed on the phone.** A ring-in
+  that needs a PIN connects straight to GPT-Live. The greeting asks: "If I
+  should send or change things during this call, key in your PIN on the
+  keypad and press hash." The call's Durable Object reads `dtmf` events off
+  the media stream (`worker/src/keypad.ts`): `#` ends an entry, `*` clears it,
+  four seconds without a key ends it too. It checks the entry against the
+  salted hash (`pin.verifyPin`) with the same limits (3 tries per call, 10
+  wrong per member per hour) and tells the voice only "PIN verified" or "PIN
+  not verified, n tries left". The digit goes no further than the keypad.
+  While a PIN is awaited the caller's audio runs 200 ms behind and is muted
+  from each key until 700 ms after it, so a key's tone cannot reach the voice
+  either, if Telnyx leaves tones in the audio at all (undocumented). Saying
+  the PIN does not count: the voice is told never to repeat digits and to ask
+  for the keypad, and while a PIN is awaited any run of four or more spoken
+  digits (or digit words, English and Dutch) is cut from the transcript, so it
+  is not in the call record or in a request handed to the terminal.
+  The `<Gather>`, its `/texml/pin` route and `pinFromGather` are gone.
+- **The mode flips mid-call, for requests after the PIN.** A right PIN sets
+  the call's mode to full in the Durable Object, the stored config (so a
+  reconnecting stream keeps it) and the watcher's `livecall:` slot, and wakes
+  the watcher's long-poll. Each request now carries the mode the call was in
+  when it was asked, and the watcher runs its fork in that mode
+  (`requestMode`), so a request made before the PIN stays restricted. The
+  watcher prints "call is now full: PIN verified".
+- **Workers Logs on**, every line and invocation (`observability` in
+  `wrangler.jsonc`). Before this nothing was kept. The PIN logs only
+  "verified", "wrong n" or "locked"; and three cron log lines that printed the
+  member's phone number now print the member id, since they are kept now.
+- Attestation A still gives full rights with no PIN, unchanged.
+
+Decisions made here, for Jan to overrule: the PIN is offered in the greeting
+and not insisted on, so a call that only wants to talk is not held up; a
+spoken PIN is redacted only while a PIN is awaited, so a four-digit number
+said then (a year, a PR number) is cut too; the 200 ms audio hold applies
+only to calls still awaiting a PIN.
+
+Checked: keypad assembly (`#`, `*`, timeout, junk keys), verdicts (full on
+right, restricted on wrong, locked at 3 per call or 10 per hour), that no
+note to the voice carries digits, and the redaction table — 8 new Worker
+tests, all 12 pass; the CLI's `requestMode` in the gate table, 61 pass; both
+typecheck. Deployed: version 3302de5a-4a9a-4f8c-969d-748d05e210fb (no D1
+migration needed). CLI reinstalled on this server from screenless.sh.
+
+Still open:
+
+- Not verified on a call. That Telnyx sends `dtmf` events on this
+  bidirectional stream is documented but not seen here; if keys do nothing,
+  the Workers Logs will show no "live pin" line for the call.
+- SHAKEN/STIR: turn on the TeXML application's `inbound.shaken_stir_enabled`
+  in Telnyx. A Dutch caller id will still carry none.

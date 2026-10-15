@@ -10,7 +10,7 @@
  * Only the session's owner can make a call run requests, and every tool call
  * of a fork passes the gate below, in the mode the Worker gave the call. A
  * `full` call — the carrier vouched for the number (STIR/SHAKEN A) or the
- * caller said their PIN — may do what the session may. Any other call is
+ * caller keyed their PIN — may do what the session may. Any other call is
  * `restricted`, because a caller id alone is easy to spoof: reading and local
  * work in the project, and nothing that leaves the machine or cannot be
  * undone. Both refuse secrets: every answer is spoken aloud.
@@ -228,7 +228,14 @@ export interface Handoff {
   id: string;
   request: string;
   context: string;
+  /** The call's mode when this was asked. A PIN keyed mid-call makes the
+   *  call full for requests after it, not for one already asked. */
+  mode?: CallMode;
 }
+
+/** The mode a request runs in: its own, else the call's. Anything but
+ *  `full` is restricted. */
+export const requestMode = (h: Handoff, call: CallMode): CallMode => ((h.mode ?? call) === "full" ? "full" : "restricted");
 
 export interface ForkResult {
   request: string;
@@ -440,8 +447,13 @@ export async function serveLiveCall(o: {
       if (res.ok) {
         next = (await res.json()) as { ended: boolean; mode?: CallMode; handoffs: Handoff[] };
         failures = 0;
-        // The call's own word wins over the watcher poll's.
-        if (next.mode) mode = next.mode === "full" ? "full" : "restricted";
+        // The call's own word wins over the watcher poll's, and changes when
+        // the caller keys their PIN mid-call.
+        if (next.mode) {
+          const now: CallMode = next.mode === "full" ? "full" : "restricted";
+          if (now !== mode) o.log(`  call is now ${now === "full" ? "full: PIN verified" : "restricted"}`);
+          mode = now;
+        }
       }
     } catch {
       /* a dropped long-poll is retried below */
@@ -460,7 +472,7 @@ export async function serveLiveCall(o: {
         sessionId: o.forkRequests === false ? undefined : o.sessionId,
         background: [o.brief, summary && `The session's own summary: ${summary}`].filter(Boolean).join("\n\n"),
         cli: o.cli,
-        mode,
+        mode: requestMode(h, mode),
         onStep: (step) => {
           o.log(`  · ${step}`);
           // Enough for the voice to answer "how is it going?" honestly.

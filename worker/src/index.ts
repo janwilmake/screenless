@@ -723,22 +723,25 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
     const ownerName = owner ? (owner.name || owner.email || "a teammate").trim().split(/\s+/)[0] : "";
     // The owner's own call does anything the session may only when the
-    // number is proven: attestation A, or the PIN asked for below. A test
-    // ring and a teammate's call are restricted (a teammate's runs nothing).
+    // number is proven: attestation A, or the PIN keyed during the call. A
+    // test ring and a teammate's call are restricted (a teammate's runs nothing).
     const full = !owner && !testRepo && pin.attested(attestation);
     const askPin = !owner && !testRepo && !full && Boolean(user.pin_hash) && !(await pinLockedOut(env, user.id));
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
       mode: full ? "full" : "restricted",
+      // The voice asks for the PIN in its greeting; the call's Durable Object
+      // reads the keys off the media stream and checks them (keypad.ts).
+      ...(askPin ? { pin: true } : {}),
       instructions: owner
         ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "" })
         : liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
       greeting: owner
         ? `Hi${first}, ${w.name ? `${w.name}, ` : ""}${ownerName}'s Claude session here. What would you like to know?`
-        : w.name
-          ? `Hi${first}, ${w.name} here. What can I do?`
-          : `Hi${first}, your Claude session${w.repo ? ` in ${w.repo}` : ""} here. What can I do?`,
+        : `Hi${first}, ${w.name ? `${w.name} here.` : `your Claude session${w.repo ? ` in ${w.repo}` : ""} here.`}${
+            askPin ? " If I should send or change things during this call, key in your PIN on the keypad and press hash." : ""
+          } What can I do?`,
       voice: env.OPENAI_VOICE,
       accountSid: params.AccountSid ?? "",
       callSid: params.CallSid ?? "",
@@ -746,7 +749,6 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
       ...(owner ? { servedBy: owner.id, teammate: { name: caller, owner: ownerName } } : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
-    if (askPin) return xml(await pinGatherXml(env, origin, callId, "Key in your PIN and press hash, or say it. Or wait, to go on without it."));
     return xml(await liveStreamXml(env, callId));
   }
   await db.stashPut(
@@ -771,58 +773,8 @@ async function liveStreamXml(env: Env, callId: string): Promise<string> {
   );
 }
 
-/** Asks for the PIN before the voice is connected, so the voice model never
- *  hears it. Silence falls through to the redirect: on without it. */
-async function pinGatherXml(env: Env, origin: string, callId: string, prompt: string): Promise<string> {
-  const t = await webhookToken(`pin:${callId}`, env.SESSION_SECRET);
-  const action = `${origin}/texml/pin/${callId}?t=${t}`;
-  return (
-    `<Gather input="dtmf speech" action="${action}" finishOnKey="#" timeout="6" maxDigits="8" language="en-US">${sayXml(prompt)}</Gather>` +
-    `<Redirect method="POST">${action}&amp;none=1</Redirect>`
-  );
-}
-
 async function pinLockedOut(env: Env, userId: string): Promise<boolean> {
   return Number((await db.stashGet(env, `pinfail:${userId}`)) ?? 0) >= pin.PIN_FAILS_PER_HOUR;
-}
-
-/**
- * The PIN the caller keyed or said, checked here against the stored hash.
- * Right gives the call full rights; silence, three wrong tries, or too many
- * wrong tries this hour go on restricted. The PIN is never logged.
- */
-async function answerPin(req: Request, env: Env, callId: string): Promise<Response> {
-  const url = new URL(req.url);
-  if (!safeEqual(url.searchParams.get("t") ?? "", await webhookToken(`pin:${callId}`, env.SESSION_SECRET)))
-    return fail(403, "bad webhook token");
-  const raw = await db.stashGet(env, `realtime:${callId}`);
-  if (!raw) return sayHangup("Sorry, this call was lost. Please ring again.");
-  const cfg = JSON.parse(raw) as LiveConfig;
-  const user = await db.userById(env, cfg.userId);
-  if (!user) return sayHangup("Sorry, this call was lost. Please ring again.");
-
-  const restricted = async (why: string) =>
-    xml(`${sayXml(`${why} I can talk and look things up; anything that sends or changes something waits for after the call.`)}${await liveStreamXml(env, callId)}`);
-
-  const params = url.searchParams.get("none") ? {} : { ...Object.fromEntries(url.searchParams), ...(await inboundBody(req)) };
-  const said = pin.pinFromGather(params);
-  if (!said) return restricted("Going on without your PIN.");
-
-  if (await pin.verifyPin(said, { hash: user.pin_hash, salt: user.pin_salt })) {
-    cfg.mode = "full";
-    await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
-    await db.stashDelete(env, `pinfail:${user.id}`).catch(() => undefined);
-    console.log("inbound pin", "accepted");
-    return xml(`${sayXml("Thanks.")}${await liveStreamXml(env, callId)}`);
-  }
-
-  const tries = Number((await db.stashGet(env, `pintries:${callId}`)) ?? 0) + 1;
-  await db.stashPut(env, `pintries:${callId}`, String(tries), 3600);
-  const fails = Number((await db.stashGet(env, `pinfail:${user.id}`)) ?? 0) + 1;
-  await db.stashPut(env, `pinfail:${user.id}`, String(fails), 3600);
-  console.log("inbound pin", "wrong", tries);
-  if (tries >= pin.PIN_TRIES || fails >= pin.PIN_FAILS_PER_HOUR) return restricted("That PIN is not right.");
-  return xml(await pinGatherXml(env, url.origin, callId, "That is not right. Try again."));
 }
 
 /**
@@ -1382,9 +1334,6 @@ export default {
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
         return await answerInbound(req, env, origin);
-      // The PIN a ring-in keyed or said, before its voice is connected.
-      const pinMatch = path.match(/^\/texml\/pin\/([\w-]+)$/);
-      if (pinMatch && (method === "POST" || method === "GET")) return await answerPin(req, env, pinMatch[1]);
       // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
       // to OpenAI, stamped with this call's correlation header.
       const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);

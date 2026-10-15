@@ -2,7 +2,7 @@
 // `npm test` builds first.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide, phoneRules } from "../dist/live.js";
+import { decide, phoneRules, requestMode } from "../dist/live.js";
 
 const cwd = "/work/project";
 const bash = (command) => ["Bash", { command }];
@@ -63,4 +63,14 @@ test("the fork's rules name its mode", () => {
   assert.match(phoneRules("full"), /full mode/);
   assert.match(phoneRules("restricted"), /restricted mode/);
   assert.doesNotMatch(phoneRules("restricted"), /push, deploy, and send/);
+});
+
+test("a PIN keyed mid-call makes later requests full, not earlier ones", () => {
+  // A request carries the mode the call was in when it was asked.
+  assert.equal(requestMode({ id: "a", request: "", context: "", mode: "restricted" }, "full"), "restricted");
+  assert.equal(requestMode({ id: "b", request: "", context: "", mode: "full" }, "restricted"), "full");
+  // From a Worker that does not stamp requests yet: the call's mode.
+  assert.equal(requestMode({ id: "c", request: "", context: "" }, "full"), "full");
+  assert.equal(requestMode({ id: "d", request: "", context: "" }, "restricted"), "restricted");
+  assert.equal(requestMode({ id: "e", request: "", context: "", mode: "anything" }, "full"), "restricted");
 });

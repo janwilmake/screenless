@@ -2,7 +2,7 @@
 // Node runs this TypeScript as is: `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { attestationOf, attested, hashPin, pinFromGather, verifyPin } from "../src/pin.ts";
+import { attestationOf, attested, hashPin, verifyPin } from "../src/pin.ts";
 
 test("a PIN verifies against its own hash, and nothing else does", async () => {
   const stored = await hashPin("4821");
@@ -26,22 +26,6 @@ test("the hash is salted: one PIN, two hashes", async () => {
 test("the hash does not contain the PIN", async () => {
   const s = await hashPin("98765432");
   assert.ok(!s.hash.includes("98765432") && !s.salt.includes("98765432"));
-});
-
-test("keyed and spoken PINs read as digits", () => {
-  const cases: Array<[Record<string, string>, string]> = [
-    [{ Digits: "4821" }, "4821"],
-    [{ Digits: "4821#" }, "4821"],
-    [{ SpeechResult: "4 8 2 1." }, "4821"],
-    [{ SpeechResult: "4821" }, "4821"],
-    [{ SpeechResult: "Four eight two one" }, "4821"],
-    [{ SpeechResult: "vier acht twee een" }, "4821"],
-    [{ SpeechResult: "my pin is one two three four" }, "1234"],
-    [{ Digits: "77", SpeechResult: "one" }, "77"],
-    [{}, ""],
-    [{ SpeechResult: "hello" }, ""],
-  ];
-  for (const [params, want] of cases) assert.equal(pinFromGather(params), want, JSON.stringify(params));
 });
 
 test("only a validated A attestation proves the number", () => {

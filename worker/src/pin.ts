@@ -1,16 +1,17 @@
 /**
- * Who is really calling: the caller id's attestation, and the spoken PIN that
- * stands in for it when the call does not carry one.
+ * Who is really calling: the caller id's attestation, and the PIN that stands
+ * in for it when the call does not carry one.
  *
  * The owner's own calls can do anything their Claude Code session may — send,
  * push, deploy. A caller id alone is easy to spoof, so that only holds when
  * the carrier vouched for the number (STIR/SHAKEN attestation A, signature
- * validated) or the caller said the PIN they set. Any other call is
+ * validated) or the caller keyed the PIN they set. Any other call is
  * restricted: it can talk and read, and the rest waits for after the call.
  *
- * The PIN is checked here, in the Worker, from a TeXML <Gather> that runs
- * before the voice is connected: the voice model never hears it, and it is
- * never in a transcript. Only a salted PBKDF2 hash is stored.
+ * The PIN is keyed on the phone during the call and checked in the Worker:
+ * the call's Durable Object reads the keys off the media stream (keypad.ts),
+ * so the voice model never has the digits and they are never in a transcript.
+ * Only a salted PBKDF2 hash is stored.
  *
  * No imports, so the tests can load it in plain Node.
  */
@@ -82,25 +83,4 @@ export async function verifyPin(pin: string, stored: { hash: string; salt: strin
   let diff = 0;
   for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ stored.hash.charCodeAt(i);
   return diff === 0;
-}
-
-const SPOKEN: Record<string, string> = {
-  zero: "0", oh: "0", o: "0", nul: "0", one: "1", een: "1", two: "2", to: "2", too: "2", twee: "2",
-  three: "3", drie: "3", four: "4", for: "4", vier: "4", five: "5", vijf: "5", six: "6", zes: "6",
-  seven: "7", zeven: "7", eight: "8", acht: "8", nine: "9", negen: "9",
-};
-
-/**
- * The digits of what the caller keyed or said. Keys win; speech arrives as
- * "1 2 3 4", "1234" or "one two three four" depending on the engine, in
- * English or Dutch.
- */
-export function pinFromGather(params: Record<string, string>): string {
-  const keyed = String(params.Digits ?? "").replace(/\D/g, "");
-  if (keyed) return keyed;
-  return String(params.SpeechResult ?? "")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((w) => (/^\d+$/.test(w) ? w : (SPOKEN[w] ?? "")))
-    .join("");
 }

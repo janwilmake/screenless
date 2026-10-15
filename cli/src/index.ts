@@ -866,7 +866,7 @@ async function settings(args: string[]): Promise<void> {
   if (args.includes("--resume")) patch.callEnabled = true;
   const name = argFlag(args, "--name");
   if (name !== undefined) patch.name = name;
-  // The PIN an unverified call says to get full rights. `--pin off` clears it.
+  // The PIN an unverified call keys to get full rights. `--pin off` clears it.
   const pin = argFlag(args, "--pin");
   if (pin !== undefined) {
     if (pin !== "off" && !/^\d{4,8}$/.test(pin)) die("--pin takes 4 to 8 digits, or off");
@@ -1314,7 +1314,7 @@ ${c.bold("Settings options")}
   --at HH:MM           local time of the morning call, 24-hour (default 08:00)
   --pause / --resume   stop or restart the scheduled call
   --name "<name>"      what the line calls you when you ring in ("" clears it)
-  --pin <4–8 digits>   the PIN a ring-in says when the carrier did not verify
+  --pin <4–8 digits>   the PIN a ring-in keys when the carrier did not verify
                        your number; without it that call stays read-only
                        (off clears it; only a salted hash is stored)
   --json               machine-readable, for the loop
