@@ -74,30 +74,45 @@ gives the session a seat there.
 
 ## Pricing
 
-Jan's choice (18 October 2026): **$299 a month per seat**. Priced on what the
-seat replaces, not on what it costs to run.
+Jan's choice (18 October 2026): **per active user**. It replaced an earlier
+$299 a month per identity, because per user grows with the team, is familiar
+to buyers (Slack and Hyre both charge per user), and bundles naturally with
+Hyre.
 
 | Plan | Price | What's in it |
 |---|---|---|
-| **Seat** (they bring the server and Claude) | **$299 / month per seat** | Identity setup; Slack, email, calendar and Meet; unlimited WhatsApp; 250 call minutes; per-person levels; change log |
+| **Per active user** | **$29 / month per active user**, minimum 5 ($145) | All identities (Cody, Mark, Rex…); Slack, email, calendar and Meet; unlimited WhatsApp; ~30 call minutes per active user, pooled across the team; per-person levels; change log |
 | Extra call minutes | 40¢ a minute | Billed with the next invoice |
 | **Design partners** | 50% off for 3 months | In return for weekly feedback; full price after that |
 
-**Per seat, not per user.** The value is that everyone can ask it, so
-charging per user would discourage exactly the use that makes it worth
-having.
+**Only active users count.** Everyone on the team gets access; you pay only
+for colleagues who actually asked an identity something that month (Slack's
+"fair billing" idea). Giving access costs nothing, so nobody holds back
+seats and colleagues don't go back to asking the developer. Revenue still
+grows with real use. "Active" is counted from the logs: who asked what, on
+which channel.
+
+**All identities included.** More of them (Cody, Mark, Rex) make the product
+more useful, not more expensive.
+
+**Examples:**
+- **A 10-person team with 8 active users:** $232 a month.
+- **A 20-recruiter agency with 18 active:** $522.
+- **A team of 3:** the $145 minimum.
+- **For Hyre:** an add-on to its existing per-user price.
 
 **What the customer's stack costs:** a server (~$150/month) and Claude Code
-(Max, $200/month), so about $650 a month all-in with the seat. That is less
-than an hour a day of a developer's time (~$1,500–2,500 a month at developer
-rates), far less than a junior hire ($3–5k a month), and in line with "AI
-employee" products ($500–2,000+ a month).
+(Max, $200/month), plus the per-user price. Together that stays less than an
+hour a day of a developer's time (~$1,500–2,500 a month at developer rates),
+far less than a junior hire ($3–5k a month), and in line with "AI employee"
+products ($500–2,000+ a month).
 
-**Our costs per seat:** call minutes (~15–20¢ each, so ~$45 for the
-included 250) and WhatsApp (fractions of a cent). Slack, email and calendar
-cost us next to nothing. So the margin is high.
+**Our costs:** call minutes (~15–20¢ each; the ~30 pooled minutes per active
+user cost us ~$5–6) and WhatsApp (fractions of a cent). Slack, email and
+calendar cost us next to nothing. So the margin stays high.
 
-**The goal:** $10k MRR is **34 seats**, against 127 teams at $79.
+**The goal:** $10k MRR is **~345 active users**: for example 40 teams
+averaging 9 active users, or fewer, larger recruitment agencies.
 
 **No managed seat** (Jan, 18 October 2026: too risky). We don't run
 servers or Claude subscriptions for customers. The seat always runs on the
@@ -108,9 +123,8 @@ team through one person's subscription may conflict with Anthropic's terms.
 Claude Team or Enterprise seats, or the API, are the clean options. That is
 their account and their call.
 
-**If $299 meets resistance:** don't lower it before anyone has said no. If
-needed, test $149 for teams of up to 10 people against $299 with the design
-partners.
+**If $29 meets resistance:** don't lower it before anyone has said no. If
+needed, test $19 against $29 per active user with the design partners.
 
 ## How to prove it
 
@@ -132,9 +146,9 @@ partners.
    Jan's network. Set up the seat with them on a call, timing each step and
    noting where a person had to step in. Measure the time to the first
    colleague's answer, and weekly askers in weeks 1 and 2.
-3. **A payment test at the end of week 2.** "Keep the seat for $299 a month
-   (50% off for the first three months), phone and WhatsApp included", with a
-   Stripe link. The yes rate is the proof.
+3. **A payment test at the end of week 2.** "Keep it for $29 per active user
+   a month (50% off for the first three months), phone and WhatsApp
+   included", with a Stripe link. The yes rate is the proof.
 
 **Verdict after 4–6 weeks:**
 - **Proof:** at least 3 of 5 design partners have non-developers asking every

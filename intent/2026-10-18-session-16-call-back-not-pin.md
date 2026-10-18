@@ -175,3 +175,7 @@ then:
 > cant it be Rec? or thats not a name? Rex?
 
 > ok Rex it is, add it to the doc
+
+> its interesting hyre charges per user, but with 'seat' we could charge per identity. maybe a per user business model works better
+
+> yes replace it with per active user pricing
