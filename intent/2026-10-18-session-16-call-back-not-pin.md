@@ -80,3 +80,11 @@ then:
 > i cannt find screenless in whatsapp
 
 > ok i called it on whatsapp but it used the same callback pattern. that shouldnt be needed for whatsapp, just regular calls
+
+> nice how can we set up a pfp for screenless in whatsapp? and maybe description?
+
+> great.... called again, but no pickup
+
+> cool it works now. but the audio quality isnt as crisp as i would expect for whatsapp calls. bit noisy. is it possible something makes the quality worse than it could be?
+
+> yes build it pls , get the quality as high as possible everywhere

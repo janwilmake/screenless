@@ -2,9 +2,9 @@
  * One Durable Object per live GPT-Live call: the line to the caller's own
  * Claude Code session.
  *
- * Telnyx streams the call's audio here over a WebSocket (8 kHz mu-law, both
+ * Telnyx streams the call's audio here over a WebSocket (L16 at 16 kHz, both
  * ways), and this object relays it to a GPT-Live session over OpenAI's own
- * WebSocket, which takes and returns the same phone audio. (GPT-Live over SIP
+ * WebSocket at its native 24 kHz, resampled in between (audio.ts). (GPT-Live over SIP
  * would skip the relay, but inbound SIP for Live is gated per project.) The
  * voice's output is passed straight through, but it arrives faster than real
  * time, so Telnyx holds a queue of it. Over a WebSocket GPT-Live does not cut
@@ -37,6 +37,7 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
+import { ByteOrder, Resampler, decodePcm, encodePcm, meanAbs, PHONE_RATE, VOICE_RATE } from "./audio";
 import { callerSaysBye, callerAsksHangup, voiceSaysBye, HANGUP_AFTER_MS, HANGUP_ON_REQUEST_MS } from "./farewell";
 
 /** What the call's requests may do on the owner's machine. */
@@ -174,6 +175,13 @@ export class LiveCall {
   private playsUntil = 0;
   /** Loud caller frames in a row (BARGE_FRAMES). */
   private loudRun = 0;
+  /** The phone's L16 byte order, read off the caller's audio (audio.ts). */
+  private order = new ByteOrder("be");
+  /** Caller audio up to the voice's rate, the voice's down to the phone's. */
+  private up = new Resampler(PHONE_RATE, VOICE_RATE);
+  private down = new Resampler(VOICE_RATE, PHONE_RATE);
+  /** Voice audio short of a whole 20 ms frame, sent with the next chunk. */
+  private outRest = new Int16Array(0);
 
   constructor(
     private state: DurableObjectState,
@@ -284,7 +292,7 @@ export class LiveCall {
       session: {
         model: "gpt-live-1",
         instructions: [cfg.instructions, cfg.mode === "full" || cfg.teammate ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
-        audio: { format: { type: "audio/pcmu", rate: 8000 }, output: { voice: cfg.voice } },
+        audio: { format: { type: "audio/pcm", rate: VOICE_RATE }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
     });
@@ -317,20 +325,25 @@ export class LiveCall {
   }
 
   private fromPhone(ev: MessageEvent): void {
-    let msg: { event?: string; media?: { track?: string; payload?: string } };
+    let msg: { event?: string; media?: { track?: string; payload?: string }; start?: { media_format?: unknown } };
     try {
       msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
     } catch {
       return;
     }
     if (msg.event === "media" && msg.media?.payload && msg.media.track !== "outbound") {
-      const level = loudness(msg.media.payload);
+      if (!this.order.decided && this.order.observe(msg.media.payload))
+        log({ ev: "live byte order", call: this.ourCallId, order: this.order.decided });
+      const samples = decodePcm(msg.media.payload, this.order.current);
+      const level = meanAbs(samples);
       this.noiseFloor = level < this.noiseFloor ? level : this.noiseFloor + (level - this.noiseFloor) * 0.01;
       if (level > Math.max(500, this.noiseFloor * 3)) {
         this.callerSpeechAt = Date.now();
         if (++this.loudRun === BARGE_FRAMES) this.bargeIn("loud");
       } else this.loudRun = 0;
-      this.toVoice(msg.media.payload);
+      this.toVoice(encodePcm(this.up.push(samples), "le"));
+    } else if (msg.event === "start") {
+      log({ ev: "live media format", call: this.ourCallId, format: msg.start?.media_format ?? null });
     } else if (msg.event === "stop") {
       this.phoneLost();
     }
@@ -379,8 +392,9 @@ export class LiveCall {
       case "session.output_audio.delta":
         if (msg.delta) {
           this.voiceSpoke = true;
-          this.measureOut(msg.delta);
-          this.toPhone(msg.delta);
+          const pcm = decodePcm(msg.delta, "le");
+          this.measureOut(pcm);
+          this.toPhone(this.down.push(pcm));
         }
         break;
       case "session.started":
@@ -711,10 +725,10 @@ export class LiveCall {
    * A turn starts at the first chunk carrying speech after TURN_GAP_MS
    * without any, and ends once the speech has stopped that long.
    */
-  private measureOut(b64: string): void {
+  private measureOut(pcm: Int16Array): void {
     const now = Date.now();
-    const bytes = b64Bytes(b64);
-    const voiced = loudness(b64) > 200;
+    const bytes = pcm.length * 2;
+    const voiced = meanAbs(pcm) > 200;
     if (voiced && now - this.voiceVoicedAt > TURN_GAP_MS) {
       this.endTurn();
       // The caller's last loud frame came after the voice's last speech: this
@@ -742,7 +756,8 @@ export class LiveCall {
       t.bytes += bytes;
       t.minBytes = Math.min(t.minBytes, bytes);
       t.maxBytes = Math.max(t.maxBytes, bytes);
-      if (bytes % 160) t.offFrame++;
+      // 20 ms of 16-bit audio at 24 kHz.
+      if (bytes % 960) t.offFrame++;
       t.lastAt = now;
     }
     this.outAt = now;
@@ -754,7 +769,8 @@ export class LiveCall {
     this.turn = null;
     if (!t || !t.chunks) return;
     const wallMs = t.lastAt - t.startAt;
-    const audioMs = Math.round(t.bytes / 8);
+    // 16-bit at 24 kHz: 48 bytes a millisecond.
+    const audioMs = Math.round(t.bytes / 48);
     log({
       ev: "live turn",
       call: this.ourCallId,
@@ -774,14 +790,22 @@ export class LiveCall {
     });
   }
 
-  private toPhone(payload: string): void {
+  /** Voice audio to the phone, in whole 20 ms frames: Telnyx plays any
+   *  chunk from 20 ms up, and a shorter tail waits for the next one. */
+  private toPhone(samples: Int16Array): void {
+    const all = new Int16Array(this.outRest.length + samples.length);
+    all.set(this.outRest);
+    all.set(samples, this.outRest.length);
+    const frame = PHONE_RATE / 50;
+    const whole = all.length - (all.length % frame);
+    this.outRest = all.slice(whole);
+    if (!whole) return;
     try {
-      this.phone?.send(JSON.stringify({ event: "media", media: { payload } }));
+      this.phone?.send(JSON.stringify({ event: "media", media: { payload: encodePcm(all.subarray(0, whole), this.order.current) } }));
     } catch {
       /* the caller hung up */
     }
-    // 8 kHz mu-law: 8 bytes a millisecond.
-    this.playsUntil = Math.max(Date.now(), this.playsUntil) + b64Bytes(payload) / 8;
+    this.playsUntil = Math.max(Date.now(), this.playsUntil) + (whole / PHONE_RATE) * 1000;
   }
 
   /**
@@ -799,6 +823,7 @@ export class LiveCall {
       return;
     }
     this.playsUntil = 0;
+    this.outRest = new Int16Array(0);
     log({ ev: "live barge-in", call: this.ourCallId, gen: this.voiceGen, by, queuedMs });
   }
 
@@ -877,29 +902,8 @@ const TURN_GAP_MS = 600;
  *  was said, a digit or a phone number. */
 const log = (fields: Record<string, unknown>): void => console.log(JSON.stringify(fields));
 
-/** Decoded length of a base64 string, without decoding it. */
-const b64Bytes = (b64: string): number => Math.floor((b64.length * 3) / 4) - (b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0);
-
 /** Caller words that do not count as talking on: more goodbye, or a noise
  *  the transcriber wrote down in brackets. */
 const closingWords = (text: string): boolean => isNoise(text) || callerSaysBye(text);
-
-/** Mean absolute amplitude of one frame of 8-bit mu-law audio. Speech on a
- *  phone line runs to the thousands; a quiet line stays in the low hundreds. */
-function loudness(b64: string): number {
-  let bytes: string;
-  try {
-    bytes = atob(b64);
-  } catch {
-    return 0;
-  }
-  let sum = 0;
-  for (let i = 0; i < bytes.length; i++) {
-    const u = ~bytes.charCodeAt(i) & 0xff;
-    const mag = (((u & 0x0f) << 3) + 0x84) << ((u >> 4) & 7);
-    sum += mag - 0x84;
-  }
-  return bytes.length ? sum / bytes.length : 0;
-}
 
 const isNoise = (text: string): boolean => !text.replace(/\[[^\]]*\]?/g, "").replace(/[^\p{L}\p{N}]/gu, "");

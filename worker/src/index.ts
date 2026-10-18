@@ -871,13 +871,15 @@ async function ringInXml(
 }
 
 /** The TeXML that streams a live call's audio both ways to the LiveCall
- *  Durable Object, which relays it to GPT-Live. The pauses only keep the call
+ *  Durable Object, which relays it to GPT-Live. L16 at 16 kHz: wideband,
+ *  linear, the best Telnyx streams, so WhatsApp and HD-voice callers keep
+ *  their quality (audio.ts). The pauses only keep the call
  *  up (180 s is the most one <Pause> takes; an invalid length ends the call
  *  at once); the Durable Object hangs up when the conversation ends. */
 async function liveStreamXml(env: Env, callId: string): Promise<string> {
   const t = await webhookToken(`live:${callId}`, env.SESSION_SECRET);
   return (
-    `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="PCMU" bidirectionalMode="rtp" bidirectionalCodec="PCMU" bidirectionalSamplingRate="8000"/></Start>` +
+    `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="L16" bidirectionalMode="rtp" bidirectionalCodec="L16" bidirectionalSamplingRate="16000"/></Start>` +
     '<Pause length="180"/>'.repeat(40)
   );
 }
