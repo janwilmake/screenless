@@ -1,10 +1,20 @@
 # Give your session a seat on the team
 
 A product idea, written 18 October 2026 for later. Not being built now.
-Name: **Remo** (Jan, 18 October 2026), a company-level umbrella being
-Wilmake. It would combine watchloop and screenless. Still to check: the
-domain, and the trademark in software, where remo.co (a virtual-events
-platform) already uses it.
+Name: **Remo** (Jan, 18 October 2026), short for **remote worker**, which is
+the end goal: a remote colleague you hire. Cody, Mark and Rex are Remos, each
+with a role. The company above it is Wilmake. It would combine watchloop and
+screenless. A tagline to try: "Remo: hire a remote worker that already knows
+your work".
+
+**Domains** (checked 18 October 2026):
+- **Free:** teamremo.com. remo.wilmake.com works for a design-partner test.
+- **Parked for sale:** remo.ai (atom.com), remo.team, myremo.com
+  (Afternic), hiremo.com (Aftermarket).
+- **Taken and in use:** remo.com, .sh, .dev, .app, .io, .so, .chat, .nl,
+  .eu, getremo.ai, askremo.com, tryremo.com, withremo.com, remohq.com.
+- **Trademark:** remo.co is an existing virtual-events platform; check
+  software trademarks in the EU and US before launch.
 
 ## The idea in one line
 

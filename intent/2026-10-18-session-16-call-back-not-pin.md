@@ -183,3 +183,7 @@ then:
 > what if we call it wilmake.com?
 
 > okok.... lets call it 'Remo'
+
+> check if remo domains are available
+
+> i like it because its short for a 'remote worker' and thats the end goal
