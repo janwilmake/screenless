@@ -37,6 +37,11 @@
     // real NL outbound.
     "TELNYX_FROM_NUMBER": "+31850835195",
 
+    // The messaging profile WhatsApp messages are sent through ("screenless").
+    // Named on each send: Telnyx would look it up from the number, but an 085
+    // number cannot be put on one, because that turns on SMS, which 085 lacks.
+    "TELNYX_MESSAGING_PROFILE_ID": "4001a150-8d0f-4e07-9b42-f001fa968475",
+
     // Telnyx's Ed25519 public key (Mission Control → Keys → Public Key): every
     // v2 webhook is signed with it, which is how a WhatsApp message is known to
     // come from Telnyx without a secret in its URL. Public, so it lives here.

@@ -141,7 +141,7 @@ const fromOf = (p: Record<string, unknown>, msg: Record<string, unknown>): strin
 };
 
 async function reply(env: Env, to: string, text: string): Promise<void> {
-  await telnyx.sendWhatsAppText(env.TELNYX_API_KEY, env.TELNYX_FROM_NUMBER, to, text).catch((err) =>
+  await telnyx.sendWhatsAppText(env.TELNYX_API_KEY, env.TELNYX_FROM_NUMBER, to, text, env.TELNYX_MESSAGING_PROFILE_ID || undefined).catch((err) =>
     console.error("whatsapp reply failed", (err as Error).message),
   );
 }
@@ -326,7 +326,7 @@ export async function pendingChats(env: Env, userId: string, watcherId: string):
     // 👀 on their message: a live session has it, before any answer.
     if (e.wamid && !e.claimedAt)
       await telnyx
-        .sendWhatsAppReaction(env.TELNYX_API_KEY, env.TELNYX_FROM_NUMBER, e.from.phone, e.wamid, "👀")
+        .sendWhatsAppReaction(env.TELNYX_API_KEY, env.TELNYX_FROM_NUMBER, e.from.phone, e.wamid, "👀", env.TELNYX_MESSAGING_PROFILE_ID || undefined)
         .catch((err) => console.error("whatsapp reaction failed", e.id, (err as Error).message));
   }
   return out.sort((a, b) => a.at - b.at);

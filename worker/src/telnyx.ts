@@ -212,12 +212,15 @@ export function hangupTexmlCall(apiKey: string, accountSid: string, callSid: str
  * to their message always is. Bodies are capped at 4096 bytes; a longer
  * answer is cut, and says so.
  */
-export function sendWhatsAppText(apiKey: string, from: string, to: string, body: string) {
+export function sendWhatsAppText(apiKey: string, from: string, to: string, body: string, messagingProfileId?: string) {
   const bytes = new TextEncoder().encode(body);
   const text = bytes.length <= 4096 ? body : `${new TextDecoder().decode(bytes.slice(0, 4000)).replace(/�$/, "")}\n\n(cut short)`;
   return call<{ data: { id: string } }>(apiKey, "POST", "/messages/whatsapp", {
     from,
     to,
+    // Named outright: an 085 number cannot be put on a messaging profile
+    // (that turns on SMS, which it cannot do), so it is not found by number.
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
     whatsapp_message: { type: "text", text: { body: text, preview_url: false } },
   });
 }
@@ -243,10 +246,11 @@ export async function whatsappMedia(apiKey: string, phone: string, id: string): 
  * A reaction on one of their messages, as a person would leave one: the
  * line's 👀 says a live session has it. `messageId` is Meta's wamid.
  */
-export function sendWhatsAppReaction(apiKey: string, from: string, to: string, messageId: string, emoji: string) {
+export function sendWhatsAppReaction(apiKey: string, from: string, to: string, messageId: string, emoji: string, messagingProfileId?: string) {
   return call(apiKey, "POST", "/messages/whatsapp", {
     from,
     to,
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
     whatsapp_message: { type: "reaction", reaction: { message_id: messageId, emoji } },
   });
 }
