@@ -94,3 +94,7 @@ then:
 > aight cool... so now wdyt of the screenless.sh landing? maybe its too complex. the main benefit is just making your claude code session accessible by your entire team over the phone, right?
 
 > yes rewrite it, and deploy. also, let's put a demo phonecall instead of the terminal thingy can you make it using elevenlabs? api key should be in simstreet env
+
+> cool open the 42-sec call in finder so i can hear it
+
+> i can imagine the demo show as a visualization of the audio and it autoplays, and it  enables audio when clicking it. wdyt?

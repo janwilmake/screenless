@@ -183,6 +183,7 @@
   .phone-top button{margin-left:auto;font:600 13px var(--sans);cursor:pointer;border:0;
                     border-radius:99px;padding:10px 16px;background:#5bbf87;color:#0c0e14;flex-shrink:0}
   .phone-top button.on{background:#f0876a}
+  .phone-top button.muted{background:#2c313d;color:#eef0f5}
   .phone ol{list-style:none;margin:0;padding:18px 20px 20px;font-size:14.5px;line-height:1.5}
   .phone li{margin:0 0 10px;color:#c9cedb;transition:opacity .25s ease,color .25s ease}
   .phone li:last-child{margin-bottom:0}
@@ -193,8 +194,8 @@
   .phone.playing li{opacity:.35}
   .phone.playing li.now{opacity:1;color:#fff}
   .phone.playing li.done{opacity:.6}
-  .phone .bar{height:3px;background:#1c1f2a}
-  .phone .bar i{display:block;height:100%;width:0;background:#f0876a}
+  .phone canvas{display:block;width:100%;height:64px;border-bottom:1px solid #1c1f2a;cursor:pointer}
+  .phone ol{cursor:pointer}
   .cmd code{font-family:var(--mono);font-size:14.5px;color:#eef0f5;
             white-space:nowrap;overflow-x:auto;background:none;border:0;padding:0}
   .cmd code .p{color:var(--soft);user-select:none}
@@ -376,6 +377,7 @@
           <div><b>Sam → Claude session</b><span id="call-time">demo call · 0:40</span></div>
           <button type="button" id="call-play">▶ Play the call</button>
         </div>
+        <canvas id="call-wave" height="64" aria-hidden="true"></canvas>
         <ol>
           <li class="voice" data-t="0" data-e="4.24"><b>Session</b>Hi Sam, your Claude session in checkout-api here. What can I do?</li>
           <li class="you" data-t="4.24" data-e="7.84"><b>Sam</b>Hey! I'm out on a walk. Did last night's test run go green?</li>
@@ -390,8 +392,11 @@
           <li class="work" data-t="38" data-e="40.32">· slack: review request sent to Priya</li>
           <li class="voice" data-t="38.24" data-e="40.32"><b>Session</b>Done, she's tagged. Bye, Sam!</li>
         </ol>
-        <div class="bar"><i id="call-bar"></i></div>
         <audio id="call-audio" src="/demo-call.mp3" preload="none"></audio>
+        <!-- The call's loudness, 25 frames a second, one base-36 digit each:
+             measured from the MP3 once, so the waveform can move before
+             the audio is loaded, and while it plays muted. -->
+        <script type="text/plain" id="call-env">01mli9bcjgeec9610000000bt6226mrsl2a7ih8659a54ac556bh42eil95ik9339ehihf919ded75100000000001nq15dbcdb8eiih85100000000000000000000000gslg83100000000006clljfngcgekpha2010000000001d68jkge454bif944134ij5421jleaa7lje54fhecba983000000000000006bijh62127jjhkjc5420000000000000055blrf7fih21deca62bfb65421defdcc630000036cea64it853a8gid8225eed7668277a9986555200000000000000001dnng554421000000000000000004donb43ig2757idc710000000016cc9638i81eg91244dhkmnmkh726e6a75a832bmj84468422100000000000000000ckgdiigd898316000000000000000000000007qka1000000000000000002444hxig9jk917bdccdaaa71400000000001e611kz8364985cfedca84000028chkff8mgcedcd611che7562ddda552000000000000000000000000000000000135jojfdb866510000000000mvrupg1366ec8aeb9e6dea22bmc456adc954ggc74229cddc85532000000004deeb0429bhjkjedec78fib07ca7652000000000000005coy912ifca864bdghgd9ahhgfdbddcc9b5cj77ade8136bab8464aed7510000000000000000265hbhgbbgf974122deji487ah929edeff332000000000000000000000brpd34310024kedhijid8447i941010000flb522209uonle5400000000000000000026onjijb74247cd6478ilnkg9214000002aqsuld56bcccdc872</script>
       </div>
     </div>
 
@@ -604,49 +609,90 @@
     });
   });
 
-  /* The demo call: the line being said is lit, the rest dimmed, while the
-     audio plays. Stopped, the whole transcript reads as text. */
+  /* The demo call. It plays by itself without sound (a browser only
+     autoplays silently): a clock moves the waveform and lights the line being
+     said. A tap starts it over from the top with sound; when it ends it goes
+     back to playing silently. With reduced motion it sits still until asked. */
   (function () {
     var box = document.getElementById("call");
     var audio = document.getElementById("call-audio");
     var btn = document.getElementById("call-play");
-    var bar = document.getElementById("call-bar");
     var time = document.getElementById("call-time");
-    if (!box || !audio || !btn) return;
+    var canvas = document.getElementById("call-wave");
+    if (!box || !audio || !btn || !canvas) return;
+    var FPS = 25, DUR = 40.6;
+    var env = document.getElementById("call-env").textContent.trim().split("").map(function (c) { return parseInt(c, 36) / 35; });
     var lines = [].slice.call(box.querySelectorAll("li"));
-    var label = time.textContent;
+    var said = lines.filter(function (li) { return !li.classList.contains("work"); });
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var mode = "idle", t0 = 0, raf = 0;
+
     function fmt(s) { s = Math.floor(s); return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
+    function voiceAt(t) {
+      for (var i = 0; i < said.length; i++)
+        if (t >= +said[i].dataset.t && t < +said[i].dataset.e) return said[i].classList.contains("voice");
+      return null;
+    }
+    function now() { return mode === "sound" ? audio.currentTime : ((performance.now() - t0) / 1000) % DUR; }
+
+    function draw(t) {
+      var w = canvas.clientWidth, h = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+      var g = canvas.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, h);
+      // Bars every 6 px, a frame of audio each, the present in the middle.
+      var gap = 6, n = Math.ceil(w / gap), mid = Math.floor(n / 2), f = t * FPS;
+      for (var i = 0; i < n; i++) {
+        var k = Math.floor(f) + i - mid, v = k >= 0 && k < env.length ? env[k] : 0;
+        var bh = Math.max(2, v * (h - 16)), who = voiceAt(k / FPS);
+        g.globalAlpha = i <= mid ? 1 : 0.3;
+        g.fillStyle = who === true ? "#f0876a" : who === false ? "#c9cedb" : "#2c313d";
+        g.fillRect(i * gap + 1, (h - bh) / 2, gap - 2, bh);
+      }
+      g.globalAlpha = 1;
+    }
     function paint() {
-      var t = audio.currentTime;
+      var t = now();
       lines.forEach(function (li) {
-        var a = +li.dataset.t, e = +li.dataset.e;
-        li.classList.toggle("now", t >= a && t < e);
-        li.classList.toggle("done", t >= e);
+        li.classList.toggle("now", t >= +li.dataset.t && t < +li.dataset.e);
+        li.classList.toggle("done", t >= +li.dataset.e);
       });
-      bar.style.width = (audio.duration ? (100 * t) / audio.duration : 0) + "%";
-      time.textContent = "on the call · " + fmt(t);
+      draw(t);
+      time.textContent = (mode === "sound" ? "on the call · " : "demo call, muted · ") + fmt(t);
+      raf = requestAnimationFrame(paint);
+    }
+    function silent() {
+      mode = "silent"; t0 = performance.now();
+      box.classList.add("playing");
+      btn.className = "muted"; btn.textContent = "🔈 Tap for sound";
+      cancelAnimationFrame(raf); paint();
+    }
+    function sound() {
+      audio.currentTime = 0;
+      audio.play().then(function () {
+        mode = "sound";
+        box.classList.add("playing");
+        btn.className = "on"; btn.textContent = "■ Hang up";
+        cancelAnimationFrame(raf); paint();
+      }, function () {});
     }
     function stop() {
-      box.classList.remove("playing");
-      btn.classList.remove("on");
-      btn.textContent = "▶ Play the call";
-      time.textContent = label;
+      audio.pause();
+      if (reduce) {
+        mode = "idle"; cancelAnimationFrame(raf);
+        box.classList.remove("playing");
+        btn.className = ""; btn.textContent = "▶ Play the call";
+        time.textContent = "demo call · 0:40";
+        draw(0);
+      } else silent();
     }
-    btn.addEventListener("click", function () {
-      if (audio.paused) {
-        audio.play();
-        box.classList.add("playing");
-        btn.classList.add("on");
-        btn.textContent = "■ Hang up";
-      } else {
-        audio.pause();
-        audio.currentTime = 0;
-        bar.style.width = "0";
-        stop();
-      }
-    });
-    audio.addEventListener("timeupdate", paint);
-    audio.addEventListener("ended", function () { bar.style.width = "0"; stop(); });
+    function toggle() { if (mode === "sound") stop(); else sound(); }
+    btn.addEventListener("click", toggle);
+    canvas.addEventListener("click", toggle);
+    box.querySelector("ol").addEventListener("click", function () { if (mode !== "sound") sound(); });
+    audio.addEventListener("ended", stop);
+    if (reduce) draw(0); else silent();
   })();
 </script>
 </body>
