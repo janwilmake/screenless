@@ -834,7 +834,11 @@ async function ringInXml(
     const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
     // The member's own name, as they set it (`screenless settings --name`);
     // never guessed from the email, which may be a shared or someone else's.
-    const caller = (user.name ?? "").trim();
+    // Not when it is the session's own name: `watch --name` names the session,
+    // and Jan's member name once ended up as his session's, so the line
+    // greeted him as "Cody" from "Cody".
+    const set = (user.name ?? "").trim();
+    const caller = w.name && set.toLowerCase() === w.name.trim().toLowerCase() ? "" : set;
     const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
     const ownerName = owner ? (owner.name || owner.email || "a teammate").trim().split(/\s+/)[0] : "";
     const cfg: LiveConfig = {

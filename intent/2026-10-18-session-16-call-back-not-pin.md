@@ -88,3 +88,5 @@ then:
 > cool it works now. but the audio quality isnt as crisp as i would expect for whatsapp calls. bit noisy. is it possible something makes the quality worse than it could be?
 
 > yes build it pls , get the quality as high as possible everywhere
+
+> nice nice. just 1 thing... for whatever reason, it thinks my name is cody. even though his name is cody. why?

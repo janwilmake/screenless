@@ -1324,7 +1324,8 @@ ${c.bold("Call options")}
 ${c.bold("Settings options")}
   --at HH:MM           local time of the morning call, 24-hour (default 08:00)
   --pause / --resume   stop or restart the scheduled call
-  --name "<name>"      what the line calls you when you ring in ("" clears it)
+  --name "<name>"      YOUR name: what the line calls you when you ring in
+                       ("" clears it). To name the session, use watch --name.
   --json               machine-readable, for the loop
 
   Your timezone is not a setting — it is read from this machine every time,
