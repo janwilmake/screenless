@@ -109,8 +109,8 @@ Manage your team, roles and billing at
 screenless.sh: phone calls with the ring-back, WhatsApp calls, live answers
 from a fork of the session, progress updates, barge-in, wideband audio.
 Ringing in to the queue, calling teammates, teams, invites and pay-as-you-go
-billing work too. **WhatsApp messages** to the session are the newest part: deployed,
-and being tried on real chats now.
+billing work too. **WhatsApp messages** to the session work too: answered in a fork
+that keeps the conversation, with screenshots and voice notes.
 
 What is **still early is the intelligence in the skills** — the morning
 briefing's hard part, reading a queue of pull requests and picking out the few

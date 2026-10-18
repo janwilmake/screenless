@@ -2,66 +2,53 @@
 
 author: Jan Wilmake, via Claude Code
 
-What landed:
+What landed (deployed, and pushed to main):
 
-- **Ring-back instead of answering.** A member's phone call to the line is
-  answered with `<Reject reason="busy"/>` (free for the caller) and, two
-  seconds later, the line dials their *verified* number from the user row —
-  never the caller id. What they hear on pickup (GPT-Live with their watcher,
-  a shared brief, or the quiet ear) is decided at answer time in
-  `/texml/ring-back/:id`. At most six ring-backs per member an hour, so a
-  spoofer cannot make the owner's phone ring all night.
-- **WhatsApp on the same number.** Telnyx routes WhatsApp calls into TeXML
-  (launched April 2026). They get their own route, `/texml/whatsapp?t=…`,
-  signed, meant for a second TeXML application chosen on the number's
-  WhatsApp Calling tab. Trust comes from that URL, not from anything in the
-  call a caller could set: Telnyx documents no field that marks a call as
-  WhatsApp. Answered at once, full rights. `normalizeCallerId` now strips
-  `whatsapp:` / `sip:` forms. A WhatsApp call that lands on the phone URL
-  instead just gets rung back over the phone, which is the safe miss.
-- **The PIN architecture is gone**: `pin.ts`, `keypad.ts`, their tests, the
-  PIN and attestation in settings and `screenless settings --pin`, the voice's
-  PIN note, the held-back caller audio, and per-request modes. The gate and
-  its two modes stay: `full` for the owner's call, `restricted` for test rings
-  and the brief fork.
-- Test rings are answered directly (there is nobody to ring back), restricted.
-
-- **WhatsApp, as it turned out.** Jan did Meta's signup (code by voice,
-  forwarded to his mobile). Telnyx's calling tab offers no route for
-  WhatsApp: calls go to the number's own TeXML application, so the signed
-  `/texml/whatsapp` URL and its token were removed again. A real WhatsApp
-  call showed `FromSipUri …@wa.meta.vc` and Meta's `SipHeader_x-wa-meta-*`
-  headers; `viaWhatsApp` requires the domain and the number's WhatsApp id
-  (`WHATSAPP_PHONE_NUMBER_ID`) together. A phone call has neither.
-
-- **People on the team page, levels in the file.** Jan: emails in the repo
-  file are awkward in open source, and settings split between the page and
-  the file. Agreed after three questions (custom levels must stay; how is a
-  level assigned; how does the page know a repo's levels): the file defines
-  levels and rules with no people; the team page assigns each member a level
-  by name (`line_level`, a team default, a change log); watchers report
-  their file's level names on every poll, kept a month per repo, which is
-  how the page offers them. A name a repo does not define gets its default.
-  `callers:` still decides for an unassigned caller and only narrows an
-  assigned one. `screenless team level` and `GET /org/level` (for watchloop)
-  read and set the same.
+- **Ring-back instead of answering, no PIN.** A member's phone call is
+  rejected as busy and the line dials their *verified* number two seconds
+  later, never the caller id; at most six ring-backs an hour per member.
+  `pin.ts`, `keypad.ts`, the PIN and attestation settings and columns are
+  gone. Full rights on the owner's call; only test rings are restricted.
+- **WhatsApp calls on the same number.** Jan did Meta's signup (the code came
+  by voice, forwarded to his mobile by a temporary `/admin/forward-strangers`
+  window). Telnyx gives WhatsApp calls no route of their own, so they are
+  told apart by Meta's SIP domain (`wa.meta.vc`) plus the number's WhatsApp
+  id in Meta's headers, and answered at once. Needed OPUS on the TeXML app.
+- **Wideband audio**: L16 at 16 kHz from Telnyx, PCM at GPT-Live's 24 kHz,
+  a windowed-sinc resampler between, instead of 8 kHz mu-law both ways.
+- **Line levels on the team page** (people there, levels and rules in a
+  people-free `.agents/permissions.md`, watchers reporting their level
+  names), `screenless team level`, `GET /org/level` for watchloop.
+- **Install by prompt**: "Install https://screenless.sh/llms.txt into this
+  repo and invite my team." `llms.txt` is the agent's script; setup and email
+  take their steps as flags; `screenless team invite` invites the company
+  (Jan chose inviting everyone found over joining by domain).
+- **WhatsApp chats**: one fork of the session per conversation, carried on
+  with `--resume`, fresh after 30 minutes of quiet; screenshots and files
+  read from disk, voice notes transcribed; 👀 when a live session has the
+  message; queued with an instant reply when none is live. The webhook only
+  takes Telnyx-signed messages, in Meta's shape. Sends name a messaging
+  profile, because an 085 number cannot be put on one.
+- **The landing page**, rebuilt around "Your team's questions, answered
+  without you.", with a demo call (a teammate calling a developer's session,
+  voiced with ElevenLabs, muted autoplay with a waveform, one subtitle at a
+  time), what teammates ask, three steps, plain-words rules, an FAQ, and a
+  hero that fits a 13-inch screen. README, `llms.txt`, GitHub description
+  and the social card say the same. The greeting no longer calls Jan "Cody".
 
 Still open:
 
-- WhatsApp needs Meta embedded signup on the number in Mission Control (a
-  consent screen for Jan, not an agent), then a TeXML application with the
-  WhatsApp URL from `GET /admin/inbound-url`. Whether Telnyx lets the WhatsApp
-  connection point at a different TeXML app than the phone number is not
-  confirmed from the docs.
-- ~~The PIN columns still in production~~ — dropped on Jan's yes.
-- The WhatsApp URL's `t` is its own secret, `WHATSAPP_VOICE_TOKEN`, so it
-  could be set up without the session secret. The TeXML application
-  `screenless-whatsapp` was prepared in the portal; Jan pastes the two URLs
-  (tokens are his to enter) and does Meta's signup himself. 085 numbers take
-  no SMS, so Meta's code comes by voice: `/admin/forward-strangers` puts
-  non-member calls through to a member's phone for up to half an hour.
-- The quiet ear says nothing on pickup, so a ring-back with no watcher is
-  silent when answered, as a ring-in was.
+- The WhatsApp business profile (photo, about, description) is filled in on
+  Telnyx but not saved: waiting for Jan's yes.
+- The unused `screenless-whatsapp` TeXML application and the
+  `WHATSAPP_VOICE_TOKEN` secret: delete on Jan's yes.
+- Not yet tried for real: the install prompt end to end, and a teammate
+  calling or messaging through a level. Chats are free; whether to charge
+  per message is undecided. Other coding agents (Codex first) are proposed.
+- Watchers on other machines need the new CLI for chats and levels.
+- If Telnyx stops honouring `messaging_profile_id` on WhatsApp sends, replies
+  fail with 40305 again: the 085 number cannot carry a profile itself.
+- The quiet ear says nothing when a ring-back with no watcher is answered.
 
 ## Prompt
 
@@ -144,3 +131,5 @@ then:
 > ok ok!!!
 >
 > also:[screenshot of the hero on a 13" screen] this is good now but it doesnt fit in 1 view in a 13" screen. maybe give the headline more width so it fits in 2 lines , put the installer below the demo, ? idk.
+
+> all works! cool! now... i think its done. wdyt?

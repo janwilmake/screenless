@@ -122,7 +122,11 @@ own: it is told from a phone call by arriving from Meta's SIP domain
 `full`: the fork may do what the session may, except read secrets. Only a test
 ring (and the fork that briefs the voice) is `restricted`: reads and local work
 in the project. This replaced a PIN keyed on the phone and STIR/SHAKEN
-attestation (session 13); do not bring either back.
+attestation (session 13); do not bring either back. WhatsApp **messages** follow
+the same rule (`chat.ts` in both the Worker and the CLI): the line routes them
+like a call, and the watcher answers each conversation in one fork of the
+session, carried on with `--resume` until 30 minutes of quiet; the Worker only
+takes messages Telnyx signed, and only sends.
 
 **Who may do what is the owner's to say, not ours** (sessions 17 and 16). A
 `.agents/permissions.md` in the watched repo defines levels ("modes") with a
