@@ -140,3 +140,7 @@ then:
 > hmmm i got no reply
 
 > btw, when a msg is received by a live session, itd be great to put the eyes emoji for a new session, so its clear there's live... can this be done?
+
+> ok ok!!!
+>
+> also:[screenshot of the hero on a 13" screen] this is good now but it doesnt fit in 1 view in a 13" screen. maybe give the headline more width so it fits in 2 lines , put the installer below the demo, ? idk.
