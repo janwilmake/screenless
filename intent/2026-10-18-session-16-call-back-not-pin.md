@@ -133,3 +133,5 @@ then:
 > also:[screenshot of the hero on a 13" screen] this is good now but it doesnt fit in 1 view in a 13" screen. maybe give the headline more width so it fits in 2 lines , put the installer below the demo, ? idk.
 
 > all works! cool! now... i think its done. wdyt?
+
+> wdyt of screenless as a product. do you think it could grow to 10k mrr?
