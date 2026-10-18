@@ -80,7 +80,6 @@ seat replaces, not on what it costs to run.
 | Plan | Price | What's in it |
 |---|---|---|
 | **Seat** (they bring the server and Claude) | **$299 / month per seat** | Identity setup; Slack, email, calendar and Meet; unlimited WhatsApp; 250 call minutes; per-person levels; change log |
-| **Managed seat** (we run the server) | $499–599 / month per seat | The same, plus an always-on server and monitoring; they bring their own Claude subscription. Only after the terms check below |
 | Extra call minutes | 40¢ a minute | Billed with the next invoice |
 | **Design partners** | 50% off for 3 months | In return for weekly feedback; full price after that |
 
@@ -100,12 +99,14 @@ cost us next to nothing. So the margin is high.
 
 **The goal:** $10k MRR is **34 seats**, against 127 teams at $79.
 
-**Before selling the managed seat:** Claude Max is an individual plan.
-Answering a whole team through one person's subscription may conflict with
-Anthropic's terms. The clean options are Claude Team or Enterprise seats, or
-the API, which changes the cost side. Check before a managed price goes on
-the website. On a bring-your-own seat it is the customer's own account and
-their call.
+**No managed seat** (Jan, 18 October 2026: too risky). We don't run
+servers or Claude subscriptions for customers. The seat always runs on the
+customer's own machine or server, with their own Claude account; the
+always-on guide (screenless.sh/always-on) shows how. One thing to tell
+customers anyway: Claude Max is an individual plan, and answering a whole
+team through one person's subscription may conflict with Anthropic's terms.
+Claude Team or Enterprise seats, or the API, are the clean options. That is
+their account and their call.
 
 **If $299 meets resistance:** don't lower it before anyone has said no. If
 needed, test $149 for teams of up to 10 people against $299 with the design
@@ -159,7 +160,7 @@ report its own progress), and payments.
   phone line. The levels, the change log and "never send secrets" carry more
   weight.
 - **Always on:** a laptop that sleeps breaks the promise. The server path
-  needs to be easy, or perhaps offered.
+  needs to be easy: a guide and the install prompt, not hosting by us.
 - **Setup friction:** Google Workspace and Slack admin rights aren't always
   with the developer.
 

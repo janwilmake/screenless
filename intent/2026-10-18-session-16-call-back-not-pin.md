@@ -163,3 +163,5 @@ then:
 > $299 a month is big money, wow.
 
 > add the pricing to claude-team-seat.md. I like $299.
+
+> no managed seat, toorisky
