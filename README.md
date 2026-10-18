@@ -1,9 +1,11 @@
 # screenless
 
-**Call your Claude Code session.** From a walk, the car, wherever: ring the
-line or call it on WhatsApp, ask where things stand, tell it what to do, and it
-does the work while you are still on the call. On your own machine, with the
-access your session already has.
+**Let your team call your Claude Code, not you.** Every "quick question" is a
+call or a huddle that pulls a developer out of their work. screenless gives
+your team a phone number for your Claude Code session instead: it answers from
+your code, tickets and docs, and does what you allow, right away, on your own
+machine. You get fewer interruptions; they stop waiting on you. And you can
+call it yourself, from a walk or the car.
 
 Hear a demo call at **[screenless.sh](https://screenless.sh)**.
 

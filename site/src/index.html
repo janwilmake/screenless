@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screenless — call your Claude Code session</title>
+<title>screenless — let your team call your Claude Code</title>
 <!-- Kept under ~155 characters, which is where Google truncates. The old one
      ran to 192 and lost the price, which is the part people search for. -->
-<meta name="description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
+<meta name="description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
-<meta property="og:title" content="Call your Claude Code session.">
-<meta property="og:description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
+<meta property="og:title" content="Let your team call your Claude Code, not you.">
+<meta property="og:description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh/">
 <meta property="og:site_name" content="screenless">
@@ -19,10 +19,10 @@
 <meta property="og:image" content="https://screenless.sh/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="screenless: call your Claude Code session.">
+<meta property="og:image:alt" content="screenless: let your team call your Claude Code, not you.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Call your Claude Code session.">
-<meta name="twitter:description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
+<meta name="twitter:title" content="Let your team call your Claude Code, not you.">
+<meta name="twitter:description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
 <meta name="twitter:image" content="https://screenless.sh/og.png">
 <!-- The mark: an S of two half circles, a dot centred in each bowl. -->
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -47,7 +47,7 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "Call your Claude Code session by phone or WhatsApp. A voice talks with you, and the session armed with /screenless on your own machine does what you ask during the call, with the access it already has. Phone calls are rung back to your verified number; WhatsApp calls are tied to your account. Teammates share the same number.",
+      "description": "A phone line to a developer's Claude Code session for their whole team. Teammates call, by phone or WhatsApp, and the session answers from the code, tickets and docs, or acts, under rules the developer sets in .agents/permissions.md, on the developer's own machine. Phone calls are rung back to the caller's verified number. The developer can call it too.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
@@ -66,18 +66,26 @@
       "mainEntity": [
         {
           "@type": "Question",
-          "name": "What can it do during a call?",
+          "name": "Doesn't Claude Code already do this?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Anything your session can do at the keyboard: read, edit, run tests, commit, push, deploy, post to Slack. It will not read a secret out loud."
+            "text": "It lets you reach your agent. This lets your team reach it: by phone, without a laptop or an account, under rules you set. The point is that the quick questions stop coming to you."
           }
         },
         {
           "@type": "Question",
-          "name": "What if someone spoofs my number?",
+          "name": "What can a teammate do?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "They get nowhere. The line never answers a phone call on its caller id: it hangs up and calls your verified number back, so only your phone gets through. A WhatsApp call is tied to your account."
+            "text": "What your .agents/permissions.md gives them: listen (noted for after the call), read (answers from your code, tickets and docs) or full (your session acts for them). Anyone it does not name only listens."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if someone spoofs a number?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "They get nowhere. The line never answers a phone call on its caller id: it hangs up and calls the verified number back, so only that person's phone gets through. A WhatsApp call is tied to the caller's account."
           }
         },
         {
@@ -90,18 +98,10 @@
         },
         {
           "@type": "Question",
-          "name": "Do I have to speak English?",
+          "name": "Do callers have to speak English?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. It follows whatever language you speak, and switches when you do."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can I read the install script first?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Please do. It is plain bash at https://screenless.sh/install, and the CLI has no dependencies. All of it is on GitHub, MIT."
+            "text": "No. It follows whatever language they speak, and switches when they do."
           }
         },
         {
@@ -344,7 +344,7 @@
     <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
     <nav>
       <a href="#how">how</a>
-      <a href="#team">team</a>
+      <a href="#team">for you</a>
       <a href="#price">price</a>
       <a href="#faq">faq</a>
       <a class="navcta" href="#start">Get started</a>
@@ -354,13 +354,14 @@
   <header class="hero">
     <div class="hero-grid">
       <div class="hero-copy">
-        <p class="for">Claude Code, by phone</p>
-        <h1>Call your Claude Code session.</h1>
+        <p class="for">For developers on Claude Code</p>
+        <h1>Let your team call your Claude Code, not you.</h1>
         <p class="stand">
-          From a walk, the car, the queue at the bakery. Ask where things
-          stand, tell it what to do, and it does the work while you are still
-          on the line: on your own machine, with the access your session
-          already has. By phone or WhatsApp.
+          Every "quick question" is a call or a huddle that pulls you out of
+          your work. Give your team a phone number for your Claude Code
+          session instead. It answers from your code, tickets and docs, and
+          does what you allow, right away. You get fewer interruptions; they
+          stop waiting on you.
         </p>
 
         <div class="cmd">
@@ -378,51 +379,50 @@
         </ul>
       </div>
 
-      <!-- A demo call, voiced with ElevenLabs from a script: the transcript
-           is on the page either way, and lights up line by line as it plays.
-           The green lines are what the session did meanwhile. -->
+      <!-- A demo call, voiced with ElevenLabs from a script: a teammate calls
+           a developer's session instead of the developer. One subtitle at a
+           time; the green line is what the session did meanwhile. -->
       <div class="phone" id="call">
         <div class="phone-top">
           <div class="av"><svg viewBox="16 1 68 112" height="26" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg></div>
-          <div><b>Sam → Claude session</b><span id="call-time">demo call · 0:40</span></div>
+          <div><b>Priya → Sam's Claude</b><span id="call-time">demo call · 0:34</span></div>
           <button type="button" id="call-play">▶ Play the call</button>
         </div>
         <canvas id="call-wave" height="64" aria-hidden="true"></canvas>
         <div class="sub" id="call-sub" aria-hidden="true"><p></p><span class="act"></span></div>
         <ol>
-          <li class="voice" data-t="0" data-e="4.24"><b>Session</b>Hi Sam, your Claude session in checkout-api here. What can I do?</li>
-          <li class="you" data-t="4.24" data-e="7.84"><b>Sam</b>Hey! I'm out on a walk. Did last night's test run go green?</li>
-          <li class="voice" data-t="7.84" data-e="13.52"><b>Session</b>Not quite. Two refund tests fail, since yesterday's currency change.</li>
-          <li class="you" data-t="13.52" data-e="18.32"><b>Sam</b>Ugh. Can you fix them, and open a PR if everything passes?</li>
-          <li class="voice" data-t="18.32" data-e="20.8"><b>Session</b>I'm on it.</li>
-          <li class="work" data-t="19" data-e="24.48">· editing src/refunds.ts · running npm test</li>
-          <li class="voice" data-t="20.8" data-e="24.48"><b>Session</b>Still working on it: the fix is in, now running the full suite.</li>
-          <li class="work" data-t="24.48" data-e="35.44">· 214 passing · gh pr create</li>
-          <li class="voice" data-t="24.48" data-e="35.44"><b>Session</b>Done. All 214 tests pass, and the PR is open. Refunds now round in the original currency. Should I ask Priya to review it?</li>
-          <li class="you" data-t="35.44" data-e="38.24"><b>Sam</b>Yes, ping her on Slack. Thanks, bye!</li>
-          <li class="work" data-t="38" data-e="40.32">· slack: review request sent to Priya</li>
-          <li class="voice" data-t="38.24" data-e="40.32"><b>Session</b>Done, she's tagged. Bye, Sam!</li>
+          <li class="voice" data-t="0" data-e="2.64"><b>Session</b>Hi Priya, Sam's Claude session here. What can I do?</li>
+          <li class="you" data-t="2.64" data-e="8.56"><b>Priya</b>Hey! A customer asks if refunds go back in their own currency. Do they?</li>
+          <li class="voice" data-t="8.56" data-e="9.44"><b>Session</b>I'm on it.</li>
+          <li class="work" data-t="8.8" data-e="19.6">· reading src/refunds.ts · git log</li>
+          <li class="voice" data-t="9.44" data-e="19.6"><b>Session</b>Not yet. Refunds are converted to euros first. Sam changed the currency handling yesterday, but refunds weren't part of it.</li>
+          <li class="you" data-t="19.6" data-e="22.72"><b>Priya</b>Okay. Can you open a ticket for that, and let Sam know?</li>
+          <li class="voice" data-t="22.72" data-e="23.76"><b>Session</b>I'm on it.</li>
+          <li class="work" data-t="23" data-e="30.24">· linear: ticket created · slack: note to Sam</li>
+          <li class="voice" data-t="23.76" data-e="30.24"><b>Session</b>Done. The ticket is in Sam's queue, and I left him a note. Anything else?</li>
+          <li class="you" data-t="30.24" data-e="32.72"><b>Priya</b>No, that's all. Thanks!</li>
+          <li class="voice" data-t="32.72" data-e="33.76"><b>Session</b>Bye, Priya!</li>
         </ol>
         <audio id="call-audio" src="/demo-call.mp3" preload="none"></audio>
         <!-- The call's loudness, 25 frames a second, one base-36 digit each:
              measured from the MP3 once, so the waveform can move before
              the audio is loaded, and while it plays muted. -->
-        <script type="text/plain" id="call-env">01mli9bcjgeec9610000000bt6226mrsl2a7ih8659a54ac556bh42eil95ik9339ehihf919ded75100000000001nq15dbcdb8eiih85100000000000000000000000gslg83100000000006clljfngcgekpha2010000000001d68jkge454bif944134ij5421jleaa7lje54fhecba983000000000000006bijh62127jjhkjc5420000000000000055blrf7fih21deca62bfb65421defdcc630000036cea64it853a8gid8225eed7668277a9986555200000000000000001dnng554421000000000000000004donb43ig2757idc710000000016cc9638i81eg91244dhkmnmkh726e6a75a832bmj84468422100000000000000000ckgdiigd898316000000000000000000000007qka1000000000000000002444hxig9jk917bdccdaaa71400000000001e611kz8364985cfedca84000028chkff8mgcedcd611che7562ddda552000000000000000000000000000000000135jojfdb866510000000000mvrupg1366ec8aeb9e6dea22bmc456adc954ggc74229cddc85532000000004deeb0429bhjkjedec78fib07ca7652000000000000005coy912ifca864bdghgd9ahhgfdbddcc9b5cj77ade8136bab8464aed7510000000000000000265hbhgbbgf974122deji487ah929edeff332000000000000000000000brpd34310024kedhijid8447i941010000flb522209uonle5400000000000000000026onjijb74247cd6478ilnkg9214000002aqsuld56bcccdc872</script>
+        <script type="text/plain" id="call-env">00atp92gvtpmlhb4000155mokkb24bsuvmd67mkda9jkjjhfc920000cg5bonnokrod82000000001dvlgjic6200000000000ad37ch6557cjmp8lorth65526630dc524aigf43boidd81ann68otn74cecegc08egegg7552jljhega7649632200000000000018ee3pnf820000000000006ehnorurnj81000000000000000000000000000000000000000000000000001cgid725doooke500000000000000000bmi63hllhcea3aokclohg95ehghqrnoic85345424mke721452100000000018aejjfa6dbhfgf9b855mljjc8cjnpmigedghghkke648bdc97651cqlia20000000000008nne43gggeghc7774007hppe41139knea65420000000000000bie2477776100000000000024ejllquf0edh934f1e922hahvure104adcdd5584eggdedeedb840000000001beghlormmg8100000000000000000000000000000000000002jsspea620000000000000c85cl64ee51004igekjlc87hkjjhe8049dnge964201ahihhfgfa4204bggija17ijhijjgb6200000000000000001hmne6kllmi85652000000000000boog8200002jn98hstnc6200000001pxzwtqga36a9500000000003fmlb28nqsrohf9100000</script>
       </div>
     </div>
 
     <div class="assure">
       <div>
+        <b>You decide who may do what</b>
+        <span>Listen, look things up, or act: per teammate, in a file in your repo</span>
+      </div>
+      <div>
+        <b>Only your team gets through</b>
+        <span>A phone call is rung back to the caller's verified number; WhatsApp is tied to their account</span>
+      </div>
+      <div>
         <b>It runs on your machine</b>
-        <span>Your session does the work, with the access it already has</span>
-      </div>
-      <div>
-        <b>Only you get through</b>
-        <span>A phone call is rung back to your verified number; WhatsApp is tied to your account</span>
-      </div>
-      <div>
-        <b>The voice holds no keys</b>
-        <span>It talks; your session acts. Nothing on our side can push</span>
+        <span>Your session does the work with its own access; the voice holds no keys</span>
       </div>
     </div>
   </header>
@@ -431,32 +431,44 @@
 <section id="how" class="band">
   <div class="wrap">
     <p class="kicker">how it works</p>
-    <h2>Three steps, then you just call.</h2>
+    <h2>Four steps, then your team just calls.</h2>
     <div class="steps">
       <div class="step">
         <div class="n">1</div>
         <div>
           <h3>Install</h3>
-          <p>One command installs the CLI and verifies your phone number.</p>
+          <p>One command installs the CLI and verifies your phone number. Invite your team at <a href="/team">screenless.sh/team</a>.</p>
         </div>
       </div>
       <div class="step">
         <div class="n">2</div>
         <div>
-          <h3>Arm a session</h3>
-          <p>Type <code>/screenless</code> in Claude Code. That session now answers the line.</p>
+          <h3>Say who may do what</h3>
+          <p>
+            A <code>.agents/permissions.md</code> in your repo gives each teammate
+            a mode: <b>listen</b> (heard, handled after the call), <b>read</b>
+            (answers from your code, tickets and docs) or <b>full</b> (may have
+            your session file the ticket, send the message, ship the fix), with
+            your own rules in plain words.
+          </p>
         </div>
       </div>
       <div class="step">
         <div class="n">3</div>
         <div>
-          <h3>Call</h3>
+          <h3>Arm your session</h3>
+          <p>Type <code>/screenless</code> in Claude Code. That session now answers the line.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <div>
+          <h3>Your team calls</h3>
           <p>
-            Ring the number from any phone, or call it on WhatsApp for HD
-            audio. A phone call hangs up and rings you straight back, so a
-            spoofed caller id gets nowhere; WhatsApp answers at once. Ask,
-            decide, have it push or deploy: answers take seconds to a few
-            minutes, and it tells you how it is going in between.
+            From any phone, or on WhatsApp for HD audio. A phone call hangs up
+            and rings the caller's verified number straight back, so a spoofed
+            caller id gets nowhere. Answers take seconds to a few minutes, and
+            the session says how it is going in between.
           </p>
         </div>
       </div>
@@ -466,25 +478,18 @@
 
 <div class="wrap">
   <section id="team">
-    <p class="kicker">your team</p>
-    <h2>One number for the whole team.</h2>
+    <p class="kicker">and for you</p>
+    <h2>Call it yourself, too.</h2>
     <p class="lede">
-      Everyone calls the same line and reaches their own session. Around that,
-      a few things a team gets for free.
+      The same line works for you: from a walk or the car, ask your session
+      where things stand and have it fix, push or deploy while you are still
+      on the call.
     </p>
     <div class="cols">
       <div>
-        <h3>Teammates can listen in</h3>
-        <p>
-          Share your session's brief with your team, and a teammate who rings
-          hears where it stands. What they ask is noted for after the call; it
-          never runs on your machine while they are on the line.
-        </p>
-      </div>
-      <div>
         <h3>Nobody watching? It waits.</h3>
         <p>
-          Call while no session is armed and your request is transcribed and
+          Call while no session is armed and the request is transcribed and
           queued for the next teammate's terminal that watches, for up to a
           week.
         </p>
@@ -492,9 +497,16 @@
       <div>
         <h3>Your agents can call you</h3>
         <p>
-          Skills built on the line: <code>call-when-afk</code> phones you when
-          an agent is blocked, and <code>morning-pr-review</code> rings with
-          last night's pull requests.
+          When an agent is stuck on a decision only you can make,
+          <code>call-when-afk</code> phones you and carries on with your
+          answer.
+        </p>
+      </div>
+      <div>
+        <h3>One number, one balance</h3>
+        <p>
+          The whole team shares the line and its credit; each caller reaches
+          the session that serves them.
         </p>
       </div>
     </div>
@@ -533,47 +545,28 @@
     <h2>The things you were about to ask.</h2>
     <div class="faq">
       <div>
-        <h3>What can it do during a call?</h3>
-        <p>
-          Anything your session can do at the keyboard: read, edit, run tests,
-          commit, push, deploy, post to Slack. It will not read a secret out
-          loud.
-        </p>
+        <h3>Doesn't Claude Code already do this?</h3>
+        <p>It lets you reach your agent. This lets your team reach it: by phone, without a laptop or an account, under rules you set. The point is that the quick questions stop coming to you.</p>
       </div>
       <div>
-        <h3>What if someone spoofs my number?</h3>
-        <p>
-          They get nowhere. The line never answers a phone call on its caller
-          id: it hangs up and calls your verified number back, so only your
-          phone gets through. A WhatsApp call is tied to your account.
-        </p>
+        <h3>What can a teammate do?</h3>
+        <p>What your <code>.agents/permissions.md</code> gives them: listen (noted for after the call), read (answers from your code, tickets and docs) or full (your session acts for them). Anyone it does not name only listens.</p>
+      </div>
+      <div>
+        <h3>What if someone spoofs a number?</h3>
+        <p>They get nowhere. The line never answers a phone call on its caller id: it hangs up and calls the verified number back, so only that person's phone gets through. A WhatsApp call is tied to the caller's account.</p>
       </div>
       <div>
         <h3>Does my code leave my machine?</h3>
-        <p>
-          No. Your session reads and changes it locally. What passes through
-          us is the call itself: its audio, the transcript, and the short
-          answers your session sends back to be spoken.
-        </p>
+        <p>No. Your session reads and changes it locally. What passes through us is the call itself: its audio, the transcript, and the short answers your session sends back to be spoken.</p>
       </div>
       <div>
-        <h3>Do I have to speak English?</h3>
-        <p>No. It follows whatever language you speak, and switches when you do.</p>
-      </div>
-      <div>
-        <h3>Can I read the install script first?</h3>
-        <p>
-          Please do. It is plain bash, <a href="/install">right here</a>, and
-          the CLI has no dependencies. All of it is on
-          <a href="https://github.com/janwilmake/screenless">GitHub</a>, MIT.
-        </p>
+        <h3>Do callers have to speak English?</h3>
+        <p>No. It follows whatever language they speak, and switches when they do.</p>
       </div>
       <div>
         <h3>What does cancelling look like?</h3>
-        <p>
-          There is nothing to cancel: pay as you go, no subscription. Stop
-          calling and you stop spending.
-        </p>
+        <p>There is nothing to cancel: pay as you go, no subscription. Stop calling and you stop spending.</p>
       </div>
     </div>
   </section>
@@ -581,11 +574,11 @@
 
 <section class="close" id="start">
   <div class="wrap">
-    <h2>Call your session.</h2>
+    <h2>Stop being the bottleneck.</h2>
     <p class="stand">
-      One command installs it and verifies your number. Then type
-      <code>/screenless</code> in Claude Code, and ring. Invite the team at
-      <a href="/team">screenless.sh/team</a>.
+      One command installs it and verifies your number. Write who may do
+      what, type <code>/screenless</code> in Claude Code, and give your team
+      the number. Invite them at <a href="/team">screenless.sh/team</a>.
     </p>
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
@@ -600,7 +593,7 @@
 
 <div class="wrap">
   <footer>
-    <span>screenless — call your Claude Code session</span>
+    <span>screenless — let your team call your Claude Code</span>
     <span>
       <a href="/terms">terms</a> ·
       <a href="/privacy">privacy</a> ·
@@ -632,7 +625,7 @@
     var time = document.getElementById("call-time");
     var canvas = document.getElementById("call-wave");
     if (!box || !audio || !btn || !canvas) return;
-    var FPS = 25, DUR = 40.6;
+    var FPS = 25, DUR = 34.2;
     var env = document.getElementById("call-env").textContent.trim().split("").map(function (c) { return parseInt(c, 36) / 35; });
     var lines = [].slice.call(box.querySelectorAll("li"));
     var said = lines.filter(function (li) { return !li.classList.contains("work"); });
@@ -708,7 +701,7 @@
         mode = "idle"; cancelAnimationFrame(raf);
         box.classList.remove("playing");
         btn.className = ""; btn.textContent = "▶ Play the call";
-        time.textContent = "demo call · 0:40";
+        time.textContent = "demo call · 0:34";
         draw(0); subtitle(0);
       } else silent();
     }

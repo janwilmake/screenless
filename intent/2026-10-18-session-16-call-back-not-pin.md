@@ -106,3 +106,5 @@ then:
 > btw did we have 2 numbers for the phoneline? in that case , should we also have 2 whatsapp reigstrations? if so, tell me what to do
 
 > the demo part of the landing takes a lot of space, maybe subtitles (one line at a time) makes more sense? also, i dont like the 3 tiles, maybe icons is better?
+
+> you know... i think most devs will think 'my claude code app, or, my codex app already does that!' so why pay for a separate service? but the painpoint this is solving is different. don't let your team call you for every little question or thing, let them call your agent! then you remove yourself as the bottleneck and you get less interruptions as a dev, because claude code can handle a lot of questions. so it removes a painpoint for devs because they get less calls/huddles with ideas and small questions etc etc, and the rest of the team is empowered to get instant answers and actually get stuff done in the dev's claude. maybe we should lead with that
