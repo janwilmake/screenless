@@ -238,3 +238,15 @@ export async function whatsappMedia(apiKey: string, phone: string, id: string): 
   if (!url) throw new TelnyxError(500, "/whatsapp/media", j);
   return fetch(url);
 }
+
+/**
+ * A reaction on one of their messages, as a person would leave one: the
+ * line's 👀 says a live session has it. `messageId` is Meta's wamid.
+ */
+export function sendWhatsAppReaction(apiKey: string, from: string, to: string, messageId: string, emoji: string) {
+  return call(apiKey, "POST", "/messages/whatsapp", {
+    from,
+    to,
+    whatsapp_message: { type: "reaction", reaction: { message_id: messageId, emoji } },
+  });
+}

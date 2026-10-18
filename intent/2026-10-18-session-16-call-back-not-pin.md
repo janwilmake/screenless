@@ -136,3 +136,7 @@ then:
 > yes build it like that, and deploy
 
 > "Your team's questions, answered without you." is much more clear and powerful than "Let your team call your Claude Code, not you." which is ambiguous. so lets improve the headline. dont u think?
+
+> hmmm i got no reply
+
+> btw, when a msg is received by a live session, itd be great to put the eyes emoji for a new session, so its clear there's live... can this be done?

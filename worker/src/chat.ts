@@ -36,6 +36,8 @@ export interface ChatMedia {
 /** One inbound message waiting for, or being answered by, a watcher. */
 export interface ChatEntry {
   id: string;
+  /** Meta's id for the message (wamid.…), which a reaction points at. */
+  wamid?: string;
   /** The member whose session answers it. */
   servedBy: string;
   from: { userId: string; name: string; email: string | null; phone: string; level: string; you: boolean };
@@ -102,21 +104,35 @@ export async function whatsappWebhook(req: Request, env: Env, ctx: ExecutionCont
   } catch {
     return json({ ok: true });
   }
-  const type = ev.data?.event_type;
-  const p = ev.data?.payload ?? {};
-  // Delivery receipts for what the line sent, and anything else: noted only.
-  if (type !== "message.received") {
-    console.log("whatsapp event", type);
-    return json({ ok: true });
+  const type = ev.data?.event_type ?? "";
+  const p = (ev.data?.payload ?? ev) as Record<string, unknown>;
+  // The WhatsApp Business Account's webhook says `whatsapp.messages` and
+  // carries Meta's own shape (messages in a list, statuses beside them);
+  // Telnyx's messaging docs describe `message.received` with the message
+  // under `body`. Both are taken: the messages are looked for wherever
+  // they sit. Delivery statuses and anything else are noted only.
+  console.log("whatsapp event", type, JSON.stringify(shapeOf(p)));
+  const found = messagesIn(p);
+  if (type === "message.received" && !found.length) found.push((p.body && typeof p.body === "object" ? p.body : p) as Record<string, unknown>);
+  for (const msg of found) {
+    const id = String(msg.id ?? p.id ?? "");
+    if (!id || (await db.stashGet(env, `waseen:${id}`))) continue;
+    await db.stashPut(env, `waseen:${id}`, "1", 86400);
+    ctx.waitUntil(take(env, p, msg, id).catch((err) => console.error("whatsapp message failed", id, (err as Error).message)));
   }
-  console.log("whatsapp message", JSON.stringify(shapeOf(p)));
-  // Meta's message object sits under `body`; tolerate it flattened.
-  const msg = (p.body && typeof p.body === "object" ? p.body : p) as Record<string, unknown>;
-  const id = String(p.id ?? msg.id ?? "");
-  if (!id || (await db.stashGet(env, `waseen:${id}`))) return json({ ok: true });
-  await db.stashPut(env, `waseen:${id}`, "1", 86400);
-  ctx.waitUntil(take(env, p, msg, id).catch((err) => console.error("whatsapp message failed", id, (err as Error).message)));
   return json({ ok: true });
+}
+
+/** Inbound message objects, wherever the payload nests them: Meta's
+ *  `entry[].changes[].value.messages[]`, or a `messages` list at any depth.
+ *  A message has a sender and a type; a delivery status has neither. */
+function messagesIn(v: unknown, depth = 0): Array<Record<string, unknown>> {
+  if (!v || typeof v !== "object" || depth > 6) return [];
+  if (Array.isArray(v)) return v.flatMap((x) => messagesIn(x, depth + 1));
+  const o = v as Record<string, unknown>;
+  if (Array.isArray(o.messages))
+    return (o.messages as unknown[]).filter((m): m is Record<string, unknown> => !!m && typeof m === "object" && "from" in m && "type" in m);
+  return Object.entries(o).flatMap(([k, x]) => (k === "statuses" ? [] : messagesIn(x, depth + 1)));
 }
 
 const fromOf = (p: Record<string, unknown>, msg: Record<string, unknown>): string => {
@@ -173,8 +189,12 @@ async function take(env: Env, p: Record<string, unknown>, msg: Record<string, un
   }
 
   const now = Date.now();
+  // Meta's own message id: the message's `id` in Meta's shape, its
+  // `foreign_id` in Telnyx's.
+  const wamid = [msg.id, msg.foreign_id, p.foreign_id].map((x) => String(x ?? "")).find((x) => x.startsWith("wamid.")) ?? "";
   const entry: ChatEntry = {
     id,
+    ...(wamid ? { wamid } : {}),
     servedBy,
     from: {
       userId: user.id,
@@ -301,7 +321,13 @@ export async function pendingChats(env: Env, userId: string, watcherId: string):
     const e = JSON.parse(value) as ChatEntry;
     if (e.claimedAt && Date.now() - e.claimedAt < CLAIM_MS) continue;
     const claimed = { ...e, claimedAt: Date.now(), claimedBy: watcherId };
-    if (await db.stashSwap(env, key, value, JSON.stringify(claimed), KEEP_SECS)) out.push(claimed);
+    if (!(await db.stashSwap(env, key, value, JSON.stringify(claimed), KEEP_SECS))) continue;
+    out.push(claimed);
+    // 👀 on their message: a live session has it, before any answer.
+    if (e.wamid && !e.claimedAt)
+      await telnyx
+        .sendWhatsAppReaction(env.TELNYX_API_KEY, env.TELNYX_FROM_NUMBER, e.from.phone, e.wamid, "👀")
+        .catch((err) => console.error("whatsapp reaction failed", e.id, (err as Error).message));
   }
   return out.sort((a, b) => a.at - b.at);
 }
