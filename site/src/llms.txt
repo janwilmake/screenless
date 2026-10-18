@@ -90,7 +90,9 @@ address or a code.
    to save it as a contact (it also takes WhatsApp calls), and to type
    `/screenless` in this Claude Code session to make it answer the line. If
    `/screenless` is not offered yet, the session needs a restart to see the
-   newly installed skill.
+   newly installed skill. If their laptop sleeps or closes, calls and messages
+   wait until it is back: https://screenless.sh/always-on shows how to keep a
+   session answering.
 
 ## Pages
 

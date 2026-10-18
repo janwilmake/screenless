@@ -17,7 +17,8 @@ Hear a demo call at **[screenless.sh](https://screenless.sh)**.
    number and invites your colleagues; or by hand,
    `curl -fsSL https://screenless.sh/install | bash`.
 2. **Arm a session** — type **`/screenless`** in Claude Code. That session now
-   answers the line.
+   answers the line. To keep it answering with your laptop closed, run it on a
+   machine that stays on: [screenless.sh/always-on](https://screenless.sh/always-on).
 3. **Call or message** — ring the number, or call it on WhatsApp. A voice
    talks with you; each thing you ask runs in a fork of your session on your
    machine, and the answer is spoken back during the call. Read, edit, test,

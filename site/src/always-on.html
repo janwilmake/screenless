@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>screenless — keep your session answering</title>
+<meta name="description" content="How to keep the Claude Code session that answers your team's calls and WhatsApp messages awake: an always-on machine, or a laptop that does not sleep.">
+<link rel="canonical" href="https://screenless.sh/always-on">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0c0e14; --ink-2:#3b414d; --muted:#697086; --soft:#9aa1b2;
+    --spot:#c23a1f; --spot-weak:#fbeae5;
+    --bg:#ffffff; --bg-2:#f7f8fb; --line:#e8eaf0;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.65;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:0 auto;padding:0 24px}
+  .top{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:19px;letter-spacing:-.02em;
+         text-decoration:none;color:var(--ink)}
+  .top a.home{color:var(--muted);text-decoration:none;font-size:14.5px;font-weight:500}
+  main{padding:40px 0 72px}
+  .kicker{font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--spot);text-transform:uppercase;margin:0 0 14px}
+  h1{font-size:clamp(32px,5vw,46px);font-weight:800;letter-spacing:-.035em;line-height:1.08;margin:0}
+  .lede{font-size:19px;color:var(--muted);margin:20px 0 0}
+  h2{font-size:24px;font-weight:700;letter-spacing:-.025em;margin:52px 0 6px}
+  h2 + .sub{color:var(--muted);margin:0 0 18px}
+  p{margin:0 0 14px;color:var(--ink-2)}
+  ol,ul{padding-left:22px;color:var(--ink-2)}
+  li{margin-bottom:12px}
+  code{font-family:var(--mono);font-size:.84em;background:var(--bg-2);border:1px solid var(--line);
+       border-radius:6px;padding:1px 6px}
+  pre{font-family:var(--mono);font-size:14px;background:var(--ink);color:#eef0f5;border-radius:12px;
+      padding:16px 18px;overflow-x:auto;margin:10px 0 0;line-height:1.6}
+  pre .c{color:#8b93a7}
+  .note{background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+        font-size:15.5px;margin:18px 0 0}
+  .note b{color:var(--ink)}
+  a{color:var(--ink);text-underline-offset:3px}
+  footer{border-top:1px solid var(--line);padding:22px 0 36px;font-size:13.5px;color:var(--muted)}
+  footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
+    <a class="home" href="/">home</a>
+  </div>
+  <main>
+    <p class="kicker">guide</p>
+    <h1>Keep your session answering, laptop closed or not.</h1>
+    <p class="lede">
+      screenless answers with the Claude Code session where you typed
+      <code>/screenless</code>, on that machine. When the machine sleeps,
+      nobody gets a live answer: calls and messages wait until it is back.
+      Two ways to keep it answering.
+    </p>
+
+    <h2>The sturdy way: an always-on machine</h2>
+    <p class="sub">A small Linux server for a few euros a month, or a Mac mini at home. This is how screenless's own maker runs his session, on a server in Finland.</p>
+    <ol>
+      <li>
+        Install Node.js 20 or newer, git and tmux, then Claude Code:
+        <pre>npm install -g @anthropic-ai/claude-code</pre>
+      </li>
+      <li>Clone your repo, and connect the MCP servers you want the session to have (Linear, Slack, your tracker), as you did on your laptop.</li>
+      <li>
+        Start a session that keeps running when you disconnect:
+        <pre>tmux new -s claude
+cd your-repo
+claude          <span class="c"># log in when it asks; it prints a link</span></pre>
+      </li>
+      <li>
+        Paste the install prompt. It sets screenless up on this machine and
+        asks you for a fresh code for your number; your team is already
+        invited.
+        <pre>Install https://screenless.sh/llms.txt into this repo and invite my team.</pre>
+      </li>
+      <li>Type <code>/screenless</code>. Then detach with <code>Ctrl-b</code> followed by <code>d</code>: the session keeps answering. <code>tmux attach -t claude</code> takes you back to it.</li>
+    </ol>
+    <div class="note">
+      <b>Treat that machine like your laptop.</b> It now holds your Claude
+      login, your repo access and your MCP tokens: SSH keys only, no other
+      users, and a firewall that only lets SSH in. It has no browser of
+      yours, so work that needs your logged-in Chrome waits for your laptop.
+    </div>
+
+    <h2>The quick way: a laptop that does not sleep</h2>
+    <p class="sub">Fine for a working day; it answers as long as the laptop stays awake and online.</p>
+    <ul>
+      <li>On a Mac, in System Settings → Battery → Options, turn on <b>Prevent automatic sleeping on power adapter when the display is off</b>. Or keep a terminal tab running <code>caffeinate -is</code>, which holds it awake on power for as long as it runs.</li>
+      <li>Closing the lid still puts a MacBook to sleep, unless it is plugged in with an external display and keyboard (clamshell mode).</li>
+      <li>On a Linux laptop, set the lid to do nothing: <code>HandleLidSwitch=ignore</code> in <code>/etc/systemd/logind.conf</code>.</li>
+    </ul>
+
+    <h2>Answer from one place</h2>
+    <p>
+      Run <code>/screenless</code> in one session per person. With two, say
+      your laptop and the server, a call goes to whichever checked in last,
+      and a WhatsApp conversation's memory stays on the machine that answered
+      it. Once the server answers, stop the one on your laptop.
+    </p>
+  </main>
+  <footer>
+    <a href="/">screenless</a> · your team's questions, answered without you ·
+    <a href="https://github.com/janwilmake/screenless">github</a>
+  </footer>
+</div>
+</body>
+</html>
