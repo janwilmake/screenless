@@ -1,8 +1,10 @@
 # Give your session a seat on the team
 
 A product idea, written 18 October 2026 for later. Not being built now.
-Working name: **Team Seat**. It would combine watchloop and screenless under a
-new name.
+Name: **Remo** (Jan, 18 October 2026), a company-level umbrella being
+Wilmake. It would combine watchloop and screenless. Still to check: the
+domain, and the trademark in software, where remo.co (a virtual-events
+platform) already uses it.
 
 ## The idea in one line
 
@@ -58,7 +60,7 @@ are things the seat can do.
 
 ## Comparison
 
-| | **Team Seat** | **Kylon** | **Claude Tag** | **Claude Remote Control / Channels** |
+| | **Remo** | **Kylon** | **Claude Tag** | **Claude Remote Control / Channels** |
 |---|---|---|---|---|
 | Where people talk to it | Their own Slack, email, calendar, Meet; WhatsApp and phone as add-ons | A new Kylon workspace (rooms, threads, records, files) | Slack | The Claude app, browser; Telegram and Discord (Channels) |
 | Who can reach it | The whole team, per-person levels | The workspace's members | The Slack workspace | Only the developer |
@@ -69,7 +71,7 @@ are things the seat can do.
 | Price | Not set; mostly free to run | Not published | Team/Enterprise plans plus usage | Included in Claude plans |
 
 **The short version for Kylon:** Kylon asks a team to move its work into a
-new place where agents are members. Team Seat leaves the team where it is and
+new place where agents are members. Remo leaves the team where it is and
 gives the session a seat there.
 
 ## Pricing
@@ -228,7 +230,6 @@ it saved them.
 
 ## Open questions
 
-- **The name.** Not checked for availability.
 - **More agents:** does the seat work with Codex and the others from the
   start (see `research/agent-hosts.md`), or Claude first?
 

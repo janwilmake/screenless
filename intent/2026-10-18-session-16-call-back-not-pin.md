@@ -179,3 +179,7 @@ then:
 > its interesting hyre charges per user, but with 'seat' we could charge per identity. maybe a per user business model works better
 
 > yes replace it with per active user pricing
+
+> what if we call it wilmake.com?
+
+> okok.... lets call it 'Remo'
