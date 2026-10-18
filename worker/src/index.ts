@@ -43,6 +43,10 @@ export interface Env {
   /** Optional. Guards /admin/test-ring, the scripted caller used to test the
    *  line end to end without a person on the phone. Unset disables it. */
   TEST_RING_SECRET: string;
+  /** The `t` the WhatsApp TeXML application's voice URL carries: what marks
+   *  a call as WhatsApp. Its own secret rather than derived, so the URL can be
+   *  set up and rotated without the session secret. Unset, none is taken. */
+  WHATSAPP_VOICE_TOKEN: string;
   /** Runs GPT-Live for live ring-ins. A key of a project with gpt-live-1
    *  access; while unset, every ring-in is the quiet recording. */
   OPENAI_LIVE_API_KEY: string;
@@ -710,7 +714,7 @@ async function answerInbound(req: Request, env: Env, origin: string, ctx: Execut
  */
 async function answerWhatsApp(req: Request, env: Env): Promise<Response> {
   const provided = new URL(req.url).searchParams.get("t") ?? "";
-  if (!safeEqual(provided, await webhookToken("whatsapp", env.SESSION_SECRET))) return fail(403, "bad webhook token");
+  if (!env.WHATSAPP_VOICE_TOKEN || !safeEqual(provided, env.WHATSAPP_VOICE_TOKEN)) return fail(403, "bad webhook token");
 
   const params = await inboundBody(req);
   console.log("whatsapp inbound", Object.keys(params).sort().join(","));
@@ -1344,7 +1348,7 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
     statusCallbackUrl: `${origin}/webhooks/inbound/status?t=${token}`,
     // A TeXML application of its own, for the WhatsApp calling connection
     // only: its URL is what marks a call as WhatsApp (answerWhatsApp).
-    whatsappVoiceUrl: `${origin}/texml/whatsapp?t=${await webhookToken("whatsapp", env.SESSION_SECRET)}`,
+    whatsappVoiceUrl: env.WHATSAPP_VOICE_TOKEN ? `${origin}/texml/whatsapp?t=${env.WHATSAPP_VOICE_TOKEN}` : null,
     next:
       "Telnyx portal → Voice → TeXML Applications → (new or existing) → set the " +
       "Voice URL above and POST, set the Status Callback URL above and POST, " +

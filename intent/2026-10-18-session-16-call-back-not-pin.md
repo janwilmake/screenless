@@ -33,8 +33,13 @@ Still open:
   WhatsApp URL from `GET /admin/inbound-url`. Whether Telnyx lets the WhatsApp
   connection point at a different TeXML app than the phone number is not
   confirmed from the docs.
-- The `users` columns `pin_hash`, `pin_salt`, `last_attestation` are still in
-  the production D1; dropping them is in `schema.sql` and waits for a yes.
+- ~~The PIN columns still in production~~ — dropped on Jan's yes.
+- The WhatsApp URL's `t` is its own secret, `WHATSAPP_VOICE_TOKEN`, so it
+  could be set up without the session secret. The TeXML application
+  `screenless-whatsapp` was prepared in the portal; Jan pastes the two URLs
+  (tokens are his to enter) and does Meta's signup himself. 085 numbers take
+  no SMS, so Meta's code comes by voice: `/admin/forward-strangers` puts
+  non-member calls through to a member's phone for up to half an hour.
 - The quiet ear says nothing on pickup, so a ring-back with no watcher is
   silent when answered, as a ring-in was.
 
