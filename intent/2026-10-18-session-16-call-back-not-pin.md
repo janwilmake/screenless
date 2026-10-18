@@ -126,3 +126,9 @@ then:
 > yes build it. also, we should simplify installation: a prompt given to an agent like 'install screenless.sh/llms.txt into this repo and invite my team' which can be copied from the website, where this llms.txt explains to run the installer command as well as look into connected communication channels to find your teams' email adresses, and use the cli to invite them. the main option should be to invite the whole company, and this must also be easy over cli. the invited person fills in their phonenumber themselves, right? the communication mcp can also probably show who YOU are, so that can also be set up, but the only missing info is YOUR number and its verification, so that must be asked in the session. wdyt???
 
 > B
+
+> great! let's reaaaaaaaly think about nailing the landingpage now. suggest improvements
+
+> 1 not yet 2 yes, and deploy without preview, i trust its gonna be better
+
+> 'why not slack' is a great objection btw... and the truth is: slack IS very useful. and screenless just offers calls. adding slack is a bigger work and kinda hard, and i dont think its worth it now. but maybe its kinda low-hanging fruit though, to also add whatsapp chats. these could be routed to a claude code fork too, and answered, right? ideally also allowing screenshots and audio... the main question is though: does every msg become a new fork? or can we append to an existing fork? wdyt?

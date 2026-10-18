@@ -47,7 +47,7 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "A phone line to a developer's Claude Code session for their whole team. Teammates call, by phone or WhatsApp, and the session answers from the code, tickets and docs, or acts, under rules the developer sets in .agents/permissions.md, on the developer's own machine. Phone calls are rung back to the caller's verified number. The developer can call it too.",
+      "description": "A phone number for a developer's Claude Code session that their whole team can call. Teammates ring it, by phone or WhatsApp, and the session they reach, with everything it knows right now, answers from the code, tickets and docs, or acts, under rules the developer sets per person, on the developer's own machine. Phone calls are rung back to the caller's verified number. The developer can call it too.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
@@ -69,15 +69,31 @@
           "name": "Doesn't Claude Code already do this?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "It lets you reach your agent. This lets your team reach it: by phone, without a laptop or an account, under rules you set. The point is that the quick questions stop coming to you."
+            "text": "It lets you reach your agent. This lets your team reach it: by phone, with no laptop, seat or account, under rules you set. The quick questions stop coming to you."
           }
         },
         {
           "@type": "Question",
-          "name": "What can a teammate do?",
+          "name": "Why a call, and not Slack?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The level you give them on the team page: listen (noted for after the call), read (answers from your code, tickets and docs) or full (your session acts for them), or a level of your own that your repo's .agents/permissions.md defines."
+            "text": "Use both: Slack is great for questions you can type. A call is for when typing does not work: on the road, between meetings, or when a conversation is faster than a thread. And it is not a fresh bot: the call reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if my laptop is closed?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Then nobody gets a live answer, because the session runs on your machine. The call is still taken: what they ask is transcribed and waits, up to a week, for your session or a teammate's. For answers around the clock, type /screenless in a session on a machine that stays on."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What exactly can a teammate do?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "What you give them, per person on your team page: hear where things stand (what they ask is handled after the call), get answers from your code, tickets and docs, or get things done (your session files the ticket, sends the message, ships the fix). In the CLI these are listen, read and full, and a .agents/permissions.md in your repo can define levels and rules of your own, with no names in it."
           }
         },
         {
@@ -106,6 +122,14 @@
         },
         {
           "@type": "Question",
+          "name": "Can I read the code first?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Please do. It is open source, MIT, on GitHub; the install script is plain bash, and the CLI has no dependencies. To install by hand instead: curl -fsSL https://screenless.sh/install | bash"
+          }
+        },
+        {
+          "@type": "Question",
           "name": "What does cancelling look like?",
           "acceptedAnswer": {
             "@type": "Answer",
@@ -120,7 +144,7 @@
 <style>
   :root{
     --ink:#0c0e14; --ink-2:#3b414d; --muted:#697086; --soft:#9aa1b2;
-    --spot:#c23a1f; --spot-weak:#fbeae5;
+    --spot:#c23a1f; --spot-weak:#fbeae5; --ok:#1f8a55; --ok-weak:#e6f4ec;
     --bg:#ffffff; --bg-2:#f7f8fb; --card:#ffffff; --line:#e8eaf0; --line-2:#eef0f5;
     --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -142,7 +166,6 @@
   p{margin:0}
 
   /* --------------------------------------------------------------- navbar */
-  .rule{display:none}
   .top{display:flex;justify-content:space-between;align-items:center;
        padding:20px 0;font-size:14.5px}
   .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:19px;
@@ -155,21 +178,38 @@
   .top nav a.navcta:hover{background:var(--spot)}
 
   /* ----------------------------------------------------------------- hero */
-  .hero{padding:72px 0 76px}
+  .hero{padding:64px 0 80px}
   .hero-grid{display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center}
-  /* Grid items default to their content's width; the unbreakable install
-     command would otherwise push the column past a phone's screen. */
+  /* Grid items default to their content's width; an unbreakable line would
+     otherwise push the column past a phone's screen. */
   .hero-grid > *{min-width:0}
   .hero h1{font-size:clamp(40px,5vw,66px);letter-spacing:-.038em;font-weight:800;margin:0}
   .hero .stand{font-size:clamp(17px,1.5vw,20px);color:var(--muted);
-               max-width:50ch;margin:24px 0 0;line-height:1.55}
+               max-width:46ch;margin:24px 0 0;line-height:1.55}
+  /* What sets it apart from a bot: the session you are already in. */
+  .diff{margin:18px 0 0;padding:2px 0 2px 14px;border-left:3px solid var(--spot);
+        font-size:16px;font-weight:500;color:var(--ink-2);max-width:46ch;line-height:1.5}
   .for{display:inline-block;font-size:12.5px;font-weight:600;color:var(--spot);
        background:var(--spot-weak);border-radius:99px;padding:7px 15px;margin:0 0 24px}
 
-  /* Primary command / CTA pill */
-  .cmd{display:inline-flex;align-items:center;gap:14px;margin:36px 0 0;
+  /* The install prompt: prose, so it wraps instead of scrolling. */
+  .paste{font-size:13.5px;font-weight:600;color:var(--ink-2);margin:32px 0 0}
+  .cmd{display:flex;align-items:center;gap:14px;margin:10px 0 0;
        background:var(--ink);border-radius:var(--r);padding:8px 8px 8px 20px;
        text-align:left;max-width:100%;box-shadow:var(--shadow-lg)}
+  .cmd code{font-family:var(--sans);font-size:15px;color:#eef0f5;white-space:normal;line-height:1.45;
+            background:none;border:0;padding:0;flex:1}
+  .cmd button{font-size:13px;font-weight:600;cursor:pointer;background:#fff;
+              color:var(--ink);border:0;border-radius:9px;padding:11px 16px;flex-shrink:0}
+  .cmd button:hover{background:var(--spot);color:#fff}
+  .fine{font-size:13.5px;color:var(--muted);margin:14px 0 0;line-height:1.55}
+  .fine a{color:var(--muted)}
+  /* What you call from, and what answers. */
+  .works{display:flex;flex-wrap:wrap;gap:8px 22px;margin:24px 0 0;padding:0;list-style:none;
+         font-size:14.5px;font-weight:500;color:var(--ink-2)}
+  .works li{display:flex;align-items:center;gap:8px}
+  .works svg{width:20px;height:20px;flex-shrink:0}
+  .works span{color:var(--muted);font-weight:400}
 
   /* ------------------------------------------------- the demo call, played */
   .phone{background:#0c0e14;color:#eef0f5;border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
@@ -195,89 +235,53 @@
   .sub .act{display:block;font-family:var(--mono);font-size:12.5px;color:#5bbf87;
             margin-top:10px;min-height:19px}
   .phone canvas{display:block;width:100%;height:64px;border-bottom:1px solid #1c1f2a;cursor:pointer}
-  .cmd code{font-family:var(--mono);font-size:14.5px;color:#eef0f5;
-            white-space:nowrap;overflow-x:auto;background:none;border:0;padding:0}
-  .cmd code .p{color:var(--soft);user-select:none}
-  .cmd button{font-size:13px;font-weight:600;cursor:pointer;background:#fff;
-              color:var(--ink);border:0;border-radius:9px;padding:11px 16px;flex-shrink:0}
-  .cmd button:hover{background:var(--spot);color:#fff}
-  .fine{font-size:13.5px;color:var(--muted);margin:18px 0 0}
-  .fine code.inline{font-size:12px;white-space:normal}
-  .paste{font-size:13.5px;font-weight:600;color:var(--ink-2);margin:34px 0 0}
-  .paste + .cmd{margin-top:10px}
-  /* The prompt is prose, so it wraps instead of scrolling like a command. */
-  .cmd.prompt code{font-family:var(--sans);font-size:15px;white-space:normal;line-height:1.45}
-  /* What you call from, and what answers. */
-  .works{display:flex;flex-wrap:wrap;gap:8px 22px;margin:26px 0 0;padding:0;list-style:none;
-         font-size:14.5px;font-weight:500;color:var(--ink-2)}
-  .works li{display:flex;align-items:center;gap:8px}
-  .works svg{width:20px;height:20px;flex-shrink:0}
-  .works span{color:var(--muted);font-weight:400}
-  .fine a{color:var(--muted)}
-
-  .assure{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
-          margin:56px auto 0;max-width:860px;text-align:left}
-  .assure div{background:var(--card);border:1px solid var(--line);
-              border-radius:var(--r);padding:20px 22px;box-shadow:var(--shadow)}
-  .assure b{display:block;font-size:15px;font-weight:600}
-  .assure span{display:block;font-size:14px;color:var(--muted);margin-top:6px;line-height:1.5}
 
   /* -------------------------------------------------------------- section */
-  section{padding:88px 0}
+  section{padding:92px 0}
   section.band{background:var(--bg-2)}
   .kicker{font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--spot);
           margin:0 0 16px;text-transform:uppercase}
   h2{font-size:clamp(28px,3.6vw,44px);max-width:20ch;letter-spacing:-.03em}
-  .lede{font-size:19px;color:var(--muted);max-width:56ch;margin:20px 0 0;line-height:1.6}
+  .lede{font-size:19px;color:var(--muted);max-width:52ch;margin:20px 0 0;line-height:1.6}
 
-  /* card grids (problem, the line) */
-  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:48px}
-  .cols > div{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-              padding:26px 26px;box-shadow:var(--shadow)}
-  .cols h3{font-size:19px;font-weight:600;margin:0 0 10px;max-width:18ch}
-  .cols p{color:var(--muted);font-size:16px;line-height:1.6}
-  .cols code{font-size:.82em}
+  /* ------------------------------------------------------- what they ask */
+  .asks{margin:44px 0 0;padding:0;list-style:none;background:var(--card);border:1px solid var(--line);
+        border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+  .asks li{display:grid;grid-template-columns:110px 1fr auto;gap:20px;align-items:center;
+           padding:20px 26px;border-top:1px solid var(--line-2)}
+  .asks li:first-child{border-top:0}
+  .asks .role{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--soft)}
+  .asks q{font-size:18px;color:var(--ink-2);quotes:"\201C" "\201D"}
+  .asks .tag{font-size:13px;font-weight:500;color:var(--muted);background:var(--bg-2);
+             border:1px solid var(--line);border-radius:99px;padding:5px 12px;white-space:nowrap}
+  .asks .tag.done{color:var(--ok);background:var(--ok-weak);border-color:transparent}
+  .note{font-size:15px;color:var(--muted);margin:18px 0 0}
 
-  /* ----------------------------------------------------- the call, spoken */
-  .call{margin-top:48px;background:var(--bg-2);border:1px solid var(--line);
-        border-radius:var(--r-lg);padding:34px 40px}
-  .call p{font-size:19px;line-height:1.55;margin:0 0 22px;max-width:60ch;color:var(--ink-2)}
-  .call p:last-child{margin-bottom:0}
-  .call .you{color:var(--spot);font-weight:600}
-  .call .you::before{content:"— "}
-  .meta{font-family:var(--mono);font-size:12.5px;color:var(--muted);
-        margin:26px 0 0}
+  /* --------------------------------------------------------- three steps */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin:48px 0 0;padding:0;list-style:none}
+  .steps .n{display:block;font-size:44px;font-weight:800;letter-spacing:-.04em;color:var(--spot);line-height:1;margin-bottom:16px}
+  .steps h3{font-size:20px;font-weight:650;margin:0 0 8px}
+  .steps p{color:var(--muted);font-size:16px;line-height:1.55}
 
-  /* ---------------------------------------------------------------- steps */
-  .steps{margin-top:48px;display:grid;gap:16px}
-  .step{display:grid;grid-template-columns:88px 1fr;gap:24px;align-items:start;
-        background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-        padding:24px 26px;box-shadow:var(--shadow)}
-  .step .n{font-family:var(--mono);font-size:13px;color:var(--spot);font-weight:500;
-           background:var(--spot-weak);border-radius:8px;padding:6px 10px;text-align:center}
-  .step h3{font-size:18px;font-weight:600;margin:0 0 6px}
-  .step p{color:var(--muted);font-size:16px;max-width:56ch;line-height:1.55}
+  /* ----------------------------------------------------------- your rules */
+  .trust{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin:48px 0 0}
+  .trust svg{width:30px;height:30px;color:var(--spot);margin-bottom:14px}
+  .trust h3{font-size:19px;font-weight:650;margin:0 0 8px}
+  .trust p{color:var(--muted);font-size:16px;line-height:1.55}
 
-  /* ----------------------------------------------------------- try it now */
-  .term{background:#0c0e14;color:#eef0f5;margin-top:40px;border-radius:var(--r-lg);
-        padding:28px 30px;font-family:var(--mono);font-size:14px;
-        line-height:1.85;overflow-x:auto;box-shadow:var(--shadow-lg)}
-  .term .p{color:var(--soft);user-select:none}
-  .term .c{color:var(--soft)}
-  .term .out{color:#8b93a7}
-  .term .hit{color:#f0876a}
-
-  /* ------------------------------------------------------------- boundary */
-  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:48px}
-  .split > div{background:var(--card);border:1px solid var(--line);
-               border-radius:var(--r);padding:28px 30px;box-shadow:var(--shadow)}
-  .split > div.no{background:var(--bg-2)}
-  .split .what{font-size:12px;font-weight:700;letter-spacing:.04em;
-               text-transform:uppercase;margin-bottom:16px;color:var(--muted)}
-  .split .no .what{color:var(--spot)}
-  .split ul{margin:0;padding-left:20px;font-size:16px;color:var(--muted);line-height:1.5}
-  .split li{margin-bottom:10px}
-  .split li:last-child{margin-bottom:0}
+  /* ---------------------------------------------------------- and for you */
+  /* Not `.you`: the demo call's subtitle already uses that for the caller. */
+  .self{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
+  .self > *{min-width:0}
+  .self .lede + .lede{font-size:16px;margin-top:16px}
+  .chat{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+        box-shadow:var(--shadow);padding:24px 26px;font-size:16px;line-height:1.5}
+  .chat p{margin:0 0 12px;color:var(--ink-2)}
+  .chat p:last-child{margin:0}
+  .chat b{font-weight:600;margin-right:7px}
+  .chat .me b{color:var(--muted)}
+  .chat .it b{color:var(--spot)}
+  .chat .did{font-family:var(--mono);font-size:12.5px;color:var(--ok)}
 
   /* ---------------------------------------------------------------- price */
   .price{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:48px}
@@ -290,66 +294,60 @@
   .price .per{font-size:14px;color:var(--muted)}
   .price ul{margin:22px 0 0;padding-left:20px;font-size:16px;color:var(--muted);line-height:1.5}
   .price li{margin-bottom:9px}
-  .guarantee{font-size:15px;color:var(--muted);margin-top:24px;
-             background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r);
-             padding:18px 22px;max-width:none}
 
   /* ------------------------------------------------------------------ faq */
-  .faq{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:44px}
-  .faq div{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
-           padding:24px 26px;box-shadow:var(--shadow)}
-  .faq h3{font-size:16.5px;font-weight:600;margin:0 0 8px;max-width:32ch}
-  .faq p{color:var(--muted);font-size:15.5px;line-height:1.55}
+  .faq{margin:40px 0 0;max-width:780px;border-top:1px solid var(--line)}
+  .faq details{border-bottom:1px solid var(--line)}
+  .faq summary{cursor:pointer;list-style:none;padding:20px 40px 20px 0;font-size:17.5px;font-weight:600;
+               position:relative}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:"+";position:absolute;right:4px;top:16px;font-size:24px;font-weight:400;color:var(--soft)}
+  .faq details[open] summary::after{content:"\2013"}
+  .faq p{color:var(--muted);font-size:16px;line-height:1.6;padding:0 40px 22px 0;max-width:68ch}
+  .faq code{white-space:normal}
 
   /* ---------------------------------------------------------------- close */
   .close{background:var(--ink);color:#fff;padding:100px 0;text-align:center}
-  .close .wrap > *{position:relative}
   .close h2{color:#fff;margin:0 auto;max-width:18ch;font-size:clamp(32px,4.4vw,50px)}
-  .close .stand{color:#aab0c0;max-width:48ch;margin:22px auto 0;font-size:18px;line-height:1.55}
-  .close .stand a{color:#fff}
-  .close .cmd{background:#fff}
+  .close .stand{color:#aab0c0;max-width:46ch;margin:22px auto 0;font-size:18px;line-height:1.55}
+  .close .cmd{background:#fff;max-width:640px;margin:34px auto 0}
   .close .cmd code{color:var(--ink)}
   .close .cmd button{background:var(--ink);color:#fff}
   .close .cmd button:hover{background:var(--spot)}
-  .close .fine{color:var(--soft);max-width:60ch;margin:22px auto 0}
+  .close .fine{color:var(--soft);margin:20px auto 0}
   .close .fine a{color:#aab0c0}
 
-  .early{background:var(--bg-2)}
-  .early .lede{max-width:62ch}
-  .early .lede + .lede{margin-top:18px}
-
-  footer{font-size:13.5px;color:var(--muted);padding:32px 0;display:flex;
-         justify-content:space-between;gap:18px;flex-wrap:wrap;border-top:1px solid var(--line)}
+  footer{font-size:13.5px;color:var(--muted);padding:28px 0 36px;display:flex;align-items:center;
+         justify-content:space-between;gap:18px;flex-wrap:wrap}
   footer a{color:var(--muted)}
+  footer .by{display:flex;align-items:center;gap:10px}
+  footer .by img{width:24px;height:24px;border-radius:50%}
 
   @media(max-width:900px){
-    .hero-grid{grid-template-columns:1fr;gap:40px}
-    .cols{grid-template-columns:1fr}
+    .hero-grid,.self{grid-template-columns:1fr;gap:40px}
+    .steps,.trust{grid-template-columns:1fr;gap:30px}
   }
   @media(max-width:720px){
     body{font-size:16px}
     .top nav{gap:16px}
     .top nav a:not(.navcta){display:none}
-    .hero{padding:52px 0 56px}
-    section{padding:60px 0}
-    .price,.split,.faq,.assure{grid-template-columns:1fr}
-    .call{padding:26px 24px}
-    .cmd{width:100%}
-    .term{font-size:12.5px;padding:22px}
-    .step{grid-template-columns:1fr;gap:10px}
-    .step .n{justify-self:start;padding:5px 12px}
+    .hero{padding:44px 0 56px}
+    section{padding:64px 0}
+    .price{grid-template-columns:1fr}
+    .asks li{grid-template-columns:1fr;gap:6px;padding:18px 20px}
+    .asks .tag{justify-self:start}
+    .asks q{font-size:17px}
   }
 </style>
 </head>
 <body>
 
-<div class="rule"></div>
 <div class="wrap">
   <div class="top">
     <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
     <nav>
+      <a href="#asks">what they ask</a>
       <a href="#how">how</a>
-      <a href="#team">for you</a>
       <a href="#price">price</a>
       <a href="#faq">faq</a>
       <a class="navcta" href="#start">Get started</a>
@@ -362,26 +360,27 @@
         <p class="for">For developers on Claude Code</p>
         <h1>Let your team call your Claude Code, not you.</h1>
         <p class="stand">
-          Every "quick question" is a call or a huddle that pulls you out of
-          your work. Give your team a phone number for your Claude Code
-          session instead. It answers from your code, tickets and docs, and
-          does what you allow, right away. You get fewer interruptions; they
-          stop waiting on you.
+          Every quick question from your team is a call or a huddle that
+          breaks your focus. Give them a number for your Claude Code session
+          instead: it answers, and does what you allow.
+        </p>
+        <p class="diff">
+          Not a new bot: the session you are already working in, with
+          everything it knows right now.
         </p>
 
         <!-- The install is a prompt: the agent runs the installer, finds the
              team in the user's connected tools, and only asks for the user's
-             number and codes (llms.txt). The curl is for doing it by hand. -->
+             number and codes (llms.txt). By hand is in the FAQ. -->
         <p class="paste">Paste into Claude Code:</p>
-        <div class="cmd prompt">
+        <div class="cmd">
           <code>Install https://screenless.sh/llms.txt into this repo and invite my team.</code>
           <button type="button" data-copy="Install https://screenless.sh/llms.txt into this repo and invite my team.">copy</button>
         </div>
         <p class="fine">
           It installs, verifies your number and invites your team, asking you
-          only for your number and the codes. By hand:
-          <code class="inline">curl -fsSL https://screenless.sh/install | bash</code>
-          · $10 free · <a href="/install">read the script</a>
+          only for your number and the codes. $10 free ·
+          <a href="https://github.com/janwilmake/screenless">open source, MIT</a>
         </p>
         <ul class="works">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="#0c0e14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>Any phone</li>
@@ -421,121 +420,115 @@
         <script type="text/plain" id="call-env">00atp92gvtpmlhb4000155mokkb24bsuvmd67mkda9jkjjhfc920000cg5bonnokrod82000000001dvlgjic6200000000000ad37ch6557cjmp8lorth65526630dc524aigf43boidd81ann68otn74cecegc08egegg7552jljhega7649632200000000000018ee3pnf820000000000006ehnorurnj81000000000000000000000000000000000000000000000000001cgid725doooke500000000000000000bmi63hllhcea3aokclohg95ehghqrnoic85345424mke721452100000000018aejjfa6dbhfgf9b855mljjc8cjnpmigedghghkke648bdc97651cqlia20000000000008nne43gggeghc7774007hppe41139knea65420000000000000bie2477776100000000000024ejllquf0edh934f1e922hahvure104adcdd5584eggdedeedb840000000001beghlormmg8100000000000000000000000000000000000002jsspea620000000000000c85cl64ee51004igekjlc87hkjjhe8049dnge964201ahihhfgfa4204bggija17ijhijjgb6200000000000000001hmne6kllmi85652000000000000boog8200002jn98hstnc6200000001pxzwtqga36a9500000000003fmlb28nqsrohf9100000</script>
       </div>
     </div>
-
-    <div class="assure">
-      <div>
-        <b>You decide who may do what</b>
-        <span>Listen, look things up, or act: a level per teammate, set on the team page</span>
-      </div>
-      <div>
-        <b>Only your team gets through</b>
-        <span>A phone call is rung back to the caller's verified number; WhatsApp is tied to their account</span>
-      </div>
-      <div>
-        <b>It runs on your machine</b>
-        <span>Your session does the work with its own access; the voice holds no keys</span>
-      </div>
     </div>
   </header>
+</div>
+
+<div class="wrap">
+  <section id="asks">
+    <p class="kicker">what they ask</p>
+    <h2>The quick questions, answered without you.</h2>
+    <!-- Illustrations of what a team asks a developer's session, not
+         quotes from customers: there are none to quote yet. -->
+    <ul class="asks">
+      <li><span class="role">Sales</span><q>Do we support SSO with Okta yet?</q><span class="tag">answered from the code</span></li>
+      <li><span class="role">Product</span><q>What&#x27;s still blocking Thursday&#x27;s release?</q><span class="tag">answered from Linear and CI</span></li>
+      <li><span class="role">Support</span><q>Why did Acme&#x27;s export fail last night?</q><span class="tag">answered from the logs</span></li>
+      <li><span class="role">Founder</span><q>How far along is the billing rework?</q><span class="tag">answered from git and the tickets</span></li>
+      <li><span class="role">Design</span><q>Change the empty-state copy and put it on staging.</q><span class="tag done">done: on staging</span></li>
+    </ul>
+    <p class="note">
+      Each teammate gets what you give them: hears where things stand, gets
+      answers, or gets things done.
+    </p>
+  </section>
 </div>
 
 <section id="how" class="band">
   <div class="wrap">
     <p class="kicker">how it works</p>
-    <h2>Four steps, then your team just calls.</h2>
-    <div class="steps">
-      <div class="step">
-        <div class="n">1</div>
-        <div>
-          <h3>Install and invite</h3>
-          <p>Paste the prompt into Claude Code. It installs the CLI, verifies your number, finds your colleagues in Slack or your workspace directory, and invites them once you say yes. Each verifies their own number.</p>
-        </div>
+    <h2>Three steps. Then they just call.</h2>
+    <ol class="steps">
+      <li>
+        <span class="n">1</span>
+        <h3>Paste the prompt</h3>
+        <p>Claude Code installs screenless, verifies your number, and invites your colleagues once you say yes.</p>
+      </li>
+      <li>
+        <span class="n">2</span>
+        <h3>Pick what each gets</h3>
+        <p>Per teammate, on your team page: hears where things stand, gets answers, or gets things done.</p>
+      </li>
+      <li>
+        <span class="n">3</span>
+        <h3>They call</h3>
+        <p>Type <code>/screenless</code> in your session and it answers the line: from any phone, or WhatsApp for HD audio.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<div class="wrap">
+  <section id="rules">
+    <p class="kicker">your rules</p>
+    <h2>Your session, your machine, your say.</h2>
+    <div class="trust">
+      <div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+        <h3>You decide what each person gets</h3>
+        <p>Hears where things stand, gets answers, or gets things done. Set per person on your team page, changed any time, and every change logged.</p>
       </div>
-      <div class="step">
-        <div class="n">2</div>
-        <div>
-          <h3>Say who may do what</h3>
-          <p>
-            Pick each teammate's level on the team page: <b>listen</b> (heard,
-            handled after the call), <b>read</b> (answers from your code,
-            tickets and docs) or <b>full</b> (may have your session file the
-            ticket, send the message, ship the fix). Want your own levels and
-            rules? Define them in <code>.agents/permissions.md</code>, with no
-            names in it, so it is fine in an open-source repo.
-          </p>
-        </div>
+      <div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/><path d="M15 3h6v6M21 3l-6 6"/></svg>
+        <h3>Only your team gets through</h3>
+        <p>A phone call is never answered on its caller id: the line rings the caller's verified number back. A WhatsApp call is tied to their account.</p>
       </div>
-      <div class="step">
-        <div class="n">3</div>
-        <div>
-          <h3>Arm your session</h3>
-          <p>Type <code>/screenless</code> in Claude Code. That session now answers the line.</p>
-        </div>
+      <div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/><path d="M12 8v4M10 10h4"/></svg>
+        <h3>Your code stays on your machine</h3>
+        <p>Your session does the work, with the access it already has. The voice on the phone holds no keys; what passes through us is the call itself.</p>
       </div>
-      <div class="step">
-        <div class="n">4</div>
-        <div>
-          <h3>Your team calls</h3>
-          <p>
-            From any phone, or on WhatsApp for HD audio. A phone call hangs up
-            and rings the caller's verified number straight back, so a spoofed
-            caller id gets nowhere. Answers take seconds to a few minutes, and
-            the session says how it is going in between.
-          </p>
-        </div>
-      </div>
+    </div>
+  </section>
+</div>
+
+<section id="you" class="band">
+  <div class="wrap self">
+    <div>
+      <p class="kicker">and for you</p>
+      <h2>Call it yourself, too.</h2>
+      <p class="lede">
+        On a walk or in the car, ask your session where things stand, and have
+        it fix, push or deploy while you are still on the line.
+      </p>
+      <p class="lede">
+        And when an agent hits a decision only you can make, it can call you:
+        the <code>call-when-afk</code> skill phones you and carries on with
+        your answer.
+      </p>
+    </div>
+    <div class="chat" aria-label="An example call to your own session">
+      <p class="me"><b>You</b>Did the deploy go through?</p>
+      <p class="it"><b>Session</b>It did, but one test is flaky. Want me to re-run it?</p>
+      <p class="me"><b>You</b>Yes, and merge if it's green.</p>
+      <p class="it"><b>Session</b>On it.</p>
+      <p class="did">· gh run rerun · checks green · merged #418</p>
     </div>
   </div>
 </section>
 
 <div class="wrap">
-  <section id="team">
-    <p class="kicker">and for you</p>
-    <h2>Call it yourself, too.</h2>
-    <p class="lede">
-      The same line works for you: from a walk or the car, ask your session
-      where things stand and have it fix, push or deploy while you are still
-      on the call.
-    </p>
-    <div class="cols">
-      <div>
-        <h3>Nobody watching? It waits.</h3>
-        <p>
-          Call while no session is armed and the request is transcribed and
-          queued for the next teammate's terminal that watches, for up to a
-          week.
-        </p>
-      </div>
-      <div>
-        <h3>Your agents can call you</h3>
-        <p>
-          When an agent is stuck on a decision only you can make,
-          <code>call-when-afk</code> phones you and carries on with your
-          answer.
-        </p>
-      </div>
-      <div>
-        <h3>One number, one balance</h3>
-        <p>
-          The whole team shares the line and its credit; each caller reaches
-          the session that serves them.
-        </p>
-      </div>
-    </div>
-  </section>
-
   <section id="price">
     <p class="kicker">price</p>
     <h2>Pay for the minutes you talk. Nothing else.</h2>
-
     <div class="price">
       <div>
         <div class="what">to start</div>
         <div class="amt">$10</div>
         <div class="per">free credit · no card</div>
         <ul>
-          <li>Install, verify a number, invite the team</li>
           <li>About half an hour of calls, on us</li>
+          <li>Install, verify, invite the team</li>
           <li>No subscription, no trial clock</li>
         </ul>
       </div>
@@ -545,8 +538,8 @@
         <div class="per">per minute · pay as you go</div>
         <ul>
           <li>A five-minute call is $1.50</li>
-          <li>One balance for your whole team, one line to ring</li>
-          <li>Invite teammates at <a href="/team">screenless.sh/team</a></li>
+          <li>One balance for the whole team</li>
+          <li>Top up when you want more</li>
         </ul>
       </div>
     </div>
@@ -556,30 +549,42 @@
     <p class="kicker">faq</p>
     <h2>The things you were about to ask.</h2>
     <div class="faq">
-      <div>
-        <h3>Doesn't Claude Code already do this?</h3>
-        <p>It lets you reach your agent. This lets your team reach it: by phone, without a laptop or an account, under rules you set. The point is that the quick questions stop coming to you.</p>
-      </div>
-      <div>
-        <h3>What can a teammate do?</h3>
-        <p>The level you give them on the team page: listen (noted for after the call), read (answers from your code, tickets and docs) or full (your session acts for them), or a level of your own that your repo's <code>.agents/permissions.md</code> defines.</p>
-      </div>
-      <div>
-        <h3>What if someone spoofs a number?</h3>
+      <details>
+        <summary>Doesn&#x27;t Claude Code already do this?</summary>
+        <p>It lets you reach your agent. This lets your team reach it: by phone, with no laptop, seat or account, under rules you set. The quick questions stop coming to you.</p>
+      </details>
+      <details>
+        <summary>Why a call, and not Slack?</summary>
+        <p>Use both: Slack is great for questions you can type. A call is for when typing does not work: on the road, between meetings, or when a conversation is faster than a thread. And it is not a fresh bot: the call reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back.</p>
+      </details>
+      <details>
+        <summary>What if my laptop is closed?</summary>
+        <p>Then nobody gets a live answer, because the session runs on your machine. The call is still taken: what they ask is transcribed and waits, up to a week, for your session or a teammate's. For answers around the clock, type <code>/screenless</code> in a session on a machine that stays on.</p>
+      </details>
+      <details>
+        <summary>What exactly can a teammate do?</summary>
+        <p>What you give them, per person on your team page: hear where things stand (what they ask is handled after the call), get answers from your code, tickets and docs, or get things done (your session files the ticket, sends the message, ships the fix). In the CLI these are listen, read and full, and a <code>.agents/permissions.md</code> in your repo can define levels and rules of your own, with no names in it.</p>
+      </details>
+      <details>
+        <summary>What if someone spoofs a number?</summary>
         <p>They get nowhere. The line never answers a phone call on its caller id: it hangs up and calls the verified number back, so only that person's phone gets through. A WhatsApp call is tied to the caller's account.</p>
-      </div>
-      <div>
-        <h3>Does my code leave my machine?</h3>
+      </details>
+      <details>
+        <summary>Does my code leave my machine?</summary>
         <p>No. Your session reads and changes it locally. What passes through us is the call itself: its audio, the transcript, and the short answers your session sends back to be spoken.</p>
-      </div>
-      <div>
-        <h3>Do callers have to speak English?</h3>
+      </details>
+      <details>
+        <summary>Do callers have to speak English?</summary>
         <p>No. It follows whatever language they speak, and switches when they do.</p>
-      </div>
-      <div>
-        <h3>What does cancelling look like?</h3>
+      </details>
+      <details>
+        <summary>Can I read the code first?</summary>
+        <p>Please do. It is open source, MIT, on <a href="https://github.com/janwilmake/screenless">GitHub</a>; the <a href="/install">install script</a> is plain bash, and the CLI has no dependencies. To install by hand instead: <code>curl -fsSL https://screenless.sh/install | bash</code></p>
+      </details>
+      <details>
+        <summary>What does cancelling look like?</summary>
         <p>There is nothing to cancel: pay as you go, no subscription. Stop calling and you stop spending.</p>
-      </div>
+      </details>
     </div>
   </section>
 </div>
@@ -591,20 +596,21 @@
       Paste this into Claude Code. It installs screenless, verifies your
       number, invites your team, and asks you what they may do.
     </p>
-    <div class="cmd prompt">
+    <div class="cmd">
       <code>Install https://screenless.sh/llms.txt into this repo and invite my team.</code>
       <button type="button" data-copy="Install https://screenless.sh/llms.txt into this repo and invite my team.">copy</button>
     </div>
     <p class="fine">
-      $10 of credit to start, then 30¢ a minute. No subscription, and no card
-      until you want one.
+      $10 of credit to start, then 30¢ a minute. No subscription.
+      <a href="https://github.com/janwilmake/screenless">Open source, MIT</a>.
     </p>
   </div>
 </section>
 
 <div class="wrap">
   <footer>
-    <span>screenless — let your team call your Claude Code</span>
+    <span class="by"><img src="https://github.com/janwilmake.png?size=48" alt="" loading="lazy">
+      Made by <a href="https://github.com/janwilmake">Jan Wilmake</a></span>
     <span>
       <a href="/terms">terms</a> ·
       <a href="/privacy">privacy</a> ·
