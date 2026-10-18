@@ -39,6 +39,14 @@ Around that:
   (`screenless watch --brief-for team`) and a teammate who rings hears where it
   stands. What they ask is noted for after the call; it never runs on your
   machine while they are on the line.
+- **Say who may do what** — a `.agents/permissions.md` in the repo gives each
+  teammate a mode: `listen` (heard, noted for later), `read` (their requests
+  look things up and answer during the call) or `full` (they may have your
+  session send, merge or ship), with your own rules for each mode in plain
+  words. Teammates it names above `listen` get live calls into your session.
+  The same file can drive other agent tools, so one list of people serves
+  the phone line and, say, a Slack bot. See the `/screenless` skill for the
+  format.
 - **Nobody watching? It waits** — call while no session is armed and the
   request is transcribed and queued for the next teammate's terminal running
   `screenless watch`, for up to a week.

@@ -7,8 +7,10 @@
  * watcher was armed in, so it knows what that session knows, and the answer
  * goes back to be spoken. Several can run at once; the voice keeps talking.
  *
- * Only the session's owner can make a call run requests, and every tool call
- * of a fork passes the gate below, in the mode the Worker gave the call. The
+ * Only the session's owner, or a teammate the owner's `.agents/permissions.md`
+ * names above `listen`, can make a call run requests, and every tool call of
+ * a fork passes the gate below, in the mode the Worker gave the call, never
+ * above the gate that file gives the caller (see permissions.ts). The
  * owner's own call is `full` and may do what the session may: the line never
  * answers a phone call on its caller id, it rings the verified number back,
  * and a WhatsApp call is tied to the account. A test ring, and the fork that
@@ -261,6 +263,8 @@ export function runFork(
     background?: string;
     /** The live call, so `screenless update` in the fork reaches this request. */
     callId?: string;
+    /** Who is calling and what the owner's permissions file lets them do. */
+    permissions?: string;
   },
 ): Promise<ForkResult> {
   const started = Date.now();
@@ -285,7 +289,7 @@ export function runFork(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    phoneRules(o.mode),
+    [phoneRules(o.mode), o.permissions].filter(Boolean).join("\n\n"),
     "--settings",
     JSON.stringify(settings),
     ...(o.sessionId ? ["--resume", o.sessionId, "--fork-session"] : ["--no-session-persistence"]),
@@ -402,8 +406,15 @@ export async function serveLiveCall(o: {
   teammate?: string;
   /** What the Worker said the call may do; each poll may confirm it. */
   mode?: CallMode;
+  /** The ceiling from the owner's permissions file for this caller: `listen`
+   *  runs nothing, `read` caps the call at restricted. Unset: no file. */
+  gate?: "listen" | "read" | "full";
+  /** The caller and their rules, given to every request. */
+  permissions?: string;
 }): Promise<ForkResult[]> {
-  let mode: CallMode = o.mode === "full" ? "full" : "restricted";
+  // The file can only lower what the line gave the call, never raise it.
+  const cap = (m: CallMode): CallMode => (o.gate === "read" ? "restricted" : m);
+  let mode: CallMode = cap(o.mode === "full" ? "full" : "restricted");
   const results: ForkResult[] = [];
   // What a fresh run knows of the session: the brief, and C once it is in.
   let summary = "";
@@ -463,7 +474,7 @@ export async function serveLiveCall(o: {
         next = (await res.json()) as { ended: boolean; mode?: CallMode; handoffs: Handoff[] };
         failures = 0;
         // The call's own word wins over the watcher poll's.
-        if (next.mode) mode = next.mode === "full" ? "full" : "restricted";
+        if (next.mode) mode = cap(next.mode === "full" ? "full" : "restricted");
       }
     } catch {
       /* a dropped long-poll is retried below */
@@ -476,6 +487,13 @@ export async function serveLiveCall(o: {
 
     for (const h of next.handoffs) {
       o.log(`→ ${h.request}`);
+      // A caller the permissions file only lets be heard: nothing runs, and
+      // the request reaches the session with the call's transcript.
+      if (o.gate === "listen") {
+        o.log("  · not run: this caller's permissions only let them leave requests");
+        void post(h.id, "This caller's permissions do not let requests run during the call. It is noted, and the session gets it after the call.", true);
+        continue;
+      }
       let lastNote = Date.now();
       const p = runFork(h, {
         cwd: o.cwd,
@@ -484,6 +502,7 @@ export async function serveLiveCall(o: {
         cli: o.cli,
         callId: o.callId,
         mode,
+        permissions: o.permissions,
         onStep: (step) => {
           o.log(`  · ${step}`);
           // Enough for the voice to answer "how is it going?" honestly.

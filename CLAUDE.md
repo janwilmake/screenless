@@ -124,6 +124,18 @@ ring (and the fork that briefs the voice) is `restricted`: reads and local work
 in the project. This replaced a PIN keyed on the phone and STIR/SHAKEN
 attestation (session 13); do not bring either back.
 
+**Who may do what is the owner's file, not ours** (session 17). A
+`.agents/permissions.md` in the watched repo maps callers (email, phone,
+`*@domain`) to modes with a gate (`listen`, `read` = restricted, `full`) and
+free-text rules; `~/.agents/permissions.md` may only narrow it. The gate is
+enforced by the fork's PreToolUse gate and can only lower the call's mode;
+the rules go into every request's prompt and onto the finished call. The
+owner keeps `full` unless a line names their own email or phone. Teammates
+it names above `listen` get live calls: the watcher sends their patterns as
+`run=` on `/watch/next`, which only routes; the watcher resolves the caller
+again from the identity the line verified. Screenless never grows its own
+permission vocabulary: the file is shared with other agent tools.
+
 ## Conventions
 
 - Comments explain *why*, at the altitude of the decision. The existing code is

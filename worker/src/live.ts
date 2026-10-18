@@ -63,8 +63,9 @@ export interface LiveConfig {
    *  who shares their session's brief with the caller. */
   servedBy?: string;
   /** Set when the caller is not the session's owner: they hear its brief,
-   *  and nothing they ask is run during the call. */
-  teammate?: { name: string; owner: string };
+   *  and nothing they ask is run during the call, unless `run`: the owner's
+   *  permissions file names them, and the watcher gates each request by it. */
+  teammate?: { name: string; owner: string; email?: string | null; phone?: string; run?: boolean };
 }
 
 type Line = { role: "user" | "assistant"; text: string; at: string };
@@ -291,7 +292,7 @@ export class LiveCall {
       type: "session.start",
       session: {
         model: "gpt-live-1",
-        instructions: [cfg.instructions, cfg.mode === "full" || cfg.teammate ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
+        instructions: [cfg.instructions, cfg.mode === "full" || (cfg.teammate && !cfg.teammate.run) ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
         audio: { format: { type: "audio/pcm", rate: VOICE_RATE }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
@@ -361,7 +362,15 @@ export class LiveCall {
     await db.stashPut(
       this.env,
       `livecall:${cfg.servedBy ?? cfg.userId}`,
-      JSON.stringify({ callId: this.ourCallId, onlyRepo: cfg.onlyRepo, teammate: cfg.teammate?.name, mode: cfg.mode }),
+      JSON.stringify({
+        callId: this.ourCallId,
+        onlyRepo: cfg.onlyRepo,
+        teammate: cfg.teammate?.name,
+        // The watcher resolves the teammate's permissions by who they are.
+        teammateEmail: cfg.teammate?.email ?? undefined,
+        teammatePhone: cfg.teammate?.phone,
+        mode: cfg.mode,
+      }),
       7200,
     );
   }
@@ -573,7 +582,7 @@ export class LiveCall {
     // A teammate hears the brief; their requests are not run on the owner's
     // machine during the call. They reach the session afterwards, marked as
     // a teammate's, like any ring-in.
-    if (this.cfg?.teammate) {
+    if (this.cfg?.teammate && !this.cfg.teammate.run) {
       this.handedOffUpTo = this.lines.length;
       this.send({
         type: "session.commentary.append",
@@ -694,7 +703,8 @@ export class LiveCall {
     if (typeof text !== "string" || !text.trim()) return new Response("bad update", { status: 400 });
     if (this.ended) return Response.json({ ok: false, ended: true });
     // A teammate hears the brief, not the owner's work in progress.
-    if (this.cfg?.teammate) return Response.json({ ok: false, error: "a teammate's call takes no updates" }, { status: 403 });
+    if (this.cfg?.teammate && !this.cfg.teammate.run)
+      return Response.json({ ok: false, error: "a teammate's call takes no updates" }, { status: 403 });
     const h = id ? this.handoffs.find((x) => x.id === id) : [...this.handoffs].reverse().find((x) => !x.answered);
     if (id && !h) return Response.json({ ok: false, error: "unknown request" }, { status: 404 });
     if (h?.answered) return Response.json({ ok: false, answered: true });

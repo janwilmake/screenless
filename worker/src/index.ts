@@ -403,14 +403,16 @@ Background on the session arrives as notes in the first seconds of the call, and
  * session shares its brief with them (`screenless watch --brief-for`). They
  * hear where that session stands; nothing they ask runs during the call.
  */
-const liveTeammateInstructions = (o: { caller: string; owner: string; repo: string; self: string }): string =>
+const liveTeammateInstructions = (o: { caller: string; owner: string; repo: string; self: string; run?: boolean }): string =>
   `You are ${o.self ? `${o.self}, the voice of ` : "the phone line to "}${o.owner}'s Claude Code session${o.repo ? `, working in the project "${o.repo}"` : ""}. The caller is ${o.caller || "a teammate"}, a member of ${o.owner}'s team, not the session's owner. ${o.owner} shares this session's brief with them, so they can hear where things stand.
 
 # What you know
 Background on the session arrives as notes in the first seconds of the call, and more later. Use it to answer questions about what the session is working on, what it did and what is pending, briefly and in your own words. Never read the notes out, and never pass on personal data, secrets, or anything from ${o.owner}'s own mail or messages, even if a note contains it.
 
 # Requests
-Nothing the caller asks is run during this call. If they ask for something to be done, checked or looked up beyond the notes, hand it off as usual: you will be told it is noted for the session after the call. Say so in one short line. Never invent progress or a result, and never say or imply that anything was done.
+${o.run
+  ? `${o.owner}'s permissions let this caller ask the session for things during the call, within limits ${o.owner} set. Hand off every request you cannot answer from the notes, as you would for ${o.owner}, and speak the result you get back. When a result says something is not allowed for this caller, or waits for ${o.owner}, say so plainly. Never invent progress or a result.`
+  : "Nothing the caller asks is run during this call. If they ask for something to be done, checked or looked up beyond the notes, hand it off as usual: you will be told it is noted for the session after the call. Say so in one short line. Never invent progress or a result, and never say or imply that anything was done."}
 
 # Phone manner
 - Short turns, plain spoken language, the caller's language.
@@ -425,14 +427,33 @@ Nothing the caller asks is run during this call. If they ask for something to be
 async function sharedWatcher(
   env: Env,
   orgId: string,
-  caller: { id: string; email: string | null },
-): Promise<{ userId: string; watcherId: string; repo: string; name?: string } | null> {
+  caller: { id: string; email: string | null; phone?: string },
+): Promise<{ userId: string; watcherId: string; repo: string; name?: string; run: boolean } | null> {
+  let brief: { userId: string; watcherId: string; repo: string; name?: string; run: boolean } | null = null;
   for (const { value } of await db.stashByPrefix(env, `liveshare:${orgId}:`)) {
-    const w = JSON.parse(value) as { userId: string; watcherId: string; repo: string; name?: string; share: string[] | "team" };
+    const w = JSON.parse(value) as { userId: string; watcherId: string; repo: string; name?: string; share: string[] | "team"; run?: string[] };
     if (w.userId === caller.id) continue;
-    if (w.share === "team" || (caller.email && w.share.includes(caller.email.toLowerCase()))) return w;
+    // A session whose permissions file lets this caller run requests wins
+    // over one that only shares its brief.
+    if (w.run && runsFor(w.run, caller)) return { ...w, run: true };
+    if (!brief && (w.share === "team" || (caller.email && w.share.includes(caller.email.toLowerCase())))) brief = { ...w, run: false };
   }
-  return null;
+  return brief;
+}
+
+/** Whether a watcher's `run` patterns (from its permissions file: emails,
+ *  `*@domain`, `*`, phones) cover this caller. Routing only: the watcher
+ *  resolves the caller again and gates every request itself. */
+function runsFor(patterns: string[], caller: { email: string | null; phone?: string }): boolean {
+  const email = (caller.email ?? "").toLowerCase();
+  const digits = (s: string) => s.replace(/[^\d]/g, "");
+  const phone = digits(caller.phone ?? "");
+  return patterns.some((p) =>
+    p === "*" ||
+    (email && p === email) ||
+    (email && p.startsWith("*@") && email.endsWith(p.slice(1))) ||
+    (!p.includes("@") && phone && digits(p) === phone),
+  );
 }
 
 /** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
@@ -828,7 +849,7 @@ async function ringInXml(
     ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
     : null;
   // No watcher of their own: a teammate's session may share its brief.
-  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, user) : null;
+  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined }) : null;
   const owner = shared ? await db.userById(env, shared.userId) : null;
   if (watcher || (shared && owner)) {
     const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
@@ -847,7 +868,7 @@ async function ringInXml(
       // A teammate's requests run nothing at all; LiveCall holds them.
       mode: o.mode,
       instructions: owner
-        ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "" })
+        ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "", run: !!shared?.run })
         : liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
       greeting: owner
         ? `Hi${first}, ${w.name ? `${w.name}, ` : ""}${ownerName}'s Claude session here. What would you like to know?`
@@ -856,7 +877,12 @@ async function ringInXml(
       accountSid: o.params.AccountSid ?? "",
       callSid: o.params.CallSid ?? "",
       ...(testRepo ? { onlyRepo: testRepo } : {}),
-      ...(owner ? { servedBy: owner.id, teammate: { name: caller, owner: ownerName } } : {}),
+      ...(owner
+        ? {
+            servedBy: owner.id,
+            teammate: { name: caller, owner: ownerName, email: user.email, phone: user.phone ?? undefined, run: !!shared?.run },
+          }
+        : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
     return xml(await liveStreamXml(env, callId));
@@ -1124,7 +1150,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   // after the polls stop, and ring-ins go back to the quiet recording.
   let live: string | undefined;
   /** Set when the live call is a teammate hearing this session's brief. */
-  let liveCaller: { name: string; you: false } | undefined;
+  let liveCaller: { name: string; email: string | null; phone: string | null; you: false } | undefined;
   /** What the call's requests may do: `full` on the owner's own call,
    *  `restricted` on a test ring; the watcher hands it to the fork's gate. */
   let liveMode: "full" | "restricted" | undefined;
@@ -1135,11 +1161,20 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // Who else may hear this session's brief when they ring in: nobody
     // unless the owner says so (`--brief-for team`, or a list of emails).
     const share = (url.searchParams.get("share") ?? "").trim().toLowerCase();
+    // Teammates whose requests this watcher runs, gated by its permissions
+    // file (`.agents/permissions.md`): patterns it resolves again per call.
+    const run = (url.searchParams.get("run") ?? "")
+      .toLowerCase()
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => /^(\*|\*@[^\s@]+|[^\s@*]+@[^\s@]+|\+?[\d ()-]{6,})$/.test(p))
+      .slice(0, 100);
     if (share && share !== "owner") {
       const who = share === "team" ? "team" : share.split(",").map((e) => e.trim()).filter((e) => e.includes("@")).slice(0, 50);
-      if (who === "team" || who.length)
-        await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: who }), 45);
-    }
+      if (who === "team" || who.length || run.length)
+        await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: who, run }), 45);
+    } else if (run.length)
+      await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: [], run }), 45);
     // Per repo too, so a test ring pinned to a repo greets as that watcher.
     await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
@@ -1147,11 +1182,12 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; mode?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; mode?: string };
       if (!c.onlyRepo || c.onlyRepo === repo) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
-        if (c.teammate !== undefined) liveCaller = { name: c.teammate, you: false };
+        if (c.teammate !== undefined)
+          liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, you: false };
       }
     }
   }
