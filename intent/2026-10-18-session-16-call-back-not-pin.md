@@ -34,6 +34,18 @@ What landed:
   headers; `viaWhatsApp` requires the domain and the number's WhatsApp id
   (`WHATSAPP_PHONE_NUMBER_ID`) together. A phone call has neither.
 
+- **People on the team page, levels in the file.** Jan: emails in the repo
+  file are awkward in open source, and settings split between the page and
+  the file. Agreed after three questions (custom levels must stay; how is a
+  level assigned; how does the page know a repo's levels): the file defines
+  levels and rules with no people; the team page assigns each member a level
+  by name (`line_level`, a team default, a change log); watchers report
+  their file's level names on every poll, kept a month per repo, which is
+  how the page offers them. A name a repo does not define gets its default.
+  `callers:` still decides for an unassigned caller and only narrows an
+  assigned one. `screenless team level` and `GET /org/level` (for watchloop)
+  read and set the same.
+
 Still open:
 
 - WhatsApp needs Meta embedded signup on the number in Mission Control (a
@@ -108,3 +120,7 @@ then:
 > the demo part of the landing takes a lot of space, maybe subtitles (one line at a time) makes more sense? also, i dont like the 3 tiles, maybe icons is better?
 
 > you know... i think most devs will think 'my claude code app, or, my codex app already does that!' so why pay for a separate service? but the painpoint this is solving is different. don't let your team call you for every little question or thing, let them call your agent! then you remove yourself as the bottleneck and you get less interruptions as a dev, because claude code can handle a lot of questions. so it removes a painpoint for devs because they get less calls/huddles with ideas and small questions etc etc, and the rest of the team is empowered to get instant answers and actually get stuff done in the dev's claude. maybe we should lead with that
+
+> hmmmmm, for open source repos, putting the emails in the file there is kinda annoying. is there another way? also i dont like how we have some settings in the screenless.sh/team page while others live in the file...
+
+> yes build it. also, we should simplify installation: a prompt given to an agent like 'install screenless.sh/llms.txt into this repo and invite my team' which can be copied from the website, where this llms.txt explains to run the installer command as well as look into connected communication channels to find your teams' email adresses, and use the cli to invite them. the main option should be to invite the whole company, and this must also be easy over cli. the invited person fills in their phonenumber themselves, right? the communication mcp can also probably show who YOU are, so that can also be set up, but the only missing info is YOUR number and its verification, so that must be asked in the session. wdyt???

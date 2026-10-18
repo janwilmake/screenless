@@ -4,7 +4,7 @@ import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
 import { fetchRetry, gateHook, serveLiveCall, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
-import { loadPolicies, permissionsFor, permissionsText, type Caller, type Loaded, type Resolved } from "./permissions.js";
+import { levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Loaded, type Resolved } from "./permissions.js";
 
 /**
  * The zone this machine is set to.
@@ -180,7 +180,8 @@ interface OrgMe {
 }
 
 /** Where the team lives: prints the essentials, opens the page. */
-async function teamCmd(): Promise<void> {
+async function teamCmd(args: string[] = []): Promise<void> {
+  if (args[0] === "level") return teamLevel(args.slice(1));
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
   const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
@@ -189,6 +190,47 @@ async function teamCmd(): Promise<void> {
   console.log(`${c.bold("watching")}    ${me.watchers} terminal${me.watchers === 1 ? "" : "s"}`);
   console.log(`\n  ${c.cyan(me.teamUrl)} ${c.dim("— invite people, roles, billing")}`);
   await openInBrowser(me.teamUrl);
+}
+
+interface OrgLevels {
+  default: string;
+  members: Array<{ name: string; email: string | null; level: string }>;
+  levels: Array<{ name: string; repos: Record<string, string> }>;
+}
+
+/**
+ * `screenless team level` — who may do what when they call a teammate's
+ * session; the team page's dropdowns, from a terminal. A level is a name a
+ * repo's .agents/permissions.md defines (or listen, read, full); `default`
+ * clears a member back to the team's.
+ *
+ *   screenless team level                       list members and levels
+ *   screenless team level priya@acme.dev lead   set one
+ *   screenless team level --default read        new and unassigned members
+ */
+async function teamLevel(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const clear = (l: string) => (l === "default" ? "" : l);
+  const dflt = argFlag(args, "--default");
+  if (dflt !== undefined) {
+    await api(cfg.apiUrl, "/org/level/default", { method: "POST", token: cfg.token, body: { level: clear(dflt) } });
+    console.log(`${c.green("✓")} new and unassigned members: ${dflt === "default" || !dflt ? "each repo's own default" : dflt}`);
+    return;
+  }
+  if (args.length >= 2) {
+    const [email, level] = args;
+    await api(cfg.apiUrl, "/org/level", { method: "POST", token: cfg.token, body: { email, level: clear(level) } });
+    console.log(`${c.green("✓")} ${email}: ${clear(level) || "team default"}`);
+    return;
+  }
+  const o = await api<OrgLevels>(cfg.apiUrl, "/org/levels", { token: cfg.token });
+  for (const m of o.members)
+    console.log(`${(m.name || m.email || "member").padEnd(24)} ${c.dim((m.email ?? "").padEnd(30))} ${m.level || c.dim(`default${o.default ? ` (${o.default})` : ""}`)}`);
+  console.log(c.dim(`\nnew and unassigned members: ${o.default || "each repo's own default"}`));
+  if (o.levels.length)
+    console.log(c.dim(`levels your repos define: ${o.levels.map((l) => `${l.name} (${Object.entries(l.repos).map(([r, g]) => `${r}: ${g}`).join(", ")})`).join(" · ")}`));
+  else console.log(c.dim("no repo has reported a .agents/permissions.md yet; listen, read and full work everywhere else"));
 }
 
 /* ------------------------------------------------------------------- setup */
@@ -568,7 +610,7 @@ interface WatchCall {
   requestText?: string;
   durationSecs?: number | null;
   transcript?: Array<{ role: string; text: string; at?: string }>;
-  caller: { name: string; email: string | null; phone: string; you: boolean };
+  caller: { name: string; email: string | null; phone: string; level?: string; you: boolean };
   createdAt: number;
 }
 interface WatchNext {
@@ -579,7 +621,7 @@ interface WatchNext {
   /** A ring-in of yours in progress, answered live by this terminal. */
   live?: string;
   /** Set when that ring-in is a teammate hearing this session's brief. */
-  liveCaller?: { name: string; email?: string | null; phone?: string | null; you: boolean };
+  liveCaller?: { name: string; email?: string | null; phone?: string | null; level?: string; you: boolean };
   /** What that call's requests may do: `full` on your own call, which the
    *  line rang back or took over WhatsApp, `restricted` (read and local
    *  work) on a test ring. */
@@ -707,8 +749,8 @@ async function watch(args: string[]): Promise<void> {
   // The owner, so a line in the file that names them can narrow their calls.
   let ownerEmail: string | null = null;
   const owner = (): Caller => ({ owner: true, email: ownerEmail, phone: cfg.phone });
-  const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null }): Caller =>
-    who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null };
+  const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null; level?: string }): Caller =>
+    who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null, level: who.level ?? "" };
   /** The teammates the Worker may route to this terminal to run requests:
    *  every caller line, or `*`, whose mode is above listen. The watcher
    *  resolves each caller again on the call, so this only routes. */
@@ -765,7 +807,14 @@ async function watch(args: string[]): Promise<void> {
   // Recomputed per poll, so an edited permissions file routes the next call.
   const nextUrlOf = () => {
     const run = live ? runPatterns() : [];
-    return nextUrlBase + (run.length ? `&run=${encodeURIComponent(run.join(","))}` : "");
+    // The file's level names, for the team page's dropdown and for routing
+    // a teammate's call by the level the team page gives them.
+    const lv = live && policies.repo ? levelsOf(policies.repo) : null;
+    return (
+      nextUrlBase +
+      (run.length ? `&run=${encodeURIComponent(run.join(","))}` : "") +
+      (lv ? `&levels=${encodeURIComponent(lv.levels)}&ldefault=${encodeURIComponent(lv.default)}` : "")
+    );
   };
   if (liveOnly && !live) die("--live-only needs Claude Code (`claude`) on this machine");
   let offline = false;
@@ -1369,6 +1418,8 @@ ${c.bold("Usage")}
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page
+  screenless team level [<email> <level>]    who may do what when they call a
+                                             teammate's session (--default <level>)
   screenless transcript [--wait] [--json]    what was decided on the last call
   screenless wait [--once|--peek]            block until tonight's run is due
   screenless settings [--at HH:MM]           when the morning call goes out

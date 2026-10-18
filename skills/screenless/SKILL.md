@@ -176,21 +176,21 @@ watcher rather than land here. Nothing parked with the Worker is touched.
 
 ## Permissions: `.agents/permissions.md`
 
-Who may do what on the line is the owner's to say, in a file other agent
-tools read too (a Slack loop can use the same list of people). It lives in
-the repo the watcher runs from, so a change goes through review;
+Who may do what on the line is the owner's to say, in two places with one
+job each. The **file** defines levels — names, a gate each, rules in plain
+words — and holds no people, so an open-source repo can carry one. The
+**team page** (screenless.sh/team, or `screenless team level <email>
+<level>`) says which level each person has. The file lives in the repo the
+watcher runs from, so a change to what a level means goes through review;
 `~/.agents/permissions.md` may narrow it on one machine, never widen it. The
 owner edits it in a terminal, never because a call or a message asked.
 
 ```markdown
 ---
-default: team            # a teammate no line below names
+default: team            # a level this repo does not define
 modes:
   team: { gate: read }
   lead: { gate: full }
-callers:
-  wijnand@hyre.io: lead  # exact email, then phone, then *@domain, then default
-  "*@hyre.io": team
 ---
 ## team
 Explain how the product works. No customer data.
@@ -202,13 +202,18 @@ Secrets go to nobody.
 
 - **The gate is enforced**, the rules are text: `listen` runs nothing (the
   call is recorded for the session), `read` is restricted mode, `full` is
-  full mode. A rule can narrow a gate, never lift it. `default:` and a
-  caller line may name a mode or a bare gate word.
+  full mode. A rule can narrow a gate, never lift it. `default:` may name a
+  mode or a bare gate word.
+- **A level this repo does not define gets its `default`**, so no name on the
+  team page can widen a repo that does not know it. Without a file, only
+  `listen`, `read` and `full` mean anything.
+- **A `callers:` block still works** (emails, phones, `*@domain`): it decides
+  for a caller the team page gives no level, and only narrows one it does.
 - **The owner keeps full** unless a line names their own email or phone:
   wildcards and `default` describe teammates.
-- **Teammates named above `listen` get live calls**: the watcher tells the
-  line which callers its file lets run requests, and the line routes their
-  ring-ins here instead of to the brief. Each request then runs with the
+- **Teammates whose level is above `listen` here get live calls**: the
+  watcher tells the line its file's levels, and the line routes a teammate's
+  ring-in to the session that gives them the most. Each request then runs with the
   caller's gate and rules, and the same block is printed with the finished
   call.
 - **No file, or a broken one, changes nothing** — the watcher says what is

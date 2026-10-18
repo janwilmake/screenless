@@ -18,6 +18,8 @@ export interface Org {
   name: string;
   credit_cents: number;
   stripe_customer_id: string | null;
+  /** The line level of a member with none of their own; '' = each repo's default. */
+  line_default: string;
   created_at: number;
 }
 
@@ -38,6 +40,8 @@ export interface User {
   terms_accepted_at: number;
   email_verified_at: number;
   tokens_revoked_at: number;
+  /** Their line level when calling a teammate's session; '' = the team's default. */
+  line_level: string;
   settings_updated_at: number;
   created_at: number;
 }
@@ -293,6 +297,51 @@ export async function setRole(env: Env, orgId: string, userId: string, role: "ad
   await env.DB.prepare("UPDATE users SET role = ? WHERE id = ? AND org_id = ?")
     .bind(role, userId, orgId).run();
 }
+
+/* ------------------------------------------------------------ line levels */
+
+/** A level name as the permissions file writes one: a word, or listen,
+ *  read, full; '' clears it back to the default. */
+export const LEVEL_RULE = /^[A-Za-z][\w-]{0,39}$/;
+
+export async function setLevel(env: Env, orgId: string, actorId: string, userId: string, level: string): Promise<void> {
+  const before = await env.DB.prepare("SELECT line_level FROM users WHERE id = ? AND org_id = ?")
+    .bind(userId, orgId).first<{ line_level: string }>();
+  if (!before) return;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET line_level = ? WHERE id = ? AND org_id = ?").bind(level, userId, orgId),
+    env.DB.prepare("INSERT INTO level_log (org_id, at, actor_id, user_id, from_level, to_level) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(orgId, Date.now(), actorId, userId, before.line_level, level),
+  ]);
+}
+
+export async function setLineDefault(env: Env, orgId: string, actorId: string, level: string): Promise<void> {
+  const before = await env.DB.prepare("SELECT line_default FROM orgs WHERE id = ?").bind(orgId).first<{ line_default: string }>();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE orgs SET line_default = ? WHERE id = ?").bind(level, orgId),
+    env.DB.prepare("INSERT INTO level_log (org_id, at, actor_id, user_id, from_level, to_level) VALUES (?, ?, ?, '', ?, ?)")
+      .bind(orgId, Date.now(), actorId, before?.line_default ?? "", level),
+  ]);
+}
+
+export interface LevelChange {
+  at: number;
+  actor_id: string;
+  user_id: string;
+  from_level: string;
+  to_level: string;
+}
+
+export async function levelLog(env: Env, orgId: string, limit = 50): Promise<LevelChange[]> {
+  const res = await env.DB.prepare(
+    "SELECT at, actor_id, user_id, from_level, to_level FROM level_log WHERE org_id = ? ORDER BY at DESC LIMIT ?",
+  ).bind(orgId, limit).all<LevelChange>();
+  return res.results ?? [];
+}
+
+/** The level a member calls with: their own, else the team's; '' = each
+ *  repo's default. */
+export const levelOf = (user: User, org: Org): string => user.line_level || org.line_default || "";
 
 /**
  * Removing a member parks them in a fresh solo org rather than deleting the

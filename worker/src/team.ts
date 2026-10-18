@@ -16,6 +16,7 @@
 
 import type { Env } from "./index";
 import * as db from "./db";
+import * as levels from "./levels";
 import * as billing from "./billing";
 import * as telnyx from "./telnyx";
 import { json, fail, isE164, destinationAllowed, rateLimit } from "./util";
@@ -256,6 +257,8 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     const roster = await db.members(env, org.id);
     const invites = await db.invitesFor(env, org.id);
     const inviterNames = new Map(roster.map((m) => [m.id, m.name || m.email || ""]));
+    const known = await levels.knownLevels(env, org.id);
+    const log = await db.levelLog(env, org.id, 15);
 
     return json({
       user: {
@@ -266,7 +269,16 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
         phone: user.phone,
         phoneVerified: Boolean(user.phone_verified_at),
       },
-      org: { id: org.id, name: org.name, creditCents: org.credit_cents },
+      org: { id: org.id, name: org.name, creditCents: org.credit_cents, lineDefault: org.line_default },
+      levels: known.levels,
+      repoDefaults: known.defaults,
+      levelLog: log.map((l) => ({
+        at: l.at,
+        by: inviterNames.get(l.actor_id) ?? "",
+        who: l.user_id ? inviterNames.get(l.user_id) ?? "a former member" : "",
+        from: l.from_level,
+        to: l.to_level,
+      })),
       isAdmin: user.role === "admin",
       priceCentsPerMinute: db.priceCentsPerMinute(env),
       billingEnabled: billing.billingEnabled(env),
@@ -277,6 +289,7 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
         email: m.email,
         phone: m.phone,
         role: m.role,
+        level: m.line_level,
         phoneVerified: Boolean(m.phone_verified_at),
         joinedAt: m.created_at,
         you: m.id === user.id,
@@ -339,6 +352,20 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
         return fail(409, "a team needs at least one admin");
     }
     await db.setRole(env, gate.org.id, userId, role);
+    return json({ ok: true });
+  }
+
+  if (method === "POST" && (sub === "/members/level" || sub === "/org/line-default")) {
+    const gate = await requireAdmin(req, env);
+    if (gate instanceof Response) return gate;
+    const { userId, level } = await readJson(req);
+    const l = typeof level === "string" ? level.trim() : "";
+    if (!levels.validLevel(l)) return fail(400, "a level is a word, such as read or lead");
+    if (sub === "/org/line-default") await db.setLineDefault(env, gate.org.id, gate.user.id, l);
+    else {
+      if (typeof userId !== "string") return fail(400, "userId required");
+      await db.setLevel(env, gate.org.id, gate.user.id, userId, l);
+    }
     return json({ ok: true });
   }
 
@@ -457,6 +484,7 @@ const PAGE = `<!doctype html>
   .row:first-child { border-top:none; }
   .row .who { flex: 1; min-width: 0; }
   .row .who .mail { color: var(--muted); font-size: 13px; overflow-wrap:anywhere; margin-top:2px; }
+  select.lvl { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 8px; background: #fff; max-width: 230px; }
   .chip { font-size: 12px; font-weight:600; padding: 3px 10px; border-radius: 99px;
           background: #eef0f5; color: var(--muted); }
   .chip.admin { background: var(--rust-weak); color: var(--rust); }
@@ -658,6 +686,7 @@ function renderTeam() {
       '<div>' + esc(m.name || m.email || m.phone || 'member') + (m.you ? ' <span class="dim small">(you)</span>' : '') + '</div>' +
       '<div class="mail">' + esc(m.email || '') + (m.phone ? ' \\u00b7 ' + esc(m.phone) : '') +
       (m.phoneVerified ? '' : ' \\u00b7 <span class="chip warn">phone unverified</span>') + '</div></div>' +
+      levelControl(m) +
       '<span class="chip ' + m.role + '">' + m.role + '</span>' +
       (S.me.isAdmin && !m.you
         ? '<button class="ghost small" data-role="' + m.id + '" data-to="' + (m.role === 'admin' ? 'member' : 'admin') + '">' +
@@ -680,6 +709,7 @@ function renderTeam() {
   });
 
   html += '</div>';
+  html += levelsCard();
   body.innerHTML = html;
 
   var change = document.getElementById('changephone');
@@ -708,6 +738,12 @@ function renderTeam() {
       };
       document.getElementById('invmail').focus();
     };
+    body.querySelectorAll('select[data-level]').forEach(function (sel) {
+      sel.onchange = function () {
+        var path = sel.dataset.level === 'default' ? '/org/line-default' : '/members/level';
+        api(path, { userId: sel.dataset.level, level: sel.value }).then(load).catch(showErr);
+      };
+    });
     body.querySelectorAll('[data-role]').forEach(function (b) {
       b.onclick = function () { api('/members/role', { userId: b.dataset.role, role: b.dataset.to }).then(load).catch(showErr); };
     });
@@ -724,6 +760,61 @@ function renderTeam() {
       b.onclick = function () { api('/invites/delete', { token: b.dataset.revoke }).then(load).catch(showErr); };
     });
   }
+}
+
+/* ---------------- line levels ---------------- */
+
+/* What a teammate may do when they call someone else's session. The level
+   names come from the team's repos (each watcher reports its permissions
+   file's), plus the built-ins; an admin picks one per member. */
+function levelOptions(current, forDefault) {
+  var me = S.me, seen = {}, html = '';
+  var dflt = forDefault
+    ? 'each repo\u2019s own default'
+    : 'team default' + (me.org.lineDefault ? ' (' + me.org.lineDefault + ')' : '');
+  html += '<option value=""' + (current ? '' : ' selected') + '>' + esc(dflt) + '</option>';
+  me.levels.forEach(function (l) {
+    seen[l.name] = 1;
+    var where = Object.keys(l.repos).map(function (r) { return r + ': ' + l.repos[r]; }).join(', ');
+    html += '<option value="' + esc(l.name) + '"' + (current === l.name ? ' selected' : '') + '>' +
+      esc(l.name + ' \u2014 ' + where) + '</option>';
+  });
+  ['listen', 'read', 'full'].forEach(function (g) {
+    if (seen[g]) return;
+    seen[g] = 1;
+    html += '<option value="' + g + '"' + (current === g ? ' selected' : '') + '>' + g + ' \u2014 repos without a file</option>';
+  });
+  if (current && !seen[current])
+    html += '<option value="' + esc(current) + '" selected>' + esc(current) + ' \u2014 no repo defines it yet</option>';
+  return html;
+}
+
+function levelControl(m) {
+  if (m.you) return '<span class="chip">your own session: full</span>';
+  if (!S.me.isAdmin) return '<span class="chip">' + esc(m.level || 'team default') + '</span>';
+  return '<select class="lvl" data-level="' + m.id + '" title="What they may do when they call a teammate\u2019s session">' +
+    levelOptions(m.level, false) + '</select>';
+}
+
+function levelsCard() {
+  var me = S.me;
+  var html = '<div class="card"><h2>Who may do what on calls</h2>' +
+    '<p class="dim small">When a teammate calls someone else\u2019s Claude Code session, their level decides what it does for them. ' +
+    'Each repo\u2019s <code>.agents/permissions.md</code> defines the levels and their rules, with no names in it; ' +
+    'a level a repo does not define gets that repo\u2019s default there. ' +
+    (me.levels.length ? '' : 'No repo has reported a permissions file yet: levels appear here once a session with one runs <code>/screenless</code>. ') +
+    'Your own calls to your own session are always full.</p>';
+  if (me.isAdmin)
+    html += '<div class="form-inline" style="margin:12px 0">New and unassigned members: ' +
+      '<select class="lvl" data-level="default">' + levelOptions(me.org.lineDefault, true) + '</select></div>';
+  if (me.levelLog.length) {
+    html += '<div class="dim small" style="margin-top:12px"><strong>Changes</strong></div>';
+    me.levelLog.forEach(function (l) {
+      html += '<div class="dim small">' + when(l.at) + ' \u00b7 ' + esc(l.by || 'someone') + ' set ' +
+        esc(l.who || 'the team default') + ' from ' + esc(l.from || 'default') + ' to ' + esc(l.to || 'default') + '</div>';
+    });
+  }
+  return html + '</div>';
 }
 
 function phonePanel(isChange) {

@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS orgs (
   -- kept denormalised so the call gate is one indexed read.
   credit_cents INTEGER NOT NULL DEFAULT 0,
   stripe_customer_id TEXT,
+  -- The line level a member gets when the team page names none for them:
+  -- '' means each repo's own `default:` (session 16). Added with
+  --   ALTER TABLE orgs ADD COLUMN line_default TEXT NOT NULL DEFAULT '';
+  line_default TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 
@@ -44,6 +48,12 @@ CREATE TABLE IF NOT EXISTS users (
   -- CLI bearer tokens minted before this instant are void; see auth.ts.
   tokens_revoked_at INTEGER NOT NULL DEFAULT 0,
   settings_updated_at INTEGER NOT NULL DEFAULT 0,
+  -- What this member may do when they call a teammate's session: the name
+  -- of a level that repo's .agents/permissions.md defines, or listen, read,
+  -- full; '' takes the team's default. Set by an admin on the team page, so
+  -- no repo has to list people (session 16). Added with
+  --   ALTER TABLE users ADD COLUMN line_level TEXT NOT NULL DEFAULT '';
+  line_level TEXT NOT NULL DEFAULT '',
   -- A call PIN and the last ring-in's STIR/SHAKEN attestation lived here
   -- until the line started ringing callers back (session 16). Removed with
   --   ALTER TABLE users DROP COLUMN pin_hash;
@@ -51,6 +61,19 @@ CREATE TABLE IF NOT EXISTS users (
   --   ALTER TABLE users DROP COLUMN last_attestation;
   created_at INTEGER NOT NULL
 );
+
+-- Every change to who may do what on the line, for the team page: a level
+-- is a permission, and changing one is a click, not a reviewed commit.
+CREATE TABLE IF NOT EXISTS level_log (
+  org_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  actor_id TEXT NOT NULL,
+  -- '' for the team default.
+  user_id TEXT NOT NULL,
+  from_level TEXT NOT NULL,
+  to_level TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS level_log_org ON level_log (org_id, at);
 
 CREATE TABLE IF NOT EXISTS invites (
   -- The token *is* the id: unguessable, and the only credential in the accept

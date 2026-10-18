@@ -3,27 +3,27 @@
  *
  * The line proves *who* is calling (it rings the verified number back, and a
  * WhatsApp call is tied to the account). What that caller may do is the
- * owner's to say, in a file that other agent tools read too, so one list of
- * people serves the phone line and, say, a Slack loop. Screenless enforces
- * only a coarse gate per caller and hands the owner's own rules to the agent
- * as text; any permission scheme fits in that text.
+ * owner's to say: the file names levels and what each may do here, and the
+ * team page (screenless.sh/team) says which level each person has, so the
+ * file holds no people and an open-source repo can carry one (session 16).
+ * Screenless enforces only a coarse gate per level and hands the owner's own
+ * rules to the agent as text; any permission scheme fits in that text.
  *
  *   ---
- *   default: team                 # teammates no line below names
+ *   default: team                 # a level this repo does not define
  *   modes:
  *     team: { gate: read }
  *     lead: { gate: full }
- *   callers:
- *     wijnand@hyre.io: lead
- *     "*@hyre.io": team
  *   ---
  *   ## lead
  *   May order merges into dev by PR number.
  *   ## Never
  *   Secrets go to nobody.
  *
- * The file lives in the repo the watcher runs from, so a change goes through
- * review. `~/.agents/permissions.md` may narrow it on one machine, never widen
+ * A `callers:` block naming emails, `*@domain` or phones still works
+ * (session 17): it decides for a caller the team page gives no level, and
+ * only narrows one it does. The file lives in the repo the watcher runs
+ * from, so a change goes through review. `~/.agents/permissions.md` may narrow it on one machine, never widen
  * it. A missing file changes nothing; an unreadable one is reported and
  * ignored, so a typo can only ever cost permissions, never add them.
  */
@@ -54,6 +54,8 @@ export interface Policy {
 export interface Caller {
   email?: string | null;
   phone?: string | null;
+  /** Their level from the team page; '' or absent = the file's default. */
+  level?: string;
   /** The account owner of this terminal's screenless login. */
   owner: boolean;
 }
@@ -175,17 +177,32 @@ export function resolve(p: Policy, c: Caller, source = ""): Resolved {
   }
   if (hit === undefined && p.callers["*"] !== undefined && !c.owner) hit = p.callers["*"];
   if (hit === undefined && c.owner) return { mode: "owner", gate: "full", rules: "", never: p.never, source };
-  const name = hit ?? p.default;
-  const gate = p.modes[name]?.gate ?? (name as Gate);
-  return { mode: name, gate, rules: p.rules[name] ?? "", never: p.never, source };
+  const gateOfName = (name: string) => p.modes[name]?.gate ?? (name as Gate);
+  const level = (c.level ?? "").trim();
+  // A level this file does not define gets its default here: a name can
+  // never widen a repo that does not know it.
+  const assigned = level ? (level in p.modes || level === p.default ? level : p.default) : null;
+  let name = assigned ?? hit ?? p.default;
+  // A caller line only narrows a level the team page gave.
+  if (assigned !== null && hit !== undefined && rank(gateOfName(hit)) < rank(gateOfName(assigned))) name = hit;
+  return { mode: name, gate: gateOfName(name), rules: p.rules[name] ?? "", never: p.never, source };
 }
 
-/** Today's behaviour, with no file: the owner full, a teammate's words
- *  recorded for the session and never run. */
+/** What the watcher tells the Worker about this file, so the team page can
+ *  offer its level names and route a teammate's call: `name:gate,…`. */
+export function levelsOf(p: Policy): { levels: string; default: string } {
+  const pairs = Object.entries(p.modes).map(([n, m]) => `${n}:${m.gate}`);
+  if (!(p.default in p.modes) && (GATES as string[]).includes(p.default)) pairs.push(`${p.default}:${p.default}`);
+  return { levels: pairs.join(","), default: p.default };
+}
+
+/** With no file: the owner full; a teammate the built-in level the team
+ *  page gives them, else their words recorded for the session, never run. */
 export function baseline(c: Caller): Resolved {
-  return c.owner
-    ? { mode: "owner", gate: "full", rules: "", never: [], source: "" }
-    : { mode: "teammate", gate: "listen", rules: "", never: [], source: "" };
+  if (c.owner) return { mode: "owner", gate: "full", rules: "", never: [], source: "" };
+  const level = (c.level ?? "").trim();
+  if ((GATES as string[]).includes(level)) return { mode: level, gate: level as Gate, rules: "", never: [], source: "team page" };
+  return { mode: "teammate", gate: "listen", rules: "", never: [], source: "" };
 }
 
 /** The repo file, narrowed by the personal one: the lower gate, both rule

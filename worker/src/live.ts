@@ -65,7 +65,7 @@ export interface LiveConfig {
   /** Set when the caller is not the session's owner: they hear its brief,
    *  and nothing they ask is run during the call, unless `run`: the owner's
    *  permissions file names them, and the watcher gates each request by it. */
-  teammate?: { name: string; owner: string; email?: string | null; phone?: string; run?: boolean };
+  teammate?: { name: string; owner: string; email?: string | null; phone?: string; level?: string; run?: boolean };
 }
 
 type Line = { role: "user" | "assistant"; text: string; at: string };
@@ -369,6 +369,9 @@ export class LiveCall {
         // The watcher resolves the teammate's permissions by who they are.
         teammateEmail: cfg.teammate?.email ?? undefined,
         teammatePhone: cfg.teammate?.phone,
+        // Their level on the team page, which the watcher reads against its
+        // own permissions file.
+        teammateLevel: cfg.teammate?.level ?? "",
         mode: cfg.mode,
       }),
       7200,

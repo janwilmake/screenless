@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parsePolicy, resolve, combine, baseline, loadPolicies, permissionsFor, permissionsText } from "../dist/permissions.js";
+import { parsePolicy, resolve, combine, baseline, loadPolicies, permissionsFor, permissionsText, levelsOf } from "../dist/permissions.js";
 
 const FILE = `---
 default: team
@@ -119,4 +119,50 @@ test("no file, or a broken one, is exactly today's behaviour", () => {
   const ok = loadPolicies(dir, home);
   assert.equal(permissionsFor(ok, { owner: false, email: "luc@hyre.io" }).mode, "data");
   assert.match(permissionsText("Luc", permissionsFor(ok, { owner: false, email: "luc@hyre.io" })), /mode "data", gate read/);
+});
+
+// Session 16: people move to the team page; the file only defines levels.
+const OPEN = `---
+default: listen
+modes:
+  reviewer: { gate: read }
+  lead: { gate: full }
+---
+## lead
+May merge into dev by PR number.
+`;
+
+test("a file with no people works: the team page's level picks the mode", () => {
+  const p = parsePolicy(OPEN);
+  assert.equal(resolve(p, { owner: false, email: "x@y.dev", level: "lead" }).gate, "full");
+  assert.equal(resolve(p, { owner: false, email: "x@y.dev", level: "reviewer" }).mode, "reviewer");
+  assert.equal(resolve(p, { owner: false, email: "x@y.dev" }).gate, "listen");
+});
+
+test("a level a repo does not define gets that repo's default, never more", () => {
+  const p = parsePolicy(OPEN);
+  for (const level of ["boss", "full", "read"])
+    assert.equal(resolve(p, { owner: false, email: "x@y.dev", level }).gate, "listen", level);
+});
+
+test("a caller line decides for an unassigned caller, and only narrows an assigned one", () => {
+  const p = parsePolicy(FILE);
+  // Unassigned: session 17's behaviour, unchanged.
+  assert.equal(resolve(p, { owner: false, email: "tamas@hyre.io" }).mode, "lead");
+  // Assigned lower than the line: the level wins.
+  assert.equal(resolve(p, { owner: false, email: "tamas@hyre.io", level: "team" }).mode, "team");
+  // Assigned higher than the line: the line narrows it.
+  assert.equal(resolve(p, { owner: false, email: "someone@outside.example", level: "lead" }).gate, "listen");
+});
+
+test("without a file, only the built-in levels mean anything", () => {
+  assert.equal(baseline({ owner: false, level: "read" }).gate, "read");
+  assert.equal(baseline({ owner: false, level: "lead" }).gate, "listen");
+  assert.equal(baseline({ owner: false }).gate, "listen");
+  assert.equal(baseline({ owner: true, level: "listen" }).gate, "full");
+});
+
+test("the watcher reports the file's levels, and a bare default with them", () => {
+  assert.deepEqual(levelsOf(parsePolicy(OPEN)), { levels: "reviewer:read,lead:full,listen:listen", default: "listen" });
+  assert.deepEqual(levelsOf(parsePolicy(FILE)), { levels: "team:read,data:read,lead:full", default: "team" });
 });

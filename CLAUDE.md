@@ -124,10 +124,15 @@ ring (and the fork that briefs the voice) is `restricted`: reads and local work
 in the project. This replaced a PIN keyed on the phone and STIR/SHAKEN
 attestation (session 13); do not bring either back.
 
-**Who may do what is the owner's file, not ours** (session 17). A
-`.agents/permissions.md` in the watched repo maps callers (email, phone,
-`*@domain`) to modes with a gate (`listen`, `read` = restricted, `full`) and
-free-text rules; `~/.agents/permissions.md` may only narrow it. The gate is
+**Who may do what is the owner's to say, not ours** (sessions 17 and 16). A
+`.agents/permissions.md` in the watched repo defines levels ("modes") with a
+gate (`listen`, `read` = restricted, `full`) and free-text rules, and holds no
+people; the team page assigns each member a level by name (`users.line_level`,
+`orgs.line_default`, logged in `level_log`), and a level a repo does not
+define gets that repo's `default`. Watchers report their file's level names
+on `/watch/next` (`levels=`), which is how the page knows them without
+reading a repo. A legacy `callers:` block decides for an unassigned caller
+and only narrows an assigned one; `~/.agents/permissions.md` may only narrow. The gate is
 enforced by the fork's PreToolUse gate and can only lower the call's mode;
 the rules go into every request's prompt and onto the finished call. The
 owner keeps `full` unless a line names their own email or phone. Teammates

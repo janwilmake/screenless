@@ -102,6 +102,7 @@ export interface Env {
 export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
 import type { CallMode, LiveConfig } from "./live";
+import * as levels from "./levels";
 
 /**
  * Sessions last a year.
@@ -419,26 +420,73 @@ ${o.run
 - The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
 - When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is handed to ${o.owner}'s session after the call.`;
 
+type Gate = "listen" | "read" | "full";
+const GATES: Gate[] = ["listen", "read", "full"];
+
+/** What a watcher's checking-in said about its repo: the level names its
+ *  `.agents/permissions.md` defines with their gates, and its default. */
+interface Shared {
+  userId: string;
+  watcherId: string;
+  repo: string;
+  name?: string;
+  share: string[] | "team";
+  run?: string[];
+  levels?: Record<string, Gate>;
+  ldefault?: string;
+}
+
 /**
- * A teammate's live watcher that shares its session's brief with this
- * caller: `team`, or a list that names the caller's email. Only used when the
+ * The gate a caller with `level` (from the team page; '' = default) gets in
+ * one watcher's repo. A repo with a permissions file decides by its own
+ * level names, and a name it does not define falls to its default, so no
+ * name can widen a repo that does not know it. Without a file only the
+ * built-in names mean anything. Routing only: the watcher resolves the
+ * caller again from the file on disk.
+ */
+function gateIn(w: Shared, level: string): Gate | null {
+  if (w.levels) {
+    const name = level && w.levels[level] ? level : w.ldefault ?? "listen";
+    return w.levels[name] ?? ((GATES as string[]).includes(name) ? (name as Gate) : null);
+  }
+  return (GATES as string[]).includes(level) ? (level as Gate) : null;
+}
+
+/**
+ * A teammate's live watcher that will serve this caller: the one that gives
+ * them the most. Their level on the team page, read against each watcher's
+ * levels; a `callers:` line naming them in the file (session 17, kept so a
+ * file that lists people still routes); or `--brief-for`. Only used when the
  * caller has no live watcher of their own, which always comes first.
  */
 async function sharedWatcher(
   env: Env,
   orgId: string,
-  caller: { id: string; email: string | null; phone?: string },
+  caller: { id: string; email: string | null; phone?: string; level: string },
 ): Promise<{ userId: string; watcherId: string; repo: string; name?: string; run: boolean } | null> {
-  let brief: { userId: string; watcherId: string; repo: string; name?: string; run: boolean } | null = null;
+  let best: { w: Shared; gate: Gate } | null = null;
   for (const { value } of await db.stashByPrefix(env, `liveshare:${orgId}:`)) {
-    const w = JSON.parse(value) as { userId: string; watcherId: string; repo: string; name?: string; share: string[] | "team"; run?: string[] };
+    const w = JSON.parse(value) as Shared;
     if (w.userId === caller.id) continue;
-    // A session whose permissions file lets this caller run requests wins
-    // over one that only shares its brief.
-    if (w.run && runsFor(w.run, caller)) return { ...w, run: true };
-    if (!brief && (w.share === "team" || (caller.email && w.share.includes(caller.email.toLowerCase())))) brief = { ...w, run: false };
+    const gates = [
+      gateIn(w, caller.level),
+      w.run && runsFor(w.run, caller) ? "read" : null,
+      w.share === "team" || (caller.email && Array.isArray(w.share) && w.share.includes(caller.email.toLowerCase())) ? "listen" : null,
+    ].filter((g): g is Gate => !!g);
+    for (const gate of gates)
+      if (!best || GATES.indexOf(gate) > GATES.indexOf(best.gate)) best = { w, gate };
   }
-  return brief;
+  return best ? { userId: best.w.userId, watcherId: best.w.watcherId, repo: best.w.repo, name: best.w.name, run: best.gate !== "listen" } : null;
+}
+
+/** `name:gate,…` from a watcher, or null when its repo has no file. */
+function parseLevels(raw: string): Record<string, Gate> | null {
+  const out: Record<string, Gate> = {};
+  for (const pair of raw.split(",").slice(0, 50)) {
+    const [name, gate] = pair.split(":").map((x) => x.trim());
+    if (name && db.LEVEL_RULE.test(name) && (GATES as string[]).includes(gate)) out[name] = gate as Gate;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /** Whether a watcher's `run` patterns (from its permissions file: emails,
@@ -849,7 +897,7 @@ async function ringInXml(
     ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
     : null;
   // No watcher of their own: a teammate's session may share its brief.
-  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined }) : null;
+  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined, level: db.levelOf(user, org) }) : null;
   const owner = shared ? await db.userById(env, shared.userId) : null;
   if (watcher || (shared && owner)) {
     const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
@@ -880,7 +928,14 @@ async function ringInXml(
       ...(owner
         ? {
             servedBy: owner.id,
-            teammate: { name: caller, owner: ownerName, email: user.email, phone: user.phone ?? undefined, run: !!shared?.run },
+            teammate: {
+              name: caller,
+              owner: ownerName,
+              email: user.email,
+              phone: user.phone ?? undefined,
+              level: db.levelOf(user, org),
+              run: !!shared?.run,
+            },
           }
         : {}),
     };
@@ -1150,7 +1205,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   // after the polls stop, and ring-ins go back to the quiet recording.
   let live: string | undefined;
   /** Set when the live call is a teammate hearing this session's brief. */
-  let liveCaller: { name: string; email: string | null; phone: string | null; you: false } | undefined;
+  let liveCaller: { name: string; email: string | null; phone: string | null; level: string; you: false } | undefined;
   /** What the call's requests may do: `full` on the owner's own call,
    *  `restricted` on a test ring; the watcher hands it to the fork's gate. */
   let liveMode: "full" | "restricted" | undefined;
@@ -1169,12 +1224,20 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
       .map((p) => p.trim())
       .filter((p) => /^(\*|\*@[^\s@]+|[^\s@*]+@[^\s@]+|\+?[\d ()-]{6,})$/.test(p))
       .slice(0, 100);
-    if (share && share !== "owner") {
-      const who = share === "team" ? "team" : share.split(",").map((e) => e.trim()).filter((e) => e.includes("@")).slice(0, 50);
-      if (who === "team" || who.length || run.length)
-        await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: who, run }), 45);
-    } else if (run.length)
-      await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify({ userId: user.id, watcherId, repo, name, share: [], run }), 45);
+    // The level names its permissions file defines, `name:gate,…`, and its
+    // default: what a teammate's level from the team page means here.
+    const levels = parseLevels(url.searchParams.get("levels") ?? "");
+    const ldefault = (url.searchParams.get("ldefault") ?? "").trim();
+    const who = share && share !== "owner"
+      ? share === "team" ? "team" : share.split(",").map((e) => e.trim()).filter((e) => e.includes("@")).slice(0, 50)
+      : [];
+    if (who === "team" || who.length || run.length || levels) {
+      const entry: Shared = { userId: user.id, watcherId, repo, name, share: who, run, ...(levels ? { levels, ldefault: db.LEVEL_RULE.test(ldefault) ? ldefault : "listen" } : {}) };
+      await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify(entry), 45);
+    }
+    // Kept a month per repo, so the team page can offer each repo's level
+    // names for a dropdown without ever reading the repo.
+    if (levels) await db.stashPut(env, `levels:${org.id}:${repo}`, JSON.stringify({ levels, default: ldefault, at: Date.now() }), 30 * 86400);
     // Per repo too, so a test ring pinned to a repo greets as that watcher.
     await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
@@ -1182,12 +1245,12 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; mode?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string };
       if (!c.onlyRepo || c.onlyRepo === repo) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
         if (c.teammate !== undefined)
-          liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, you: false };
+          liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, level: c.teammateLevel ?? "", you: false };
       }
     }
   }
@@ -1200,6 +1263,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
+  const callerOrg = caller ? (caller.org_id === org.id ? org : await db.orgById(env, caller.org_id)) : null;
   return json({
     ready: true,
     watchers: watchers.length,
@@ -1210,6 +1274,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
         name: caller?.name ?? "",
         email: caller?.email ?? null,
         phone: found.record.phone,
+        level: caller && callerOrg ? db.levelOf(caller, callerOrg) : "",
         you: caller?.id === user.id,
       },
       createdAt: found.record.createdAt,
@@ -1595,6 +1660,47 @@ export default {
           teamUrl: teamUrl(env),
           inboundNumber: env.TELNYX_FROM_NUMBER,
         });
+      }
+
+      /* ----------------------------------------------------- line levels */
+
+      // Who may do what on calls to a teammate's session, from the CLI
+      // (`screenless team level`) and from other agent tools that share the
+      // permissions file, such as a Slack loop: the team page's data, behind
+      // the same token. Reading is any member's; changing is an admin's.
+      if (path.startsWith("/org/level")) {
+        const s = await authed(req, env);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const { user, org } = await identify(env, s.phone);
+        if (method === "GET" && path === "/org/levels") {
+          const roster = await db.members(env, org.id);
+          return json({
+            default: org.line_default,
+            members: roster.map((m) => ({ name: m.name, email: m.email, level: m.line_level })),
+            ...(await levels.knownLevels(env, org.id)),
+          });
+        }
+        if (method === "GET" && path === "/org/level") {
+          const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
+          const m = email ? await db.userByEmail(env, email) : null;
+          if (!m || m.org_id !== org.id) return fail(404, "not on your team");
+          return json({ email: m.email, level: db.levelOf(m, org), own: m.line_level, teamDefault: org.line_default });
+        }
+        if (method === "POST" && (path === "/org/level" || path === "/org/level/default")) {
+          if (user.role !== "admin") return fail(403, "admins only — ask an admin, or use screenless.sh/team");
+          const body = (await req.json().catch(() => ({}))) as { email?: string; level?: string };
+          const level = typeof body.level === "string" ? body.level.trim() : "";
+          if (!levels.validLevel(level)) return fail(400, "a level is a word: listen, read, full, or a level your permissions file defines");
+          if (path === "/org/level/default") {
+            await db.setLineDefault(env, org.id, user.id, level);
+            return json({ ok: true, default: level });
+          }
+          const m = body.email ? await db.userByEmail(env, body.email.trim().toLowerCase()) : null;
+          if (!m || m.org_id !== org.id) return fail(404, "not on your team");
+          await db.setLevel(env, org.id, user.id, m.id, level);
+          return json({ ok: true, email: m.email, level });
+        }
+        return fail(404, "not found");
       }
 
       /* --------------------------------------------------------- settings */
