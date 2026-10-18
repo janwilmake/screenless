@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screenless — a phone line for your team and its coding agents</title>
+<title>screenless — call your Claude Code session</title>
 <!-- Kept under ~155 characters, which is where Google truncates. The old one
      ran to 192 and lost the price, which is the part people search for. -->
-<meta name="description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. $10 free credit, then pay as you go.">
+<meta name="description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
-<meta property="og:title" content="Your agents get stuck. Let them call you.">
-<meta property="og:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
+<meta property="og:title" content="Call your Claude Code session.">
+<meta property="og:description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh/">
 <meta property="og:site_name" content="screenless">
@@ -19,10 +19,10 @@
 <meta property="og:image" content="https://screenless.sh/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="screenless, over the headline: your agents get stuck, let them call you — with an incoming-call line reading 'ringing you — legacy price rows: drop or migrate?'">
+<meta property="og:image:alt" content="screenless: call your Claude Code session.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Your agents get stuck. Let them call you.">
-<meta name="twitter:description" content="A phone line for your team and its coding agents. Ring in with a request, call anyone on the team, and route each conversation to a terminal. Build your own skills on the CLI.">
+<meta name="twitter:title" content="Call your Claude Code session.">
+<meta name="twitter:description" content="Call your Claude Code session by phone or WhatsApp. It does what you ask while you talk, on your own machine. $10 free, then 30¢ a minute.">
 <meta name="twitter:image" content="https://screenless.sh/og.png">
 <!-- The mark: an S of two half circles, a dot centred in each bowl. -->
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -47,7 +47,7 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "A phone line for a team and its coding agents. Ring in and leave a spoken request that lands in whoever's terminal is watching, or dispatch a call to any, some, or all of your teammates from the CLI. The voice takes no action itself: transcripts route to a terminal on someone's own machine, which acts. The morning PR briefing and call-when-afk are two branded skills built on the CLI; anyone can build their own.",
+      "description": "Call your Claude Code session by phone or WhatsApp. A voice talks with you, and the session armed with /screenless on your own machine does what you ask during the call, with the access it already has. Phone calls are rung back to your verified number; WhatsApp calls are tied to your account. Teammates share the same number.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
@@ -56,7 +56,7 @@
           "name": "The line",
           "price": "0.30",
           "priceCurrency": "USD",
-          "description": "The phone line, pay as you go: 10 USD of credit free, then 0.30 USD per minute of call, billed to your team's shared balance."
+          "description": "Pay as you go: 10 USD of credit free, then 0.30 USD per minute of call, billed to your team's shared balance."
         }
       ]
     },
@@ -66,34 +66,34 @@
       "mainEntity": [
         {
           "@type": "Question",
+          "name": "What can it do during a call?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Anything your session can do at the keyboard: read, edit, run tests, commit, push, deploy, post to Slack. It will not read a secret out loud."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if someone spoofs my number?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "They get nowhere. The line never answers a phone call on its caller id: it hangs up and calls your verified number back, so only your phone gets through. A WhatsApp call is tied to your account."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "Does my code leave my machine?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. The reading happens locally, through MCPs you already connected. What reaches us is the short brief the call is placed from and the transcript of what you said back — both deleted within days."
+            "text": "No. Your session reads and changes it locally. What passes through us is the call itself: its audio, the transcript, and the short answers your session sends back to be spoken."
           }
         },
         {
           "@type": "Question",
-          "name": "Which coding agents does it work with?",
+          "name": "Do I have to speak English?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Whatever opens the pull requests — Claude Code, Codex, Cursor, a human on a bad day. The skills read your repo and your tracker, not your agent. Claude Code is what runs them, so you need that."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What if I don't pick up at eight?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Nothing is lost. The undecided items roll into tomorrow's call, and you can ring the line any time to leave a request or your decisions as a voice note — no menu, just a beep, and it lands transcribed in your team's terminal. screenless settings --pause stops the morning call for as long as you want."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What if there's nothing worth asking about?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Then it doesn't call. A drained queue ends the call early; an empty one never starts it. A phone that rings every morning regardless is a phone you stop answering."
+            "text": "No. It follows whatever language you speak, and switches when you do."
           }
         },
         {
@@ -101,23 +101,7 @@
           "name": "Can I read the install script first?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes — it is plain bash served at https://screenless.sh/install, and the CLI it fetches is two files with no dependencies. All of it is on GitHub under the MIT licence."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Will it call my country?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Twenty-eight so far, across Europe, the Americas, Asia-Pacific and South Africa. The setup command tells you in the first ten seconds if yours isn't one of them, before any card is asked for."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Do I have to talk to it in English?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Ten languages, chosen at setup, and it will follow you if you switch mid-sentence. Voices were picked on measured latency, so it answers at conversation speed rather than waiting a beat."
+            "text": "Please do. It is plain bash at https://screenless.sh/install, and the CLI has no dependencies. All of it is on GitHub, MIT."
           }
         },
         {
@@ -125,15 +109,7 @@
           "name": "What does cancelling look like?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "There is nothing to cancel — it is pay-as-you-go, not a subscription. Stop calling and you stop spending; leftover credit just sits there, and there is nothing to unsubscribe from."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Can a teammate misuse the line?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "A request from a teammate runs on someone else's terminal, so we treat it as untrusted: it arrives marked as theirs, and the agent is told never to read personal data or secrets, never to leave the repo, and never to do anything irreversible without the operator's say-so. The line only ever dials verified numbers on your own team."
+            "text": "There is nothing to cancel: pay as you go, no subscription. Stop calling and you stop spending."
           }
         }
       ]
@@ -181,6 +157,9 @@
   /* ----------------------------------------------------------------- hero */
   .hero{padding:72px 0 76px}
   .hero-grid{display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center}
+  /* Grid items default to their content's width; the unbreakable install
+     command would otherwise push the column past a phone's screen. */
+  .hero-grid > *{min-width:0}
   .hero h1{font-size:clamp(40px,5vw,66px);letter-spacing:-.038em;font-weight:800;margin:0}
   .hero .stand{font-size:clamp(17px,1.5vw,20px);color:var(--muted);
                max-width:50ch;margin:24px 0 0;line-height:1.55}
@@ -192,31 +171,30 @@
        background:var(--ink);border-radius:var(--r);padding:8px 8px 8px 20px;
        text-align:left;max-width:100%;box-shadow:var(--shadow-lg)}
 
-  /* animated demo terminal */
-  .demo{background:#0c0e14;border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
-        overflow:hidden;border:1px solid #1c1f2a}
-  .demo-bar{display:flex;align-items:center;gap:7px;padding:13px 16px;
-            background:#12151d;border-bottom:1px solid #1c1f2a}
-  .demo-bar span{width:11px;height:11px;border-radius:50%;background:#2c313d}
-  .demo-bar em{margin-left:10px;font-family:var(--mono);font-size:12px;
-               color:#6a7183;font-style:normal}
-  .demo-body{font-family:var(--mono);font-size:13.5px;line-height:1.5;
-             padding:20px 20px 22px;height:392px;overflow:hidden;color:#c9cedb;
-             display:flex;flex-direction:column;justify-content:flex-end}
-  .demo-body .ln{margin:0 0 11px;opacity:0;transform:translateY(4px);
-                 transition:opacity .3s ease,transform .3s ease;white-space:pre-wrap;word-break:break-word}
-  .demo-body .ln.show{opacity:1;transform:none}
-  .demo .who{color:#6a7183}
-  .demo .you .who{color:#8b93a7}
-  .demo .agent .who{color:#f0876a}
-  .demo .cmd-ln{color:#eef0f5}
-  .demo .cmd-ln .dollar{color:#6a7183}
-  .demo .ok{color:#5bbf87}
-  .demo .warn{color:#f0876a}
-  .demo .dim{color:#6a7183}
-  .demo .cursor{display:inline-block;width:8px;height:15px;background:#f0876a;
-                vertical-align:-2px;margin-left:2px;animation:blink 1s step-end infinite}
-  @keyframes blink{50%{opacity:0}}
+  /* ------------------------------------------------- the demo call, played */
+  .phone{background:#0c0e14;color:#eef0f5;border-radius:var(--r-lg);box-shadow:var(--shadow-lg);
+         border:1px solid #1c1f2a;overflow:hidden}
+  .phone-top{display:flex;align-items:center;gap:14px;padding:18px 20px;
+             background:#12151d;border-bottom:1px solid #1c1f2a}
+  .phone-top .av{width:42px;height:42px;border-radius:50%;background:#fff;flex-shrink:0;
+                 display:flex;align-items:center;justify-content:center}
+  .phone-top b{display:block;font-size:15px;font-weight:600}
+  .phone-top span{display:block;font-family:var(--mono);font-size:12px;color:#6a7183}
+  .phone-top button{margin-left:auto;font:600 13px var(--sans);cursor:pointer;border:0;
+                    border-radius:99px;padding:10px 16px;background:#5bbf87;color:#0c0e14;flex-shrink:0}
+  .phone-top button.on{background:#f0876a}
+  .phone ol{list-style:none;margin:0;padding:18px 20px 20px;font-size:14.5px;line-height:1.5}
+  .phone li{margin:0 0 10px;color:#c9cedb;transition:opacity .25s ease,color .25s ease}
+  .phone li:last-child{margin-bottom:0}
+  .phone li b{font-weight:600;margin-right:6px}
+  .phone li.you b{color:#8b93a7}
+  .phone li.voice b{color:#f0876a}
+  .phone li.work{font-family:var(--mono);font-size:12.5px;color:#5bbf87}
+  .phone.playing li{opacity:.35}
+  .phone.playing li.now{opacity:1;color:#fff}
+  .phone.playing li.done{opacity:.6}
+  .phone .bar{height:3px;background:#1c1f2a}
+  .phone .bar i{display:block;height:100%;width:0;background:#f0876a}
   .cmd code{font-family:var(--mono);font-size:14.5px;color:#eef0f5;
             white-space:nowrap;overflow-x:auto;background:none;border:0;padding:0}
   .cmd code .p{color:var(--soft);user-select:none}
@@ -335,7 +313,6 @@
 
   @media(max-width:900px){
     .hero-grid{grid-template-columns:1fr;gap:40px}
-    .demo-body{height:360px}
     .cols{grid-template-columns:1fr}
   }
   @media(max-width:720px){
@@ -360,7 +337,8 @@
   <div class="top">
     <a class="brand" href="/"><svg viewBox="16 1 68 112" height="21" style="vertical-align:-4px;margin-right:9px" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg>screenless</a>
     <nav>
-      <a href="#line">the line</a>
+      <a href="#how">how</a>
+      <a href="#team">team</a>
       <a href="#price">price</a>
       <a href="#faq">faq</a>
       <a class="navcta" href="#start">Get started</a>
@@ -370,13 +348,13 @@
   <header class="hero">
     <div class="hero-grid">
       <div class="hero-copy">
-        <p class="for">A phone line for your coding agents</p>
-        <h1>Your agents get stuck.<br>Let them call you.</h1>
+        <p class="for">Claude Code, by phone</p>
+        <h1>Call your Claude Code session.</h1>
         <p class="stand">
-          Walk away from the keyboard and your agents don't stall. When one hits
-          a decision only a person can make, it phones you — or anyone on your
-          team — takes your answer out loud, and keeps working. Unblocked from
-          anywhere. No screen.
+          From a walk, the car, the queue at the bakery. Ask where things
+          stand, tell it what to do, and it does the work while you are still
+          on the line: on your own machine, with the access your session
+          already has. By phone or WhatsApp.
         </p>
 
         <div class="cmd">
@@ -389,136 +367,118 @@
         </p>
       </div>
 
-      <!-- The whole pitch in one loop: prompted, AFK, blocked, it calls, the
-           answer comes back, it keeps going. Pure DOM animation, no library. -->
-      <div class="demo" aria-hidden="true">
-        <div class="demo-bar"><span></span><span></span><span></span><em>agent · your-repo</em></div>
-        <div class="demo-body" id="demo"></div>
+      <!-- A demo call, voiced with ElevenLabs from a script: the transcript
+           is on the page either way, and lights up line by line as it plays.
+           The green lines are what the session did meanwhile. -->
+      <div class="phone" id="call">
+        <div class="phone-top">
+          <div class="av"><svg viewBox="16 1 68 112" height="26" aria-hidden="true"><path d="M 70.4 43.2 A 22 22 0 1 0 50 57 A 22 22 0 1 1 29.6 70.8" fill="none" stroke="#14110f" stroke-width="12" stroke-linecap="round"/><circle cx="50" cy="35" r="7.5" fill="#b4341f"/><circle cx="50" cy="79" r="7.5" fill="#b4341f"/></svg></div>
+          <div><b>Sam → Claude session</b><span id="call-time">demo call · 0:40</span></div>
+          <button type="button" id="call-play">▶ Play the call</button>
+        </div>
+        <ol>
+          <li class="voice" data-t="0" data-e="4.24"><b>Session</b>Hi Sam, your Claude session in checkout-api here. What can I do?</li>
+          <li class="you" data-t="4.24" data-e="7.84"><b>Sam</b>Hey! I'm out on a walk. Did last night's test run go green?</li>
+          <li class="voice" data-t="7.84" data-e="13.52"><b>Session</b>Not quite. Two refund tests fail, since yesterday's currency change.</li>
+          <li class="you" data-t="13.52" data-e="18.32"><b>Sam</b>Ugh. Can you fix them, and open a PR if everything passes?</li>
+          <li class="voice" data-t="18.32" data-e="20.8"><b>Session</b>I'm on it.</li>
+          <li class="work" data-t="19" data-e="24.48">· editing src/refunds.ts · running npm test</li>
+          <li class="voice" data-t="20.8" data-e="24.48"><b>Session</b>Still working on it: the fix is in, now running the full suite.</li>
+          <li class="work" data-t="24.48" data-e="35.44">· 214 passing · gh pr create</li>
+          <li class="voice" data-t="24.48" data-e="35.44"><b>Session</b>Done. All 214 tests pass, and the PR is open. Refunds now round in the original currency. Should I ask Priya to review it?</li>
+          <li class="you" data-t="35.44" data-e="38.24"><b>Sam</b>Yes, ping her on Slack. Thanks, bye!</li>
+          <li class="work" data-t="38" data-e="40.32">· slack: review request sent to Priya</li>
+          <li class="voice" data-t="38.24" data-e="40.32"><b>Session</b>Done, she's tagged. Bye, Sam!</li>
+        </ol>
+        <div class="bar"><i id="call-bar"></i></div>
+        <audio id="call-audio" src="/demo-call.mp3" preload="none"></audio>
       </div>
     </div>
 
     <div class="assure">
       <div>
-        <b>It runs on your machines</b>
-        <span>Through the MCPs your team already connected</span>
+        <b>It runs on your machine</b>
+        <span>Your session does the work, with the access it already has</span>
       </div>
       <div>
-        <b>Your code never leaves them</b>
-        <span>All we relay is a question and an answer</span>
+        <b>Only you get through</b>
+        <span>A phone call is rung back to your verified number; WhatsApp is tied to your account</span>
       </div>
       <div>
-        <b>The voice has no credentials</b>
-        <span>It collects decisions; it cannot touch a repo</span>
+        <b>The voice holds no keys</b>
+        <span>It talks; your session acts. Nothing on our side can push</span>
       </div>
     </div>
   </header>
+</div>
 
-  <section id="problem">
-    <p class="kicker">the problem</p>
-    <h2>Agents made writing code cheap. They made deciding expensive.</h2>
-    <p class="lede">
-      You brought in agents to move faster — not to spend every morning at a
-      screen reviewing code nobody wrote and unblocking the ones that got
-      stuck. But that is the job now, and every part of it waits on a person at
-      a keyboard.
-    </p>
-
-    <div class="cols">
-      <div>
-        <h3>The queue outruns the team</h3>
-        <p>
-          Overnight your agents open more work than anyone reads before
-          standup. It carries to tomorrow, and tomorrow it is bigger — for
-          everyone at once.
-        </p>
+<section id="how" class="band">
+  <div class="wrap">
+    <p class="kicker">how it works</p>
+    <h2>Three steps, then you just call.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <div>
+          <h3>Install</h3>
+          <p>One command installs the CLI and verifies your phone number.</p>
+        </div>
       </div>
-      <div>
-        <h3>The decisions stay stuck in chairs</h3>
-        <p>
-          The calls only a person can make — is this the right scope, does this
-          ship, who picks this up — wait for someone to be at a keyboard, in a
-          thread, in a meeting. So they wait.
-        </p>
+      <div class="step">
+        <div class="n">2</div>
+        <div>
+          <h3>Arm a session</h3>
+          <p>Type <code>/screenless</code> in Claude Code. That session now answers the line.</p>
+        </div>
       </div>
-      <div>
-        <h3>A phone needs no screen</h3>
-        <p>
-          A voice line can reach anyone on the team, collect what they decide,
-          and hand it straight to the agents that do the work. That is the one
-          medium in this workflow that isn't a screen.
-        </p>
+      <div class="step">
+        <div class="n">3</div>
+        <div>
+          <h3>Call</h3>
+          <p>
+            Ring the number, or call it on WhatsApp. A phone call hangs up and
+            rings you straight back, so a spoofed caller id gets nowhere. Ask,
+            decide, have it push or deploy: answers take seconds to a few
+            minutes, and it tells you how it is going in between.
+          </p>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section id="line">
-    <p class="kicker">the line</p>
-    <h2>One number. Your whole team, and every agent behind them.</h2>
+<div class="wrap">
+  <section id="team">
+    <p class="kicker">your team</p>
+    <h2>One number for the whole team.</h2>
     <p class="lede">
-      screenless gives your team a phone line wired to the terminals it runs.
-      It goes both ways: anyone can ring in, and any command can ring out.
+      Everyone calls the same line and reaches their own session. Around that,
+      a few things a team gets for free.
     </p>
-
     <div class="cols">
       <div>
-        <h3>Ring in</h3>
+        <h3>Teammates can listen in</h3>
         <p>
-          A teammate calls the line — it rings their verified number
-          straight back, so a spoofed caller id gets nowhere — or calls it on
-          WhatsApp, and speaks: a request, a decision, an idea. It is transcribed and routed to whoever's terminal is watching:
-          the caller's own first, any teammate's otherwise, and a queue that
-          holds up to a week when nobody is. Their agent picks it up and acts.
+          Share your session's brief with your team, and a teammate who rings
+          hears where it stands. What they ask is noted for after the call; it
+          never runs on your machine while they are on the line.
         </p>
       </div>
       <div>
-        <h3>Ring out</h3>
+        <h3>Nobody watching? It waits.</h3>
         <p>
-          <code>screenless call "…" --to alex@team.com</code>, or
-          <code>--all</code>. Dispatch a briefing to one teammate or the whole
-          team, and each conversation lands back in a terminal. It only ever
-          dials verified numbers on your own team.
+          Call while no session is armed and your request is transcribed and
+          queued for the next teammate's terminal that watches, for up to a
+          week.
         </p>
       </div>
       <div>
-        <h3>Watch</h3>
+        <h3>Your agents can call you</h3>
         <p>
-          Everyone runs <code>screenless watch</code> in a terminal. Calls
-          route to exactly one, so a team drains its queue together — and a
-          teammate's request arrives marked as theirs, weighed before it runs
-          with your access.
+          Skills built on the line: <code>call-when-afk</code> phones you when
+          an agent is blocked, and <code>morning-pr-review</code> rings with
+          last night's pull requests.
         </p>
-      </div>
-    </div>
-  </section>
-
-  <section id="boundary">
-    <p class="kicker">the boundary</p>
-    <h2>The voice on the phone cannot touch your code. On purpose.</h2>
-    <p class="lede">
-      A hosted service cannot have your team's MCPs, logged-in browsers and
-      Claude subscriptions without asking for credentials nobody should hand
-      over. So it doesn't ask. It takes decisions and gives them back to a
-      terminal that already has the access — never to us.
-    </p>
-
-    <div class="split">
-      <div>
-        <div class="what">what the line does</div>
-        <ul>
-          <li>Collects what a person says, and only what a person can decide</li>
-          <li>Routes each conversation to one teammate's terminal</li>
-          <li>Marks a teammate's request as theirs, to weigh before it runs</li>
-          <li>Hands the transcript back to a machine on your team</li>
-        </ul>
-      </div>
-      <div class="no">
-        <div class="what">what it will never do</div>
-        <ul>
-          <li>Hold a token, a key or a repo credential</li>
-          <li>Merge, close, comment or push from the call itself</li>
-          <li>Keep your source on our servers</li>
-          <li>Reach a number that is not verified on your own team</li>
-        </ul>
       </div>
     </div>
   </section>
@@ -543,99 +503,59 @@
         <div class="amt">30¢</div>
         <div class="per">per minute · pay as you go</div>
         <ul>
-          <li>A morning call is usually ~$3</li>
+          <li>A five-minute call is $1.50</li>
           <li>One balance for your whole team, one line to ring</li>
           <li>Invite teammates at <a href="/team">screenless.sh/team</a></li>
         </ul>
       </div>
     </div>
-
-    <p class="guarantee">
-      No card at setup, no subscription, no trial clock: every team starts with
-      $10 of credit, calls draw it down by the minute, and when it runs out the
-      calls stop until an admin tops up. Top up when you want more.
-    </p>
   </section>
 
   <section id="faq">
-    <p class="kicker">before you paste that command</p>
+    <p class="kicker">faq</p>
     <h2>The things you were about to ask.</h2>
-
     <div class="faq">
+      <div>
+        <h3>What can it do during a call?</h3>
+        <p>
+          Anything your session can do at the keyboard: read, edit, run tests,
+          commit, push, deploy, post to Slack. It will not read a secret out
+          loud.
+        </p>
+      </div>
+      <div>
+        <h3>What if someone spoofs my number?</h3>
+        <p>
+          They get nowhere. The line never answers a phone call on its caller
+          id: it hangs up and calls your verified number back, so only your
+          phone gets through. A WhatsApp call is tied to your account.
+        </p>
+      </div>
       <div>
         <h3>Does my code leave my machine?</h3>
         <p>
-          No. The reading happens locally, through MCPs you already connected.
-          What reaches us is the short brief the call is placed from and the
-          transcript of what you said back — both deleted within days.
+          No. Your session reads and changes it locally. What passes through
+          us is the call itself: its audio, the transcript, and the short
+          answers your session sends back to be spoken.
         </p>
       </div>
       <div>
-        <h3>Which coding agents does it work with?</h3>
-        <p>
-          Whatever opens the pull requests — Claude Code, Codex, Cursor, a
-          human on a bad day. The loop reads your repo and your tracker, not
-          your agent. Claude Code is what runs the skills, so you need that.
-        </p>
-      </div>
-      <div>
-        <h3>What if I don't pick up at eight?</h3>
-        <p>
-          Nothing is lost. The undecided items roll into tomorrow's call, and
-          you can ring the line any time to leave a request or your decisions
-          as a voice note — no menu, just a beep, and it lands transcribed in
-          your team's terminal. <code>screenless settings --pause</code>
-          stops the morning call for as long as you want it stopped.
-        </p>
-      </div>
-      <div>
-        <h3>What if there's nothing worth asking about?</h3>
-        <p>
-          Then it doesn't call. A drained queue ends the call early; an empty
-          one never starts it. A phone that rings every morning regardless is a
-          phone you stop answering.
-        </p>
+        <h3>Do I have to speak English?</h3>
+        <p>No. It follows whatever language you speak, and switches when you do.</p>
       </div>
       <div>
         <h3>Can I read the install script first?</h3>
         <p>
-          Please do — it's <a href="/install">plain bash, right here</a>, and
-          the CLI it fetches is two files with no dependencies. All of it is on
+          Please do. It is plain bash, <a href="/install">right here</a>, and
+          the CLI has no dependencies. All of it is on
           <a href="https://github.com/janwilmake/screenless">GitHub</a>, MIT.
-        </p>
-      </div>
-      <div>
-        <h3>Will it call my country?</h3>
-        <p>
-          Twenty-eight so far, across Europe, the Americas, Asia-Pacific and
-          South Africa. <code>screenless setup</code> tells you in the first ten
-          seconds if yours isn't one of them, before any card is asked for.
-        </p>
-      </div>
-      <div>
-        <h3>Do I have to talk to it in English?</h3>
-        <p>
-          Ten languages, chosen at setup, and it will follow you if you switch
-          mid-sentence. Voices were picked on measured latency, so it answers
-          at conversation speed rather than waiting a beat.
         </p>
       </div>
       <div>
         <h3>What does cancelling look like?</h3>
         <p>
-          There is nothing to cancel — it is pay-as-you-go, not a subscription.
-          Stop calling and you stop spending; leftover credit just sits there,
-          and there is nothing to unsubscribe from.
-        </p>
-      </div>
-      <div>
-        <h3>Can a teammate misuse the line?</h3>
-        <p>
-          A request from a teammate runs on someone else's terminal, so we
-          treat it as untrusted: it arrives marked as theirs, and the agent is
-          told never to read personal data or secrets, never to leave the repo,
-          and never to do anything irreversible without the operator's say-so.
-          The line only ever dials verified numbers on your own team.
+          There is nothing to cancel: pay as you go, no subscription. Stop
+          calling and you stop spending.
         </p>
       </div>
     </div>
@@ -644,26 +564,26 @@
 
 <section class="close" id="start">
   <div class="wrap">
-    <h2>Give your team a phone line.</h2>
+    <h2>Call your session.</h2>
     <p class="stand">
-      One command. It installs, verifies your number, and points a repo at the
-      line. Invite the team at <a href="/team">screenless.sh/team</a>.
+      One command installs it and verifies your number. Then type
+      <code>/screenless</code> in Claude Code, and ring. Invite the team at
+      <a href="/team">screenless.sh/team</a>.
     </p>
     <div class="cmd">
       <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
       <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
     </div>
     <p class="fine">
-      $10 of credit to start, then 30¢ a minute — no subscription, no card
-      until you want one. If it turns out to be the wrong shape for your team,
-      just stop calling; you are never billed for a minute you didn't talk.
+      $10 of credit to start, then 30¢ a minute. No subscription, and no card
+      until you want one.
     </p>
   </div>
 </section>
 
 <div class="wrap">
   <footer>
-    <span>screenless — a phone line for teams whose agents write the code</span>
+    <span>screenless — call your Claude Code session</span>
     <span>
       <a href="/terms">terms</a> ·
       <a href="/privacy">privacy</a> ·
@@ -684,71 +604,50 @@
     });
   });
 
-  /* The hero terminal: one looping scene of the call-when-afk flow. Each step
-     appends a line; a couple type out; the "on the phone" beat holds while a
-     timer counts, then the answer lands and the agent continues. */
+  /* The demo call: the line being said is lit, the rest dimmed, while the
+     audio plays. Stopped, the whole transcript reads as text. */
   (function () {
-    var el = document.getElementById("demo");
-    if (!el) return;
-    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    var scene = [
-      { cls: "you",   html: '<span class="who">you ›</span> refactor the billing module. i\'m heading out — call me if you\'re stuck.' },
-      { cls: "agent", html: '<span class="who">agent ›</span> on it. i\'ll phone you anything i can\'t decide myself.', after: 700 },
-      { cls: "dim",   html: 'reading the schema · running the tests · drafting the migration', after: 900 },
-      { cls: "agent warn", html: '<span class="who">agent ›</span> blocked: drop the legacy price rows, or migrate them?', after: 900 },
-      { cls: "cmd-ln", type: '<span class="dollar">$</span> screenless call "billing refactor — legacy price rows: drop or migrate?"', after: 500 },
-      { cls: "dim",   html: '→ ringing Jan …', after: 500 },
-      { cls: "dim",   hold: true, html: '&nbsp;&nbsp;on the phone · <span class="phone-t">0:00</span>' },
-      { cls: "ok",    html: '✓ answered · 1m52s · "migrate them — don\'t lose the history"', after: 500 },
-      { cls: "agent", html: '<span class="who">agent ›</span> got it. writing the migration, keeping every row.', after: 800 },
-      { cls: "ok",    html: '✓ unblocked — PR opened while you were away.', after: 800 }
-    ];
-
-    function line(cls) { var d = document.createElement("div"); d.className = "ln " + (cls || ""); el.appendChild(d); return d; }
-    function reset() { el.innerHTML = ""; }
-
-    function typeInto(node, html, done) {
-      // Type the visible text; keep it simple by revealing character by
-      // character from a temporary parse of the target HTML's text.
-      var tmp = document.createElement("div"); tmp.innerHTML = html;
-      var full = tmp.textContent, i = 0;
-      node.classList.add("show");
-      (function tick() {
-        i += 1;
-        node.textContent = full.slice(0, i);
-        if (i < full.length) { setTimeout(tick, 22); }
-        else { node.innerHTML = html; done(); }
-      })();
+    var box = document.getElementById("call");
+    var audio = document.getElementById("call-audio");
+    var btn = document.getElementById("call-play");
+    var bar = document.getElementById("call-bar");
+    var time = document.getElementById("call-time");
+    if (!box || !audio || !btn) return;
+    var lines = [].slice.call(box.querySelectorAll("li"));
+    var label = time.textContent;
+    function fmt(s) { s = Math.floor(s); return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
+    function paint() {
+      var t = audio.currentTime;
+      lines.forEach(function (li) {
+        var a = +li.dataset.t, e = +li.dataset.e;
+        li.classList.toggle("now", t >= a && t < e);
+        li.classList.toggle("done", t >= e);
+      });
+      bar.style.width = (audio.duration ? (100 * t) / audio.duration : 0) + "%";
+      time.textContent = "on the call · " + fmt(t);
     }
-
-    function phoneWait(node, done) {
-      // A compressed stand-in for the two minutes on the phone.
-      node.classList.add("show");
-      var start = Date.now(), dur = 2600;
-      var t = node.querySelector(".phone-t");
-      (function tick() {
-        var p = Math.min(1, (Date.now() - start) / dur);
-        var secs = Math.round(p * 112); // ~1m52s
-        if (t) t.textContent = Math.floor(secs / 60) + ":" + ("0" + (secs % 60)).slice(-2);
-        if (p < 1) setTimeout(tick, 80); else done();
-      })();
+    function stop() {
+      box.classList.remove("playing");
+      btn.classList.remove("on");
+      btn.textContent = "▶ Play the call";
+      time.textContent = label;
     }
-
-    function run(i) {
-      if (i >= scene.length) { setTimeout(function () { reset(); run(0); }, 3400); return; }
-      var step = scene[i], node = line(step.cls);
-      var next = function () { run(i + 1); };
-      if (reduce) { node.innerHTML = step.html; node.classList.add("show"); setTimeout(next, 400); return; }
-      if (step.type) { typeInto(node, step.type, function () { setTimeout(next, 500); }); return; }
-      if (step.hold) { phoneWait(node, next); return; }
-      node.innerHTML = step.html;
-      requestAnimationFrame(function () { node.classList.add("show"); });
-      setTimeout(next, step.after || 600);
-    }
-    run(0);
+    btn.addEventListener("click", function () {
+      if (audio.paused) {
+        audio.play();
+        box.classList.add("playing");
+        btn.classList.add("on");
+        btn.textContent = "■ Hang up";
+      } else {
+        audio.pause();
+        audio.currentTime = 0;
+        bar.style.width = "0";
+        stop();
+      }
+    });
+    audio.addEventListener("timeupdate", paint);
+    audio.addEventListener("ended", function () { bar.style.width = "0"; stop(); });
   })();
 </script>
-
 </body>
 </html>

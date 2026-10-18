@@ -90,3 +90,7 @@ then:
 > yes build it pls , get the quality as high as possible everywhere
 
 > nice nice. just 1 thing... for whatever reason, it thinks my name is cody. even though his name is cody. why?
+
+> aight cool... so now wdyt of the screenless.sh landing? maybe its too complex. the main benefit is just making your claude code session accessible by your entire team over the phone, right?
+
+> yes rewrite it, and deploy. also, let's put a demo phonecall instead of the terminal thingy can you make it using elevenlabs? api key should be in simstreet env
