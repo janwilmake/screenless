@@ -1,30 +1,40 @@
 # screenless
 
-**Let your team call your Claude Code, not you.** Every "quick question" is a
-call or a huddle that pulls a developer out of their work. screenless gives
-your team a phone number for your Claude Code session instead: it answers from
-your code, tickets and docs, and does what you allow, right away, on your own
-machine. You get fewer interruptions; they stop waiting on you. And you can
-call it yourself, from a walk or the car.
+**Your team's questions, answered without you.** Every quick question used to
+be a call or a huddle that pulled a developer out of their work. screenless
+gives your team a number for your Claude Code session instead: they call it,
+or message it on WhatsApp, and it answers from your code, tickets and docs,
+and does what you allow, right away, on your own machine. You get fewer
+interruptions; they stop waiting on you. And you can use it yourself, from a
+walk or the car.
 
 Hear a demo call at **[screenless.sh](https://screenless.sh)**.
 
 ## How it works
 
-1. **Install** — `curl -fsSL https://screenless.sh/install | bash` installs the
-   CLI and verifies your phone number.
+1. **Install** — paste `Install https://screenless.sh/llms.txt into this repo
+   and invite my team.` into Claude Code. It installs the CLI, verifies your
+   number and invites your colleagues; or by hand,
+   `curl -fsSL https://screenless.sh/install | bash`.
 2. **Arm a session** — type **`/screenless`** in Claude Code. That session now
    answers the line.
-3. **Call** — ring the number, or call it on WhatsApp. A voice talks with you;
-   each thing you ask runs in a fork of your session on your machine, and the
-   answer is spoken back during the call. Read, edit, test, commit, push,
-   deploy, post to Slack: whatever the session can do at the keyboard. It tells
-   you how longer work is going while you wait.
+3. **Call or message** — ring the number, or call it on WhatsApp. A voice
+   talks with you; each thing you ask runs in a fork of your session on your
+   machine, and the answer is spoken back during the call. Read, edit, test,
+   commit, push, deploy, post to Slack: whatever the session can do at the
+   keyboard. It tells you how longer work is going while you wait.
+
+   Or send it a **WhatsApp message**, with screenshots and voice notes. Each
+   conversation gets one fork of your session, carried on with every message
+   (`--resume`), so a follow-up keeps its context; after 30 minutes of quiet
+   the next message starts a fresh fork from the session as it is then. The
+   answer comes back in the chat.
 
 **Only you get through.** The line never answers a phone call on its caller id,
 which is easy to spoof: it hangs up and rings your verified number straight
-back, so only your phone can pick up. A WhatsApp call is tied to your account
-and is answered at once.
+back, so only your phone can pick up. A WhatsApp call or message is tied to
+your account and is answered at once; the Worker only takes a WhatsApp message
+that Telnyx signed.
 
 **The voice holds no keys.** It has no tools and no credentials; it talks, and
 your session acts. Your code, your MCPs, your logged-in browser and your Claude
@@ -99,7 +109,8 @@ Manage your team, roles and billing at
 screenless.sh: phone calls with the ring-back, WhatsApp calls, live answers
 from a fork of the session, progress updates, barge-in, wideband audio.
 Ringing in to the queue, calling teammates, teams, invites and pay-as-you-go
-billing work too.
+billing work too. **WhatsApp messages** to the session are the newest part: deployed,
+and being tried on real chats now.
 
 What is **still early is the intelligence in the skills** — the morning
 briefing's hard part, reading a queue of pull requests and picking out the few

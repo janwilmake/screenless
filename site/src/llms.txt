@@ -1,9 +1,10 @@
 # screenless
 
-> A phone number for a developer's Claude Code session that their whole team
-> can call. Teammates ring it, by phone or WhatsApp, and the session answers
-> from the code, tickets and docs, or acts, under rules the developer sets,
-> instead of interrupting the developer. The developer can call it too.
+> Your team's questions, answered without you: a number for a developer's
+> Claude Code session that their whole team can call, or message on WhatsApp.
+> The session answers from the code, tickets and docs, or acts, under rules
+> the developer sets, instead of interrupting the developer. The developer can
+> use it too.
 
 The voice on the phone has no tools and no credentials. Each request runs in
 the developer's own Claude Code session on their own machine, with the access

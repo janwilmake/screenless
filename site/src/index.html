@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>screenless — let your team call your Claude Code</title>
+<title>screenless — your team's questions, answered without you</title>
 <!-- Kept under ~155 characters, which is where Google truncates. The old one
      ran to 192 and lost the price, which is the part people search for. -->
-<meta name="description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
+<meta name="description" content="Give your team a number for your Claude Code session: they call or WhatsApp it, and it answers from your code and does what you allow. $10 free.">
 <link rel="canonical" href="https://screenless.sh/">
 <meta name="theme-color" content="#fdfcfa">
 
-<meta property="og:title" content="Let your team call your Claude Code, not you.">
-<meta property="og:description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
+<meta property="og:title" content="Your team's questions, answered without you.">
+<meta property="og:description" content="Give your team a number for your Claude Code session: they call or WhatsApp it, and it answers from your code and does what you allow. $10 free.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://screenless.sh/">
 <meta property="og:site_name" content="screenless">
@@ -19,10 +19,10 @@
 <meta property="og:image" content="https://screenless.sh/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="screenless: let your team call your Claude Code, not you.">
+<meta property="og:image:alt" content="screenless: Your team's questions, answered without you.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Let your team call your Claude Code, not you.">
-<meta name="twitter:description" content="Let your team call your Claude Code session instead of you: it answers from your code and acts under your rules. By phone or WhatsApp. $10 free.">
+<meta name="twitter:title" content="Your team's questions, answered without you.">
+<meta name="twitter:description" content="Give your team a number for your Claude Code session: they call or WhatsApp it, and it answers from your code and does what you allow. $10 free.">
 <meta name="twitter:image" content="https://screenless.sh/og.png">
 <!-- The mark: an S of two half circles, a dot centred in each bowl. -->
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -47,7 +47,7 @@
       "url": "https://screenless.sh/",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "macOS, Linux",
-      "description": "A phone number for a developer's Claude Code session that their whole team can call. Teammates ring it, by phone or WhatsApp, and the session they reach, with everything it knows right now, answers from the code, tickets and docs, or acts, under rules the developer sets per person, on the developer's own machine. Phone calls are rung back to the caller's verified number. The developer can call it too.",
+      "description": "A phone number for a developer's Claude Code session that their whole team can call or message on WhatsApp. The session they reach, with everything it knows right now, answers from the code, tickets and docs, or acts, under rules the developer sets per person, on the developer's own machine. Phone calls are rung back to the caller's verified number. The developer can use it too.",
       "softwareRequirements": "Node.js 20 or newer, Claude Code",
       "license": "https://opensource.org/licenses/MIT",
       "offers": [
@@ -74,10 +74,18 @@
         },
         {
           "@type": "Question",
-          "name": "Why a call, and not Slack?",
+          "name": "Why this, and not Slack?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Use both: Slack is great for questions you can type. A call is for when typing does not work: on the road, between meetings, or when a conversation is faster than a thread. And it is not a fresh bot: the call reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back."
+            "text": "Use both: Slack is great at a desk. screenless is for the rest: a call on the road or between meetings, or a WhatsApp message with a screenshot from wherever they are. And it is not a fresh bot: it reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can they message instead of calling?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, on WhatsApp, to the same number. Text, screenshots and voice notes go to your session, which answers in the chat. A conversation keeps its context, so a follow-up just works, until it has been quiet for half an hour."
           }
         },
         {
@@ -358,11 +366,12 @@
     <div class="hero-grid">
       <div class="hero-copy">
         <p class="for">For developers on Claude Code</p>
-        <h1>Let your team call your Claude Code, not you.</h1>
+        <h1>Your team's questions, answered without you.</h1>
         <p class="stand">
-          Every quick question from your team is a call or a huddle that
-          breaks your focus. Give them a number for your Claude Code session
-          instead: it answers, and does what you allow.
+          Every quick question used to be a call or a huddle that broke your
+          focus. Give your team a number for your Claude Code session
+          instead: they call it or WhatsApp it, and it answers and does what
+          you allow.
         </p>
         <p class="diff">
           Not a new bot: the session you are already working in, with
@@ -384,7 +393,7 @@
         </p>
         <ul class="works">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="#0c0e14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>Any phone</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8a5 5 0 0 1-2.2-2.2l.8-1-1-2z" fill="#25d366" stroke-width="1"/></svg>WhatsApp <span>HD audio</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .8a5 5 0 0 1-2.2-2.2l.8-1-1-2z" fill="#25d366" stroke-width="1"/></svg>WhatsApp <span>calls and chats</span></li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="#c23a1f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 10l3 2-3 2M12 15h5"/></svg>Claude Code</li>
         </ul>
       </div>
@@ -427,7 +436,7 @@
 <div class="wrap">
   <section id="asks">
     <p class="kicker">what they ask</p>
-    <h2>The quick questions, answered without you.</h2>
+    <h2>Everything they used to ask you.</h2>
     <!-- Illustrations of what a team asks a developer's session, not
          quotes from customers: there are none to quote yet. -->
     <ul class="asks">
@@ -447,7 +456,7 @@
 <section id="how" class="band">
   <div class="wrap">
     <p class="kicker">how it works</p>
-    <h2>Three steps. Then they just call.</h2>
+    <h2>Three steps. Then they just ask.</h2>
     <ol class="steps">
       <li>
         <span class="n">1</span>
@@ -461,8 +470,8 @@
       </li>
       <li>
         <span class="n">3</span>
-        <h3>They call</h3>
-        <p>Type <code>/screenless</code> in your session and it answers the line: from any phone, or WhatsApp for HD audio.</p>
+        <h3>They call or message</h3>
+        <p>Type <code>/screenless</code> in your session and it answers: phone calls, WhatsApp calls in HD, and WhatsApp messages with screenshots and voice notes.</p>
       </li>
     </ol>
   </div>
@@ -499,7 +508,8 @@
       <h2>Call it yourself, too.</h2>
       <p class="lede">
         On a walk or in the car, ask your session where things stand, and have
-        it fix, push or deploy while you are still on the line.
+        it fix, push or deploy while you are still on the line, or send it a
+        WhatsApp with a screenshot and let it get on with it.
       </p>
       <p class="lede">
         And when an agent hits a decision only you can make, it can call you:
@@ -554,8 +564,12 @@
         <p>It lets you reach your agent. This lets your team reach it: by phone, with no laptop, seat or account, under rules you set. The quick questions stop coming to you.</p>
       </details>
       <details>
-        <summary>Why a call, and not Slack?</summary>
-        <p>Use both: Slack is great for questions you can type. A call is for when typing does not work: on the road, between meetings, or when a conversation is faster than a thread. And it is not a fresh bot: the call reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back.</p>
+        <summary>Why this, and not Slack?</summary>
+        <p>Use both: Slack is great at a desk. screenless is for the rest: a call on the road or between meetings, or a WhatsApp message with a screenshot from wherever they are. And it is not a fresh bot: it reaches the session you are working in, which knows the branch you are on, the change you have not committed yet, and why yesterday's deploy was rolled back.</p>
+      </details>
+      <details>
+        <summary>Can they message instead of calling?</summary>
+        <p>Yes, on WhatsApp, to the same number. Text, screenshots and voice notes go to your session, which answers in the chat. A conversation keeps its context, so a follow-up just works, until it has been quiet for half an hour.</p>
       </details>
       <details>
         <summary>What if my laptop is closed?</summary>
