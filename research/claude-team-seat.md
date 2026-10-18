@@ -72,6 +72,45 @@ are things the seat can do.
 new place where agents are members. Team Seat leaves the team where it is and
 gives the session a seat there.
 
+## Pricing
+
+Jan's choice (18 October 2026): **$299 a month per seat**. Priced on what the
+seat replaces, not on what it costs to run.
+
+| Plan | Price | What's in it |
+|---|---|---|
+| **Seat** (they bring the server and Claude) | **$299 / month per seat** | Identity setup; Slack, email, calendar and Meet; unlimited WhatsApp; 250 call minutes; per-person levels; change log |
+| **Managed seat** (we run the server) | $499–599 / month per seat | The same, plus an always-on server and monitoring; they bring their own Claude subscription. Only after the terms check below |
+| Extra call minutes | 40¢ a minute | Billed with the next invoice |
+| **Design partners** | 50% off for 3 months | In return for weekly feedback; full price after that |
+
+**Per seat, not per user.** The value is that everyone can ask it, so
+charging per user would discourage exactly the use that makes it worth
+having.
+
+**What the customer's stack costs:** a server (~$150/month) and Claude Code
+(Max, $200/month), so about $650 a month all-in with the seat. That is less
+than an hour a day of a developer's time (~$1,500–2,500 a month at developer
+rates), far less than a junior hire ($3–5k a month), and in line with "AI
+employee" products ($500–2,000+ a month).
+
+**Our costs per seat:** call minutes (~15–20¢ each, so ~$45 for the
+included 250) and WhatsApp (fractions of a cent). Slack, email and calendar
+cost us next to nothing. So the margin is high.
+
+**The goal:** $10k MRR is **34 seats**, against 127 teams at $79.
+
+**Before selling the managed seat:** Claude Max is an individual plan.
+Answering a whole team through one person's subscription may conflict with
+Anthropic's terms. The clean options are Claude Team or Enterprise seats, or
+the API, which changes the cost side. Check before a managed price goes on
+the website. On a bring-your-own seat it is the customer's own account and
+their call.
+
+**If $299 meets resistance:** don't lower it before anyone has said no. If
+needed, test $149 for teams of up to 10 people against $299 with the design
+partners.
+
 ## How to prove it
 
 **What has to be true:**
@@ -92,9 +131,9 @@ gives the session a seat there.
    Jan's network. Set up the seat with them on a call, timing each step and
    noting where a person had to step in. Measure the time to the first
    colleague's answer, and weekly askers in weeks 1 and 2.
-3. **A payment test at the end of week 2.** "Keep the seat for $X a month,
-   phone and WhatsApp included", with a Stripe link. The yes rate is the
-   proof.
+3. **A payment test at the end of week 2.** "Keep the seat for $299 a month
+   (50% off for the first three months), phone and WhatsApp included", with a
+   Stripe link. The yes rate is the proof.
 
 **Verdict after 4–6 weeks:**
 - **Proof:** at least 3 of 5 design partners have non-developers asking every
@@ -126,8 +165,6 @@ report its own progress), and payments.
 
 ## Open questions
 
-- **Price:** charge per seat (for example $29–79 a month) with phone and
-  WhatsApp included, or make the seat free and charge for the add-ons?
 - **The name.** Not checked for availability.
 - **More agents:** does the seat work with Codex and the others from the
   start (see `research/agent-hosts.md`), or Claude first?

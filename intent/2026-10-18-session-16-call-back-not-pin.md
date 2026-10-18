@@ -155,3 +155,11 @@ then:
 > can u make a subagent that drives my browser to try and find buying signal on x? gimme a rundown of what you find.
 
 > yes i think this makes a ton of sense. i dont wanna do this now but keep it in mind as a new product (give your session a seat on the team). the crazy thing is a lot of it is basically free, and the phone + whatsapp are nice add-ons. so lets write it up as claude-team-seat.md with how to proof and comparison to kylon. it could basically be watchloop and screenless combined into some new name.
+
+> hyre already loves cody, and they've both been using it and see the advantage a lot , mostly in slack for.
+>
+> what would be logical pricing for a team? the stack is basically a server of $150/month, $200/month for claude code, and us. how much should we charge?
+
+> $299 a month is big money, wow.
+
+> add the pricing to claude-team-seat.md. I like $299.
