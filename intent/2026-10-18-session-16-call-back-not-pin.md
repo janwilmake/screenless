@@ -187,3 +187,12 @@ then:
 > check if remo domains are available
 
 > i like it because its short for a 'remote worker' and thats the end goal
+
+> ok, move the idea md to work/remo/ and put a landingpage there and put it at remo.wilmake.com
+
+> https://github.com/janwilmake/chimein should also be merged, we already got meet this way too :)
+
+Remo moved out of this repo into its own project (`~/Desktop/work/remo`,
+landing page at remo.wilmake.com). chimein (Google Meet) joins watchloop and
+screenless as the third part it merges; meetings share the pooled voice
+minutes with calls.
