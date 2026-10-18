@@ -665,6 +665,12 @@ async function answerInbound(req: Request, env: Env, origin: string, ctx: Execut
   // Which fields a ring-in carries (never the values), so a WhatsApp call
   // that reaches this URL instead of its own can be told apart in the log.
   console.log("inbound", Object.keys(params).sort().join(","));
+  // A service verifying the number by voice (Meta, for WhatsApp) reads its
+  // code to whoever answers. While an admin has opened the window, a call
+  // from anyone who is not a member is put through to them instead.
+  const forwardTo = await db.stashGet(env, "forward-strangers");
+  if (forwardTo && !(await db.userByPhone(env, callerId))?.phone_verified_at)
+    return xml(`<Dial callerId="${env.TELNYX_FROM_NUMBER}"><Number>${forwardTo}</Number></Dial>`);
   const caller = await knownCaller(env, await testCaller(env, callerId));
   if (caller instanceof Response) return caller;
   const { user, org } = caller;
@@ -1349,6 +1355,27 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
 }
 
 /**
+ * Opens (or, with no `to`, closes) a window in which calls from non-members
+ * are put through to a member's phone: how a code a service reads out by
+ * voice reaches a person. 085 numbers take no SMS, so Meta's WhatsApp
+ * registration code arrives this way. Only a verified member's number, and
+ * at most half an hour.
+ */
+async function forwardStrangers(req: Request, env: Env): Promise<Response> {
+  const secret = req.headers.get("X-Admin-Secret") ?? "";
+  if (!env.ADMIN_SECRET || !safeEqual(secret, env.ADMIN_SECRET)) return fail(403, "forbidden");
+  const { to, minutes } = (await req.json().catch(() => ({}))) as { to?: string; minutes?: number };
+  if (!to) {
+    await db.stashDelete(env, "forward-strangers");
+    return json({ forwarding: false });
+  }
+  if (!(await db.userByPhone(env, to))?.phone_verified_at) return fail(400, "not a verified member's number");
+  const ttl = Math.min(30, Math.max(1, Math.round(minutes ?? 15))) * 60;
+  await db.stashPut(env, "forward-strangers", to, ttl);
+  return json({ forwarding: true, to, untilSecs: ttl });
+}
+
+/**
  * A scripted caller for testing the line end to end with nobody on the phone:
  * Telnyx rings our own number from TEST_CALLER_NUMBER and reads the script
  * with pauses in between, and the call record's transcript shows what the
@@ -1496,6 +1523,7 @@ export default {
       if (method === "POST" && path === "/calls") return await placeCall(req, env, origin);
       if (method === "POST" && path === "/admin/verify-profile")
         return await createVerifyProfile(req, env);
+      if (method === "POST" && path === "/admin/forward-strangers") return await forwardStrangers(req, env);
       if (method === "GET" && path === "/admin/inbound-url")
         return await inboundUrl(req, env, origin);
       if (method === "POST" && path === "/admin/test-ring") return await testRing(req, env, origin);
