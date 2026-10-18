@@ -579,8 +579,9 @@ interface WatchNext {
   live?: string;
   /** Set when that ring-in is a teammate hearing this session's brief. */
   liveCaller?: { name: string; you: boolean };
-  /** What that call's requests may do: `full` when the caller was proven by
-   *  attestation or PIN, `restricted` (read and local work) otherwise. */
+  /** What that call's requests may do: `full` on your own call, which the
+   *  line rang back or took over WhatsApp, `restricted` (read and local
+   *  work) on a test ring. */
   liveMode?: "full" | "restricted";
 }
 
@@ -847,10 +848,6 @@ interface Settings {
   inboundNumber: string;
   /** What the line calls you. */
   name?: string;
-  /** Whether a call PIN is set. Absent from an older Worker. */
-  pinSet?: boolean;
-  /** The last ring-in's STIR/SHAKEN attestation. */
-  lastAttestation?: { level: string; validated: boolean; at: number } | null;
 }
 
 function showSettings(s: Settings): void {
@@ -864,19 +861,8 @@ function showSettings(s: Settings): void {
   console.log(
     `${c.bold("next call")}   ${s.callEnabled ? `${when.toLocaleString()} ${c.dim(`(${away})`)}` : c.red("paused")}`,
   );
-  console.log(`${c.bold("team line")}   ${s.inboundNumber} ${c.dim("— ring it, talk after the beep, hang up")}`);
+  console.log(`${c.bold("team line")}   ${s.inboundNumber} ${c.dim("— ring it and it rings you straight back, or call it on WhatsApp")}`);
   console.log(`${c.bold("your name")}   ${s.name || c.dim("not set — the line greets you without one (--name)")}`);
-  if (s.pinSet !== undefined)
-    console.log(
-      `${c.bold("call PIN")}    ${s.pinSet ? `set ${c.dim("— asked for when the carrier did not verify your number")}` : c.dim("not set — unverified calls stay read-only (--pin <4–8 digits>)")}`,
-    );
-  if (s.pinSet !== undefined) {
-    const a = s.lastAttestation;
-    const level = a?.level ? `${a.level}${a.validated ? " (validated)" : " (not validated)"}` : "none";
-    console.log(
-      `${c.bold("last call")}   ${a ? `attestation ${level} ${c.dim(new Date(a.at).toLocaleString())}` : c.dim("no ring-in recorded yet")}${a && a.level === "A" && a.validated ? c.dim(" — full rights without a PIN") : ""}`,
-    );
-  }
 }
 
 async function settings(args: string[]): Promise<void> {
@@ -895,14 +881,8 @@ async function settings(args: string[]): Promise<void> {
   if (args.includes("--resume")) patch.callEnabled = true;
   const name = argFlag(args, "--name");
   if (name !== undefined) patch.name = name;
-  // The PIN an unverified call keys to get full rights. `--pin off` clears it.
-  const pin = argFlag(args, "--pin");
-  if (pin !== undefined) {
-    if (pin !== "off" && !/^\d{4,8}$/.test(pin)) die("--pin takes 4 to 8 digits, or off");
-    patch.pin = pin === "off" ? "" : pin;
-  }
 
-  const changed = Boolean(at) || name !== undefined || pin !== undefined || args.includes("--pause") || args.includes("--resume");
+  const changed = Boolean(at) || name !== undefined || args.includes("--pause") || args.includes("--resume");
 
   const result = Object.keys(patch).length
     ? await api<Settings>(cfg.apiUrl, "/settings", {
@@ -1345,9 +1325,6 @@ ${c.bold("Settings options")}
   --at HH:MM           local time of the morning call, 24-hour (default 08:00)
   --pause / --resume   stop or restart the scheduled call
   --name "<name>"      what the line calls you when you ring in ("" clears it)
-  --pin <4–8 digits>   the PIN a ring-in keys when the carrier did not verify
-                       your number; without it that call stays read-only
-                       (off clears it; only a salted hash is stored)
   --json               machine-readable, for the loop
 
   Your timezone is not a setting — it is read from this machine every time,

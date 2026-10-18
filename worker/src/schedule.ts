@@ -17,7 +17,6 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import { isValidTimezone, parseClock, nextOccurrence } from "./time";
-import { hashPin, PIN_RULE } from "./pin";
 
 /**
  * How long a brief stays interesting. Two days covers a missed call and a
@@ -35,10 +34,6 @@ export interface Settings {
   emailVerifiedAt: number;
   /** What the line calls you. */
   name: string;
-  /** Whether a call PIN is set; the PIN itself never leaves the Worker. */
-  pinSet: boolean;
-  /** The last ring-in's STIR/SHAKEN attestation, when there was one. */
-  lastAttestation: { level: string; validated: boolean; at: number } | null;
   updatedAt: number;
 }
 
@@ -51,19 +46,8 @@ export function settingsOf(user: db.User): Settings {
     email: user.email ?? "",
     emailVerifiedAt: user.email_verified_at,
     name: user.name,
-    pinSet: Boolean(user.pin_hash),
-    lastAttestation: parseAttestation(user.last_attestation),
     updatedAt: user.settings_updated_at,
   };
-}
-
-function parseAttestation(raw: string): Settings["lastAttestation"] {
-  try {
-    const a = JSON.parse(raw) as { level?: unknown; validated?: unknown; at?: unknown };
-    return { level: String(a.level ?? ""), validated: a.validated === true, at: Number(a.at) || 0 };
-  } catch {
-    return null;
-  }
 }
 
 /** Settings for a verified phone; the user row is created on first sight. */
@@ -80,8 +64,6 @@ export interface SettingsPatch {
   email?: unknown;
   emailVerifiedAt?: unknown;
   name?: unknown;
-  /** 4–8 digits sets the call PIN; "" clears it. */
-  pin?: unknown;
 }
 
 /**
@@ -139,19 +121,6 @@ export async function updateSettings(
       return { ok: false, error: "name must be text, at most 80 characters" };
     sets.push("name = ?");
     binds.push(patch.name.trim());
-  }
-
-  if (patch.pin !== undefined) {
-    if (patch.pin === "") {
-      sets.push("pin_hash = ?", "pin_salt = ?");
-      binds.push("", "");
-    } else {
-      if (typeof patch.pin !== "string" || !PIN_RULE.test(patch.pin))
-        return { ok: false, error: "the PIN must be 4 to 8 digits" };
-      const { hash, salt } = await hashPin(patch.pin);
-      sets.push("pin_hash = ?", "pin_salt = ?");
-      binds.push(hash, salt);
-    }
   }
 
   if (patch.callEnabled !== undefined) {

@@ -27,9 +27,13 @@ export const isE164 = (s: unknown): s is string =>
  * every E.164 check. Providers disagree about whether to percent-encode it, and
  * the cost of guessing wrong is that inbound calls are answered with "I could
  * not read your number" — a failure that only shows up on a real call.
+ *
+ * A WhatsApp call may name its caller as a URI rather than a bare number
+ * (`whatsapp:+31…`, `sip:+31…@host`); Telnyx does not document which, so
+ * both are reduced to the number.
  */
 export function normalizeCallerId(raw: string): string {
-  const trimmed = raw.trim();
+  const trimmed = raw.trim().replace(/^(whatsapp|sips?|tel):/i, "").replace(/@.*$/, "");
   return /^\d{8,15}$/.test(trimmed) ? `+${trimmed}` : trimmed;
 }
 

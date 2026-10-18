@@ -98,8 +98,7 @@ export interface Env {
 
 export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
-import type { LiveConfig } from "./live";
-import * as pin from "./pin";
+import type { CallMode, LiveConfig } from "./live";
 
 /**
  * Sessions last a year.
@@ -349,7 +348,7 @@ say plainly that their agent will apply it after the call.`;
  * actually asked something. The no-action rule is the same as everywhere: it
  * collects, it does not do.
  */
-const INBOUND_QUIET_INSTRUCTIONS = `You are the screenless line answering an incoming call from a verified teammate.
+const INBOUND_QUIET_INSTRUCTIONS = `You are the screenless line, on a call with a verified teammate who rang it (the line called them straight back, or they called over WhatsApp).
 
 The caller is most likely leaving a feature request, a decision, or a note for their team's coding agent — they do not need a conversation. Stay silent: do not greet, do not speak, do not prompt them. Just listen while they talk.
 
@@ -646,27 +645,89 @@ async function inboundBody(req: Request): Promise<Record<string, string>> {
 }
 
 /**
- * Answers a call *to* our number.
+ * Answers a phone call *to* our number by not answering it.
  *
- * A known caller hears no voice at all — just the record beep, talk, hang up;
- * the transcription lands in the team's watching terminal. The menu this
- * replaced ("press 1 for the assistant") read as friction: the assistant is
- * who calls *you*, and a ring-in is always a request. Only a stranger gets a
- * voice, telling them how to become a caller.
+ * A caller id is easy to spoof, so it proves nothing about who is on the
+ * line. A member's ring-in is rejected as busy, which costs the caller
+ * nothing, and the line rings their verified number straight back
+ * (`ringBack`): only whoever holds that phone can pick up. Every phone call
+ * with an owner is then one the line placed itself, so it may do anything
+ * their session may, and no PIN is needed to prove it. WhatsApp calls are
+ * tied to the account rather than the caller id and are answered at once, on
+ * their own URL (`answerWhatsApp`). A stranger still hears how to become a
+ * caller.
  */
-async function answerInbound(req: Request, env: Env, origin: string): Promise<Response> {
+async function answerInbound(req: Request, env: Env, origin: string, ctx: ExecutionContext): Promise<Response> {
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
 
   const params = await inboundBody(req);
   const callerId = normalizeCallerId(params.From ?? params.from ?? "");
-  const from = await testCaller(env, callerId);
-  // A scripted test ring stands in for a real number, but must never reach
-  // that person's real session: its watcher repo is pinned, and the finished
-  // call is not queued.
-  const testRepo =
-    callerId !== from ? (await db.stashGet(env, `testrepo:${callerId}`)) ?? "" : null;
-  if (!isE164(from)) return sayHangup("Sorry, I could not read your number. Goodbye.");
+  // Which fields a ring-in carries (never the values), so a WhatsApp call
+  // that reaches this URL instead of its own can be told apart in the log.
+  console.log("inbound", Object.keys(params).sort().join(","));
+  const caller = await knownCaller(env, await testCaller(env, callerId));
+  if (caller instanceof Response) return caller;
+  const { user, org } = caller;
 
+  // A scripted test ring is our own call from our own number, so there is
+  // nobody to ring back: it is answered as it rings, restricted, and pinned
+  // to its repo so it never reaches the real person's own session.
+  if (env.TEST_RING_SECRET && env.TEST_CALLER_NUMBER && callerId === env.TEST_CALLER_NUMBER) {
+    const testRepo = (await db.stashGet(env, `testrepo:${callerId}`)) ?? "";
+    const callId = crypto.randomUUID();
+    await saveCall(env, callId, {
+      phone: user.phone!,
+      userId: user.id,
+      orgId: org.id,
+      status: "answered",
+      inbound: true,
+      kind: "brief",
+      queued: false,
+      createdAt: Date.now(),
+    });
+    return ringInXml(env, { callId, user, org, params, mode: "restricted", testRepo });
+  }
+
+  // Someone ringing with a member's number over and over gets that member a
+  // few calls back, then nothing for the hour.
+  if (await rateLimit(env, `ringback:${user.id}`, 6)) ctx.waitUntil(ringBack(env, user, org, origin));
+  else console.log("ring-back limit reached", user.id);
+  return xml('<Reject reason="busy"/>');
+}
+
+/**
+ * A WhatsApp call to the line. Routed here by the WhatsApp calling
+ * connection's own voice URL, never the phone number's, so the signed URL is
+ * what says it came through WhatsApp: a caller cannot make a phone call look
+ * like one. WhatsApp ties the call to the account, not to a caller id, so it
+ * is answered at once with the rights of a call the line placed itself.
+ */
+async function answerWhatsApp(req: Request, env: Env): Promise<Response> {
+  const provided = new URL(req.url).searchParams.get("t") ?? "";
+  if (!safeEqual(provided, await webhookToken("whatsapp", env.SESSION_SECRET))) return fail(403, "bad webhook token");
+
+  const params = await inboundBody(req);
+  console.log("whatsapp inbound", Object.keys(params).sort().join(","));
+  const caller = await knownCaller(env, normalizeCallerId(params.From ?? params.from ?? ""));
+  if (caller instanceof Response) return caller;
+  const { user, org } = caller;
+  const callId = crypto.randomUUID();
+  await saveCall(env, callId, {
+    phone: user.phone!,
+    userId: user.id,
+    orgId: org.id,
+    status: "answered",
+    inbound: true,
+    kind: "brief",
+    queued: true,
+    createdAt: Date.now(),
+  });
+  return ringInXml(env, { callId, user, org, params, mode: "full" });
+}
+
+/** A verified member with credit, or the TeXML that tells a caller why not. */
+async function knownCaller(env: Env, from: string): Promise<{ user: db.User; org: db.Org } | Response> {
+  if (!isE164(from)) return sayHangup("Sorry, I could not read your number. Goodbye.");
   const user = await db.userByPhone(env, from);
   if (!user || !user.phone_verified_at) {
     return sayHangup(
@@ -677,44 +738,94 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   if (!org || !billing.entitled(env, org)) {
     return sayHangup("Your team is out of screenless credit. An admin can top it up on the billing page. Goodbye.");
   }
+  return { user, org };
+}
 
-  // What the carrier vouched for, logged without the number so we can see
-  // what real calls carry, and kept on the member for `screenless settings`.
-  const attestation = pin.attestationOf(params);
-  // Telnyx documents these fields on its status callbacks; the names of what
-  // the TeXML request itself carries (never the values) show whether it has them.
-  console.log("inbound attestation", pin.describeAttestation(attestation), Object.keys(params).sort().join(","));
-  await env.DB.prepare("UPDATE users SET last_attestation = ? WHERE id = ?")
-    .bind(JSON.stringify({ ...attestation, at: Date.now() }), user.id)
-    .run()
-    .catch(() => undefined);
+/** Long enough for the rejected ring-in to clear on the caller's phone, so
+ *  the ring-back does not find it busy. */
+const RING_BACK_DELAY_MS = 2_000;
 
-  // OpenAI Realtime answers the ring-in and bridges over SIP. It stays quiet —
-  // the caller is most likely leaving a request, not looking for a chat — and
-  // speaks only if asked, becoming a normal conversation once they do. The
-  // transcript is captured live by the per-call Durable Object.
+/**
+ * Rings a member back after their ring-in was rejected. The number dialled
+ * is the one they verified, not the caller id, so a spoofed ring-in can only
+ * ever ring the real owner. What they hear when they pick up is decided then,
+ * in `/texml/ring-back`, since a watcher may have come or gone meanwhile.
+ * No answering-machine detection: they called a moment ago, so a person is
+ * holding the phone, and a false "machine" would hang up on them.
+ */
+async function ringBack(env: Env, user: db.User, org: db.Org, origin: string): Promise<void> {
+  if (!env.TELNYX_TEXML_APP_ID || !user.phone) return;
+  await new Promise((r) => setTimeout(r, RING_BACK_DELAY_MS));
   const callId = crypto.randomUUID();
-  const record: CallRecord = {
-    phone: from,
+  const wToken = await webhookToken(callId, env.SESSION_SECRET);
+  await saveCall(env, callId, {
+    phone: user.phone,
     userId: user.id,
     orgId: org.id,
-    status: "answered",
-    inbound: true,
+    initiatedBy: user.id,
+    status: "initiated",
     kind: "brief",
-    queued: testRepo === null,
+    // Like the ring-in it stands for: what was said goes to a watcher.
+    queued: true,
     createdAt: Date.now(),
-  };
-  await saveCall(env, callId, record);
+  });
+  try {
+    await telnyx.initiateTexmlCall(env.TELNYX_API_KEY, env.TELNYX_TEXML_APP_ID, {
+      from: env.TELNYX_FROM_NUMBER,
+      to: user.phone,
+      url: `${origin}/texml/ring-back/${callId}?t=${wToken}`,
+      statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
+    });
+    console.log("ring-back placed", callId);
+  } catch (err) {
+    console.error("ring-back failed", callId, (err as Error).message);
+    await db.deleteCall(env, callId);
+  }
+}
 
-  // A caller whose own terminal is watching with live handoffs gets GPT-Live
-  // instead: a conversation in which their Claude Code session answers during
-  // the call. Everyone else keeps the quiet ring-in, so an old CLI changes
+/** The ring-back was answered: the owner is on the line. */
+async function answerRingBack(req: Request, env: Env, callId: string): Promise<Response> {
+  const provided = new URL(req.url).searchParams.get("t") ?? "";
+  if (!safeEqual(provided, await webhookToken(callId, env.SESSION_SECRET))) return fail(403, "bad webhook token");
+  const record = await loadCall(env, callId);
+  const user = record?.userId ? await db.userById(env, record.userId) : null;
+  const org = user ? await db.orgById(env, user.org_id) : null;
+  if (!record || !user || !org) return sayHangup("Sorry, this call could not be connected. Goodbye.");
+  record.status = "answered";
+  await saveCall(env, callId, record);
+  return ringInXml(env, { callId, user, org, params: await inboundBody(req), mode: "full" });
+}
+
+/**
+ * What a member hears once the line has them: GPT-Live, when their own
+ * terminal watches with live handoffs (or a teammate's session shares its
+ * brief with them), else the quiet OpenAI Realtime ear that takes their
+ * request for the queue. Shared by the ring-back, WhatsApp and the test ring.
+ */
+async function ringInXml(
+  env: Env,
+  o: {
+    callId: string;
+    user: db.User;
+    org: db.Org;
+    /** The TeXML request of the answered leg: its call sids. */
+    params: Record<string, string>;
+    mode: CallMode;
+    /** Test rings only: the one watcher repo allowed to serve the call. */
+    testRepo?: string;
+  },
+): Promise<Response> {
+  const { callId, user, org, testRepo } = o;
+  const test = testRepo !== undefined;
+  // A caller whose own terminal is watching with live handoffs gets GPT-Live:
+  // a conversation in which their Claude Code session answers during the
+  // call. Everyone else keeps the quiet ring-in, so an old CLI changes
   // nothing.
   const watcher = env.OPENAI_LIVE_API_KEY
     ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
     : null;
   // No watcher of their own: a teammate's session may share its brief.
-  const shared = env.OPENAI_LIVE_API_KEY && !watcher && testRepo === null ? await sharedWatcher(env, org.id, user) : null;
+  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, user) : null;
   const owner = shared ? await db.userById(env, shared.userId) : null;
   if (watcher || (shared && owner)) {
     const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
@@ -723,35 +834,30 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
     const caller = (user.name ?? "").trim();
     const first = caller ? ` ${caller.split(/\s+/)[0]}` : "";
     const ownerName = owner ? (owner.name || owner.email || "a teammate").trim().split(/\s+/)[0] : "";
-    // The owner's own call does anything the session may only when the
-    // number is proven: attestation A, or the PIN keyed during the call. A
-    // test ring and a teammate's call are restricted (a teammate's runs nothing).
-    const full = !owner && !testRepo && pin.attested(attestation);
-    const askPin = !owner && !testRepo && !full && Boolean(user.pin_hash) && !(await pinLockedOut(env, user.id));
     const cfg: LiveConfig = {
       engine: "live",
       userId: user.id,
-      mode: full ? "full" : "restricted",
-      // The voice asks for the PIN in its greeting; the call's Durable Object
-      // reads the keys off the media stream and checks them (keypad.ts).
-      ...(askPin ? { pin: true } : {}),
+      // A teammate's requests run nothing at all; LiveCall holds them.
+      mode: o.mode,
       instructions: owner
         ? liveTeammateInstructions({ caller, owner: ownerName, repo: w.repo, self: w.name ?? "" })
         : liveInboundInstructions({ name: caller, repo: w.repo, self: w.name ?? "" }),
       greeting: owner
         ? `Hi${first}, ${w.name ? `${w.name}, ` : ""}${ownerName}'s Claude session here. What would you like to know?`
-        : `Hi${first}, ${w.name ? `${w.name} here.` : `your Claude session${w.repo ? ` in ${w.repo}` : ""} here.`}${
-            askPin ? " If I should send or change things during this call, key in your PIN on the keypad and press hash." : ""
-          } What can I do?`,
+        : `Hi${first}, ${w.name ? `${w.name} here.` : `your Claude session${w.repo ? ` in ${w.repo}` : ""} here.`} What can I do?`,
       voice: env.OPENAI_VOICE,
-      accountSid: params.AccountSid ?? "",
-      callSid: params.CallSid ?? "",
+      accountSid: o.params.AccountSid ?? "",
+      callSid: o.params.CallSid ?? "",
       ...(testRepo ? { onlyRepo: testRepo } : {}),
       ...(owner ? { servedBy: owner.id, teammate: { name: caller, owner: ownerName } } : {}),
     };
     await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
     return xml(await liveStreamXml(env, callId));
   }
+  // OpenAI Realtime answers and bridges over SIP. It stays quiet — the caller
+  // is most likely leaving a request, not looking for a chat — and speaks
+  // only if asked, becoming a normal conversation once they do. The
+  // transcript is captured live by the per-call Durable Object.
   await db.stashPut(
     env,
     `realtime:${callId}`,
@@ -760,7 +866,6 @@ async function answerInbound(req: Request, env: Env, origin: string): Promise<Re
   );
   return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
 }
-
 
 /** The TeXML that streams a live call's audio both ways to the LiveCall
  *  Durable Object, which relays it to GPT-Live. The pauses only keep the call
@@ -772,10 +877,6 @@ async function liveStreamXml(env: Env, callId: string): Promise<string> {
     `<Start><Stream url="wss://${env.API_HOST}/live/stream/${callId}?t=${t}" track="inbound_track" codec="PCMU" bidirectionalMode="rtp" bidirectionalCodec="PCMU" bidirectionalSamplingRate="8000"/></Start>` +
     '<Pause length="180"/>'.repeat(40)
   );
-}
-
-async function pinLockedOut(env: Env, userId: string): Promise<boolean> {
-  return Number((await db.stashGet(env, `pinfail:${userId}`)) ?? 0) >= pin.PIN_FAILS_PER_HOUR;
 }
 
 /**
@@ -1015,8 +1116,8 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   let live: string | undefined;
   /** Set when the live call is a teammate hearing this session's brief. */
   let liveCaller: { name: string; you: false } | undefined;
-  /** What the call's requests may do: `full` only when the caller was proven
-   *  (attestation A or the PIN); the watcher hands it to the fork's gate. */
+  /** What the call's requests may do: `full` on the owner's own call,
+   *  `restricted` on a test ring; the watcher hands it to the fork's gate. */
   let liveMode: "full" | "restricted" | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
@@ -1235,10 +1336,15 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
     number: env.TELNYX_FROM_NUMBER,
     voiceUrl: `${origin}/texml/inbound?t=${token}`,
     statusCallbackUrl: `${origin}/webhooks/inbound/status?t=${token}`,
+    // A TeXML application of its own, for the WhatsApp calling connection
+    // only: its URL is what marks a call as WhatsApp (answerWhatsApp).
+    whatsappVoiceUrl: `${origin}/texml/whatsapp?t=${await webhookToken("whatsapp", env.SESSION_SECRET)}`,
     next:
       "Telnyx portal → Voice → TeXML Applications → (new or existing) → set the " +
       "Voice URL above and POST, set the Status Callback URL above and POST, " +
-      "then assign this number to that application.",
+      "then assign this number to that application. For WhatsApp, a second " +
+      "TeXML application with the WhatsApp Voice URL and the same Status " +
+      "Callback URL, chosen for the number on its WhatsApp Calling tab.",
   });
 }
 
@@ -1322,7 +1428,7 @@ function missingConfig(env: Env): string[] {
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const origin = `${url.protocol}//${url.host}`;
     const path = url.pathname.replace(/\/$/, "");
@@ -1341,7 +1447,12 @@ export default {
       // Inbound: someone ringing the number back. Telnyx has been seen to use
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
-        return await answerInbound(req, env, origin);
+        return await answerInbound(req, env, origin, ctx);
+      if (path === "/texml/whatsapp" && (method === "POST" || method === "GET"))
+        return await answerWhatsApp(req, env);
+      const ringBackMatch = path.match(/^\/texml\/ring-back\/([\w-]+)$/);
+      if (ringBackMatch && (method === "POST" || method === "GET"))
+        return await answerRingBack(req, env, ringBackMatch[1]);
       // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
       // to OpenAI, stamped with this call's correlation header.
       const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);

@@ -8,12 +8,13 @@
  * goes back to be spoken. Several can run at once; the voice keeps talking.
  *
  * Only the session's owner can make a call run requests, and every tool call
- * of a fork passes the gate below, in the mode the Worker gave the call. A
- * `full` call — the carrier vouched for the number (STIR/SHAKEN A) or the
- * caller keyed their PIN — may do what the session may. Any other call is
- * `restricted`, because a caller id alone is easy to spoof: reading and local
- * work in the project, and nothing that leaves the machine or cannot be
- * undone. Both refuse secrets: every answer is spoken aloud.
+ * of a fork passes the gate below, in the mode the Worker gave the call. The
+ * owner's own call is `full` and may do what the session may: the line never
+ * answers a phone call on its caller id, it rings the verified number back,
+ * and a WhatsApp call is tied to the account. A test ring, and the fork that
+ * briefs the voice, are `restricted`: reading and local work in the project,
+ * and nothing that leaves the machine or cannot be undone. Both refuse
+ * secrets: every answer is spoken aloud.
  */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -220,11 +221,11 @@ const PHONE_BASE = `You are answering a phone call. The owner of this Claude Cod
 export function phoneRules(mode: CallMode): string {
   return mode === "full"
     ? `${PHONE_BASE}
-- This call is in full mode: the caller was verified (by the carrier or by their PIN). You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools (Slack, Linear, email). Do what the caller asked for, and say in your answer what you did and who it went to.
+- This call is in full mode: the line rang the owner's verified number back, or they called over WhatsApp. You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools (Slack, Linear, email). Do what the caller asked for, and say in your answer what you did and who it went to.
 - The project's own rules still hold. Where they ask for a person's yes first (a merge, a production write, a deletion), ask the caller for it on the call, and act on a clear yes.
 - Never read out a secret: no token, key, password or .env value.`
     : `${PHONE_BASE}
-- This call is in restricted mode: the caller's number was not verified and no PIN was given, so it could be someone else. You may read anything in the project, read through MCP tools, and do local work: edit files, run tests and builds, commit. Pushing, deploying, publishing, sending messages, deleting, and anything outside the project are blocked during this call. If the request needs that, do what you can, and end with what is left, so the session can finish it after the call.
+- This call is in restricted mode. You may read anything in the project, read through MCP tools, and do local work: edit files, run tests and builds, commit. Pushing, deploying, publishing, sending messages, deleting, and anything outside the project are blocked during this call. If the request needs that, do what you can, and end with what is left, so the session can finish it after the call.
 - Never read out a secret: no token, key, password or .env value.`;
 }
 
@@ -232,14 +233,7 @@ export interface Handoff {
   id: string;
   request: string;
   context: string;
-  /** The call's mode when this was asked. A PIN keyed mid-call makes the
-   *  call full for requests after it, not for one already asked. */
-  mode?: CallMode;
 }
-
-/** The mode a request runs in: its own, else the call's. Anything but
- *  `full` is restricted. */
-export const requestMode = (h: Handoff, call: CallMode): CallMode => ((h.mode ?? call) === "full" ? "full" : "restricted");
 
 export interface ForkResult {
   request: string;
@@ -468,13 +462,8 @@ export async function serveLiveCall(o: {
       if (res.ok) {
         next = (await res.json()) as { ended: boolean; mode?: CallMode; handoffs: Handoff[] };
         failures = 0;
-        // The call's own word wins over the watcher poll's, and changes when
-        // the caller keys their PIN mid-call.
-        if (next.mode) {
-          const now: CallMode = next.mode === "full" ? "full" : "restricted";
-          if (now !== mode) o.log(`  call is now ${now === "full" ? "full: PIN verified" : "restricted"}`);
-          mode = now;
-        }
+        // The call's own word wins over the watcher poll's.
+        if (next.mode) mode = next.mode === "full" ? "full" : "restricted";
       }
     } catch {
       /* a dropped long-poll is retried below */
@@ -494,7 +483,7 @@ export async function serveLiveCall(o: {
         background: [o.brief, summary && `The session's own summary: ${summary}`].filter(Boolean).join("\n\n"),
         cli: o.cli,
         callId: o.callId,
-        mode: requestMode(h, mode),
+        mode,
         onStep: (step) => {
           o.log(`  · ${step}`);
           // Enough for the voice to answer "how is it going?" honestly.

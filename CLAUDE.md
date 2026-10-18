@@ -108,18 +108,19 @@ delegation*: still no tools, but each request it cannot answer is handed to
 `screenless watch` on your machine during the call, which runs it in a fork of
 the Claude Code session it was armed in and sends back what to say. The work
 still happens on your machine with your access. Because nobody is at the
-keyboard and caller id is weak, every fork passes a PreToolUse gate
-(`screenless gate`, `cli/src/live.ts`) in the mode the Worker gave the call
-(session 13, `worker/src/pin.ts`). A `restricted` call — the default — gets
-reads and local work in the project only; push, deploy, send and delete wait
-for the session after the call. A `full` call, where the carrier attested the
-number (STIR/SHAKEN A, validated) or the caller keyed their PIN on the phone
-during the call, may do what the session may; the PIN flips the mode mid-call
-for requests made after it. The voice asks for it, but the keys are read off
-the media stream by the call's Durable Object (`worker/src/keypad.ts`) and
-checked there against a salted hash: the digits never reach the voice model,
-a transcript or a log. A PIN *said* aloud does not count and is cut from the
-transcript.
+keyboard, every fork passes a PreToolUse gate (`screenless gate`,
+`cli/src/live.ts`) in the mode the Worker gave the call.
+
+**The line never trusts a caller id** (session 16). A phone call to the line is
+rejected as busy and the line rings the member's *verified* number straight
+back, so the only person who can pick up is whoever holds that phone; a spoofed
+ring-in can only ring the real owner. A WhatsApp call is tied to the account,
+not the caller id, and is answered at once — recognised by the signed URL of
+its own TeXML application, never by a field the caller controls. Both are
+`full`: the fork may do what the session may, except read secrets. Only a test
+ring (and the fork that briefs the voice) is `restricted`: reads and local work
+in the project. This replaced a PIN keyed on the phone and STIR/SHAKEN
+attestation (session 13); do not bring either back.
 
 ## Conventions
 

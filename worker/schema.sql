@@ -44,16 +44,11 @@ CREATE TABLE IF NOT EXISTS users (
   -- CLI bearer tokens minted before this instant are void; see auth.ts.
   tokens_revoked_at INTEGER NOT NULL DEFAULT 0,
   settings_updated_at INTEGER NOT NULL DEFAULT 0,
-  -- The spoken PIN that gives a call without STIR/SHAKEN attestation A full
-  -- rights (pin.ts). Salted PBKDF2, hex; '' when no PIN is set. Added with
-  --   ALTER TABLE users ADD COLUMN pin_hash TEXT NOT NULL DEFAULT '';
-  --   ALTER TABLE users ADD COLUMN pin_salt TEXT NOT NULL DEFAULT '';
-  --   ALTER TABLE users ADD COLUMN last_attestation TEXT NOT NULL DEFAULT '';
-  pin_hash TEXT NOT NULL DEFAULT '',
-  pin_salt TEXT NOT NULL DEFAULT '',
-  -- The last ring-in's attestation, JSON {level, validated, at}, so
-  -- `screenless settings` can show what real calls carry.
-  last_attestation TEXT NOT NULL DEFAULT '',
+  -- A call PIN and the last ring-in's STIR/SHAKEN attestation lived here
+  -- until the line started ringing callers back (session 16). Removed with
+  --   ALTER TABLE users DROP COLUMN pin_hash;
+  --   ALTER TABLE users DROP COLUMN pin_salt;
+  --   ALTER TABLE users DROP COLUMN last_attestation;
   created_at INTEGER NOT NULL
 );
 

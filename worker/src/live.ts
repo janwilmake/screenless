@@ -37,23 +37,19 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
-import * as pin from "./pin";
-import type { CallMode } from "./pin";
-import { Keypad, KEY_TIMEOUT_MS, redactSpokenNumbers, verdict } from "./keypad";
 import { callerSaysBye, callerAsksHangup, voiceSaysBye, HANGUP_AFTER_MS, HANGUP_ON_REQUEST_MS } from "./farewell";
 
-/** What answerInbound parks for a live ring-in, read when the audio arrives. */
+/** What the call's requests may do on the owner's machine. */
+export type CallMode = "full" | "restricted";
+
+/** What a ring-in parks for its live leg, read when the audio arrives. */
 export interface LiveConfig {
   engine: "live";
   userId: string;
-  /** What the call's requests may do on the owner's machine: `full` once the
-   *  caller is proven (attestation A or the PIN, see pin.ts), `restricted`
-   *  otherwise: talk and read, the rest after the call. */
+  /** `full` on the owner's own call, whose number is proven: the line rang
+   *  them back, or they called over WhatsApp. `restricted` for a test ring:
+   *  talk and read, the rest after the call. */
   mode: CallMode;
-  /** The caller has a PIN and is not yet proven: the voice asks them to key
-   *  it, and the keys are checked here (keypad.ts). Cleared once it is right
-   *  or the tries are used up. */
-  pin?: boolean;
   instructions: string;
   greeting: string;
   voice: string;
@@ -83,9 +79,6 @@ interface Handoff {
   answered: boolean;
   /** The voice session it was delegated in; its id means nothing to a later one. */
   voice: number;
-  /** The call's mode when it was asked: a PIN keyed later does not reach
-   *  back to requests made before it. */
-  mode: CallMode;
 }
 
 /** A request nobody claims in this long gets a spoken "cannot reach your
@@ -112,24 +105,13 @@ const UPDATE_WAIT_MAX_MS = 10_000;
  *  is all "still working" is worse than one that waits. */
 const UPDATE_GAP_MS = 15_000;
 
-/** Caller audio held back while a PIN is awaited, in 20 ms frames: a key's
- *  tone may reach the stream before its `dtmf` event, and must not reach the
- *  voice. Short, because it delays everything the caller says until the PIN
- *  is settled: a key event comes at the tone's start (RFC 2833). */
-const KEY_AUDIO_HOLD = 10;
-/** Caller audio is muted this long after the last key, for its tone's tail. */
-const KEY_MUTE_MS = 700;
 /** Loud caller frames in a row (20 ms each) that count as talking over the
  *  voice. A click or a burst of line noise is shorter. */
 const BARGE_FRAMES = 6;
 
-/** Told to the voice when the caller has a PIN that has not been keyed yet. */
-const PIN_NOTE =
-  "The caller has a PIN that gives this call full rights, and your greeting asks them to key it on the phone keypad and press hash. Never ask them to say it, and never say any digits of it. If they say a PIN or a string of digits aloud instead, do not repeat it: tell them a spoken PIN does not count, and ask them to key it in. You never learn the keyed digits: a note tells you only whether it was verified. Until then the call is restricted. Do not ask for the PIN again unless they bring it up.";
-
-/** Told to the voice of a call whose caller was not proven. */
+/** Told to the voice of a call whose requests run restricted: a test ring. */
 const RESTRICTED_NOTE =
-  "This call is restricted: the caller's number was not verified by the carrier and no PIN was given. Their session can look things up and answer questions during the call, but anything that sends, changes, pushes or deploys waits for the session after the call. When a result says so, tell the caller it is queued for after the call.";
+  "This call is restricted. Their session can look things up and answer questions during the call, but anything that sends, changes, pushes or deploys waits for the session after the call. When a result says so, tell the caller it is queued for after the call.";
 
 export class LiveCall {
   /** GPT-Live's WebSocket. */
@@ -176,17 +158,6 @@ export class LiveCall {
   private voiceByeAt = 0;
   /** Set after both said goodbye; the caller speaking again cancels it. */
   private hangupTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The PIN keys of this call (only while `cfg.pin`). */
-  private keypad = new Keypad();
-  private keyTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Caller audio held back while a PIN is awaited (KEY_AUDIO_HOLD). */
-  private held: string[] = [];
-  /** Caller audio is muted until then: a key was just pressed. */
-  private keyMuteUntil = 0;
-  /** An entry is being checked; keys meanwhile wait their turn. */
-  private checking: Promise<void> = Promise.resolve();
-  /** Said to the voice before it was live; sent once it is. */
-  private voiceQueue: unknown[] = [];
   /** When a progress update was last spoken. */
   private updateAt = 0;
   /** When the current voice session was asked for, and when its socket
@@ -312,9 +283,7 @@ export class LiveCall {
       type: "session.start",
       session: {
         model: "gpt-live-1",
-        instructions: [cfg.instructions, cfg.mode === "full" || cfg.teammate ? "" : RESTRICTED_NOTE, cfg.pin ? PIN_NOTE : ""]
-          .filter(Boolean)
-          .join("\n\n"),
+        instructions: [cfg.instructions, cfg.mode === "full" || cfg.teammate ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
         audio: { format: { type: "audio/pcmu", rate: 8000 }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
@@ -348,7 +317,7 @@ export class LiveCall {
   }
 
   private fromPhone(ev: MessageEvent): void {
-    let msg: { event?: string; media?: { track?: string; payload?: string }; dtmf?: { digit?: string } };
+    let msg: { event?: string; media?: { track?: string; payload?: string } };
     try {
       msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
     } catch {
@@ -362,109 +331,18 @@ export class LiveCall {
         if (++this.loudRun === BARGE_FRAMES) this.bargeIn("loud");
       } else this.loudRun = 0;
       this.toVoice(msg.media.payload);
-    } else if (msg.event === "dtmf") {
-      if (this.cfg?.pin) this.onKey(msg.dtmf?.digit ?? "");
     } else if (msg.event === "stop") {
       this.phoneLost();
     }
   }
 
-  /**
-   * Caller audio on its way to the voice. While a PIN is awaited it runs
-   * KEY_AUDIO_HOLD frames behind, so that when a key's `dtmf` event arrives
-   * the frames carrying its tone can be dropped, and it is muted while keys
-   * are being pressed. Whether Telnyx leaves the tones in the audio at all is
-   * not documented; this makes it not matter.
-   */
+  /** Caller audio on its way to the voice. */
   private toVoice(payload: string): void {
-    let out = payload;
-    if (this.cfg?.pin) {
-      this.held.push(payload);
-      if (this.held.length <= KEY_AUDIO_HOLD) return;
-      out = this.held.shift()!;
-      if (Date.now() < this.keyMuteUntil || this.keypad.typing) out = silence(out);
-    }
-    if (this.live) this.send({ type: "session.input_audio.append", audio: out });
-    else if (this.early.length < 250) this.early.push(out);
+    if (this.live) this.send({ type: "session.input_audio.append", audio: payload });
+    else if (this.early.length < 250) this.early.push(payload);
   }
 
-  /** One key press from the media stream. The digit goes no further than
-   *  the keypad: it is not logged, stored or passed on. */
-  private onKey(digit: string): void {
-    // How far ahead of its event a key's tone shows in the audio, if at all:
-    // the frames KEY_AUDIO_HOLD must cover. Loudness only, never the digit.
-    const loud = this.held.map(loudness);
-    const first = loud.findIndex((l) => l > 1000);
-    log({ ev: "live key tone", call: this.ourCallId, held: loud.length, loudFrames: first < 0 ? 0 : loud.length - first });
-    this.held = this.held.map(silence);
-    this.keyMuteUntil = Date.now() + KEY_MUTE_MS;
-    const entry = this.keypad.key(digit, Date.now());
-    if (entry) this.checkEntry(entry);
-    else if (this.keypad.typing) this.armKeyTimer();
-  }
-
-  private armKeyTimer(): void {
-    if (this.keyTimer) clearTimeout(this.keyTimer);
-    this.keyTimer = setTimeout(() => {
-      this.keyTimer = null;
-      const entry = this.keypad.idle(Date.now());
-      if (entry) this.checkEntry(entry);
-    }, KEY_TIMEOUT_MS + 50);
-  }
-
-  /** Entries are checked one at a time, in the order keyed. */
-  private checkEntry(entry: string): void {
-    if (this.keyTimer) clearTimeout(this.keyTimer);
-    this.keyTimer = null;
-    this.checking = this.checking.then(() => this.verifyEntry(entry)).catch((err) => {
-      console.error("live pin check failed", this.ourCallId, (err as Error).message);
-    });
-  }
-
-  /**
-   * Checks a keyed PIN against the member's stored hash, with the same limits
-   * as before: PIN_TRIES per call, PIN_FAILS_PER_HOUR wrong ones per member.
-   * Right flips the call to full for every request made from now on; the
-   * watcher reads the mode with each request.
-   */
-  private async verifyEntry(entry: string): Promise<void> {
-    const cfg = this.cfg;
-    if (!cfg?.pin || this.ended) return;
-    const user = await db.userById(this.env, cfg.userId);
-    const failKey = `pinfail:${cfg.userId}`;
-    const priorFails = Number((await db.stashGet(this.env, failKey)) ?? 0);
-    const ok =
-      !!user && priorFails < pin.PIN_FAILS_PER_HOUR && (await pin.verifyPin(entry, { hash: user.pin_hash, salt: user.pin_salt }));
-    const triesKey = `pintries:${this.ourCallId}`;
-    let tries = Number((await db.stashGet(this.env, triesKey)) ?? 0);
-    let fails = priorFails;
-    if (ok) await db.stashDelete(this.env, failKey).catch(() => undefined);
-    else {
-      tries++;
-      fails++;
-      await db.stashPut(this.env, triesKey, String(tries), 7200);
-      await db.stashPut(this.env, failKey, String(fails), 3600);
-    }
-    const v = verdict({ ok, tries, fails, maxTries: pin.PIN_TRIES, maxFails: pin.PIN_FAILS_PER_HOUR });
-    console.log("live pin", this.ourCallId, v.event, v.event === "wrong" ? tries : "");
-    if (v.done) {
-      cfg.pin = false;
-      // The held frames follow the last key: its tone's tail, not speech.
-      this.held = [];
-    }
-    cfg.mode = v.mode;
-    if (v.done) {
-      // A stream that reconnects re-reads the config: it must not ask again,
-      // or fall back to restricted after the PIN was right.
-      await db.stashPut(this.env, `realtime:${this.ourCallId}`, JSON.stringify(cfg), 7200);
-      await this.announce();
-      // The watcher's long-poll returns at once with the new mode.
-      this.wake();
-    }
-    this.tellVoice(v.note);
-  }
-
-  /** Where the watcher finds this call, with the mode it is in now. */
+  /** Where the watcher finds this call, with the mode it runs in. */
   private async announce(): Promise<void> {
     const cfg = this.cfg!;
     await db.stashPut(
@@ -473,13 +351,6 @@ export class LiveCall {
       JSON.stringify({ callId: this.ourCallId, onlyRepo: cfg.onlyRepo, teammate: cfg.teammate?.name, mode: cfg.mode }),
       7200,
     );
-  }
-
-  /** An instruction for the voice, held until it is live. */
-  private tellVoice(content: string): void {
-    const m = { type: "session.instructions.append", delegation_id: null, content };
-    if (this.live) this.send(m);
-    else this.voiceQueue.push(m);
   }
 
   private send(obj: unknown): void {
@@ -524,7 +395,6 @@ export class LiveCall {
           earlyFrames: this.early.length,
         });
         for (const audio of this.early.splice(0)) this.send({ type: "session.input_audio.append", audio });
-        for (const m of this.voiceQueue.splice(0)) this.send(m);
         if (this.greeted) {
           this.resumeVoice();
           break;
@@ -632,11 +502,8 @@ export class LiveCall {
     this.flushTimer = null;
     const b = this.buf;
     this.buf = null;
-    let text = b?.text.replace(/\s+/g, " ").trim();
+    const text = b?.text.replace(/\s+/g, " ").trim();
     if (!b || !text) return;
-    // A PIN said aloud instead of keyed stays out of the transcript, and so
-    // out of the requests handed to the terminal and the call record.
-    if (this.cfg?.pin) text = redactSpokenNumbers(text);
     this.lines.push({ role: b.role, text, at: new Date().toISOString() });
     // Both said goodbye, in either order; or the caller asked to be hung up
     // on, which needs no goodbye back. Noise lines change nothing.
@@ -717,7 +584,6 @@ export class LiveCall {
       claimed: false,
       answered: false,
       voice: this.voiceGen,
-      mode: this.cfg?.mode === "full" ? "full" : "restricted",
     };
     this.handoffs.push(h);
     this.wake();
@@ -769,7 +635,7 @@ export class LiveCall {
     return Response.json({
       ended: this.ended,
       mode: this.cfg?.mode === "full" ? "full" : "restricted",
-      handoffs: open.map(({ id, request, context, at, mode }) => ({ id, request, context, at, mode })),
+      handoffs: open.map(({ id, request, context, at }) => ({ id, request, context, at })),
     });
   }
 
@@ -894,8 +760,6 @@ export class LiveCall {
       call: this.ourCallId,
       gen: this.voiceGen,
       replyMs: t.replyMs,
-      // Caller audio runs this far behind while a PIN is awaited.
-      pinHoldMs: this.cfg?.pin ? KEY_AUDIO_HOLD * 20 : 0,
       chunks: t.chunks,
       minBytes: t.minBytes,
       maxBytes: t.maxBytes,
@@ -924,12 +788,11 @@ export class LiveCall {
    * The caller talks while voice audio is still queued at Telnyx: drop the
    * queue, or they hear the voice talk on over them. GPT-Live over a
    * WebSocket sends no interruption event, and OpenAI's docs leave dropping
-   * queued audio to the client. Not while a PIN is awaited: the caller is
-   * keying, and the voice's prompt for it should play out.
+   * queued audio to the client.
    */
   private bargeIn(by: "loud" | "words"): void {
     const queuedMs = Math.round(this.playsUntil - Date.now());
-    if (queuedMs <= 0 || this.cfg?.pin || !this.phone) return;
+    if (queuedMs <= 0 || !this.phone) return;
     try {
       this.phone.send(JSON.stringify({ event: "clear" }));
     } catch {
@@ -975,8 +838,6 @@ export class LiveCall {
     this.cancelHangup();
     if (this.phoneGoneTimer) clearTimeout(this.phoneGoneTimer);
     this.phoneGoneTimer = null;
-    if (this.keyTimer) clearTimeout(this.keyTimer);
-    this.keyTimer = null;
     this.voiceGen++;
     this.send({ type: "session.close" });
     if (by === "voice" && this.cfg?.callSid && this.cfg.accountSid)
@@ -1039,17 +900,6 @@ function loudness(b64: string): number {
     sum += mag - 0x84;
   }
   return bytes.length ? sum / bytes.length : 0;
-}
-
-/** The same frame, silent: mu-law 0xFF is zero. */
-function silence(b64: string): string {
-  let n = 160;
-  try {
-    n = atob(b64).length;
-  } catch {
-    /* a 20 ms frame */
-  }
-  return btoa(String.fromCharCode(0xff).repeat(n));
 }
 
 const isNoise = (text: string): boolean => !text.replace(/\[[^\]]*\]?/g, "").replace(/[^\p{L}\p{N}]/gu, "");

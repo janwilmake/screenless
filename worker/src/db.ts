@@ -39,11 +39,6 @@ export interface User {
   email_verified_at: number;
   tokens_revoked_at: number;
   settings_updated_at: number;
-  /** Salted PBKDF2 of the call PIN, hex; '' when none is set (pin.ts). */
-  pin_hash: string;
-  pin_salt: string;
-  /** JSON {level, validated, at} of the last ring-in's attestation. */
-  last_attestation: string;
   created_at: number;
 }
 

@@ -24,15 +24,14 @@ session's own summary 10–20 s in. The brief stays on this machine between
 calls. When this session is too long to fork quickly (over 150k tokens),
 requests run in a fresh `claude -p` handed that brief and summary instead,
 because a fork of a 500k-token session takes 15 s before it says a word. A
-gate holds every fork to the call's mode. A call is **full** when the carrier
-verified your number (STIR/SHAKEN attestation A) or you key your PIN on the
-phone keypad when the voice asks for it, then hash (`screenless settings --pin
-<4–8 digits>` sets it; saying it aloud does not count): it may do anything this
-session may, except read secrets. Any other call is **restricted**, because a
-caller id alone can be spoofed: reading (files, read-only shell, MCP reads)
-and local work in the project — no push, deploy, send or delete — and what it
-cannot do waits for this session after the call. The watcher prints the mode
-when a live call starts.
+gate holds every fork to the call's mode. Your own call is **full**: when
+you ring the line it rejects the call and rings your verified number straight
+back, so only your phone can pick up, and a WhatsApp call is tied to your
+account. It may do anything this session may, except read secrets. A test
+ring is **restricted**: reading (files, read-only shell, MCP reads) and local
+work in the project — no push, deploy, send or delete — and what it cannot do
+waits for this session after the call. The watcher prints the mode when a
+live call starts.
 
 **Progress during a live call.** Work that takes longer than about 20 seconds
 may tell the caller how it is going while it runs: `screenless update "Still
