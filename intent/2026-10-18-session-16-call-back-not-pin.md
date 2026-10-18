@@ -137,3 +137,7 @@ then:
 > wdyt of screenless as a product. do you think it could grow to 10k mrr?
 
 > closed laptop problem is already solved for me because my session runs on a server in finland... another solution is ensuring the laptop doesnt sleep. but maybe we should make a guide for this? yeah... definitely good to test in hyre now but im sure they'll gravitate more to slack as i also made my session available there (using watchloop https://github.com/janwilmake/watchloop)
+
+> we dont have tag because tag doesnt have my logged in browser, which is a very big deal for us
+
+> also interesting to see if we could be a good add on to things like t3code or grokbot or codex instead of claude... each has different specs. so pls launch some market research and report your findings in a md file and get back to me
