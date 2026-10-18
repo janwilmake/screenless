@@ -141,3 +141,15 @@ then:
 > we dont have tag because tag doesnt have my logged in browser, which is a very big deal for us
 
 > also interesting to see if we could be a good add on to things like t3code or grokbot or codex instead of claude... each has different specs. so pls launch some market research and report your findings in a md file and get back to me
+
+> nope. i wanna know how we can market this and test if people would pay for it and use it. and i want you to drive it the coming weeks and get back to me with proof or disproof
+
+> before starting. what would be your strategy to gather proof?
+
+> i guess 50/m is an interesting pricing but how many minutes does it buy us (cost)?
+
+> yes check the openai dashboard
+
+> go with option 2 with 2 weeks free trial and $0.40 per minute after (up to 30 minutes in the free trial). implement that and deploy. and the landingpage shoul mention unlimited whatsapp too
+
+> can u make a subagent that drives my browser to try and find buying signal on x? gimme a rundown of what you find.

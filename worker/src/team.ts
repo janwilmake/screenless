@@ -391,9 +391,10 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     // A topup the webhook has not reported yet is picked up here, which is
     // what makes the balance move while the page polls after Checkout.
     if (billing.billingEnabled(env)) await billing.reconcilePending(env, gate.org.id);
-    const org = (await db.orgById(env, gate.org.id))!;
+    const org = await billing.refreshPlan(env, (await db.orgById(env, gate.org.id))!);
     const stats = await db.usageStats(env, org.id);
     return json({
+      standing: billing.standing(env, org),
       creditCents: org.credit_cents,
       priceCentsPerMinute: db.priceCentsPerMinute(env),
       freeCreditCents: db.freeCreditCents(env),
@@ -401,6 +402,23 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
       topupOptions: billing.TOPUP_OPTIONS,
       ...stats,
     });
+  }
+
+  if (method === "POST" && sub === "/billing/plan") {
+    const gate = await requireAdmin(req, env);
+    if (gate instanceof Response) return gate;
+    if (!billing.billingEnabled(env)) return fail(503, "billing is not configured on this Worker");
+    if (billing.planActive(gate.org)) return fail(409, "your team is already on the plan");
+    const { url } = await billing.createPlanCheckout(env, gate.org, gate.user);
+    return json({ url });
+  }
+
+  if (method === "POST" && sub === "/billing/cancel") {
+    const gate = await requireAdmin(req, env);
+    if (gate instanceof Response) return gate;
+    const { cancel } = await readJson(req);
+    await billing.setPlanCancel(env, gate.org, cancel !== false);
+    return json({ ok: true });
   }
 
   if (method === "POST" && sub === "/billing/topup") {
@@ -488,6 +506,8 @@ const PAGE = `<!doctype html>
   .row:first-child { border-top:none; }
   .row .who { flex: 1; min-width: 0; }
   .row .who .mail { color: var(--muted); font-size: 13px; overflow-wrap:anywhere; margin-top:2px; }
+  .meter { height: 8px; background: #eef0f5; border-radius: 99px; overflow: hidden; margin: 12px 0 6px; }
+  .meter i { display: block; height: 100%; background: var(--rust); border-radius: 99px; }
   select.lvl { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid #ddd; border-radius: 8px; background: #fff; max-width: 230px; }
   .chip { font-size: 12px; font-weight:600; padding: 3px 10px; border-radius: 99px;
           background: #eef0f5; color: var(--muted); }
@@ -552,7 +572,10 @@ function boot() {
 }
 function load() {
   api('/me').then(function (me) {
-    S.me = me; renderMain();
+    S.me = me;
+    // Back from Stripe Checkout: the billing tab confirms the payment.
+    if (me.isAdmin && /[?&](plan|topup)=done/.test(location.search)) return loadBilling();
+    renderMain();
   }).catch(function () { renderLogin(); });
 }
 
@@ -881,17 +904,38 @@ function renderBilling() {
   var b = S.billing;
   if (!b) { body.innerHTML = '<p class="dim">Loading\\u2026</p>'; return; }
 
-  var html = '<div class="card"><div class="dim small">Credit left</div>' +
-    '<div class="balance">' + money(b.creditCents) + '</div>' +
-    '<p class="dim small">Calls bill per minute at ' + money(b.priceCentsPerMinute) + '/min \\u00b7 ' +
-    'used so far: ' + money(b.usedCents) + ' across ' + b.calls + ' call' + (b.calls === 1 ? '' : 's') +
-    ' (' + minutes(b.usedSeconds) + ')</p>';
-  if (b.billingEnabled) {
-    html += '<div class="form-inline">' + b.topupOptions.map(function (c) {
-      return '<button class="act" data-topup="' + c + '">Add ' + money(c) + '</button>';
-    }).join('') + '</div>';
+  var st = b.standing || { kind: 'credit', creditCents: b.creditCents };
+  var used = Math.round((st.includedUsedSecs || 0) / 60), incl = Math.round((st.includedSecs || 0) / 60);
+  var day = function (ms) { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); };
+  var meter = incl ? '<div class="meter"><i style="width:' + Math.min(100, Math.round(100 * used / incl)) + '%"></i></div>' +
+    '<p class="dim small">' + used + ' of ' + incl + ' call minutes used' +
+    ' \u00b7 WhatsApp chats are unlimited \u00b7 then ' + money(st.priceCentsPerMinute) + ' a minute</p>' : '';
+  var html = '<div class="card">';
+  if (!b.billingEnabled) {
+    html += '<p class="dim small">Billing is not configured on this Worker \u2014 calls are free here.</p>';
+  } else if (st.kind === 'plan') {
+    html += '<div class="dim small">Team plan \u00b7 ' + money(st.planCents) + ' a month</div>' +
+      '<div class="balance">' + (st.cancelAtEnd ? 'Ends ' : 'Renews ') + day(st.periodEnd) + '</div>' + meter +
+      '<p class="dim small">Minutes beyond the plan are added to the next invoice.</p>' +
+      '<div class="form-inline"><button class="ghost" id="plancancel" data-cancel="' + (st.cancelAtEnd ? 'false' : 'true') + '">' +
+      (st.cancelAtEnd ? 'Keep the plan' : 'Cancel at the end of the period') + '</button></div>';
   } else {
-    html += '<p class="dim small">Billing is not configured on this Worker \\u2014 calls are free here.</p>';
+    var days = st.kind === 'trial' ? Math.max(0, Math.ceil((st.trialEndsAt - Date.now()) / 86400000)) : 0;
+    html += st.kind === 'trial'
+      ? '<div class="dim small">Free trial</div><div class="balance">' + days + ' day' + (days === 1 ? '' : 's') + ' left</div>' + meter
+      : '<div class="dim small">' + (st.kind === 'credit' ? 'Credit left' : 'Your free trial has ended') + '</div>' +
+        '<div class="balance">' + (st.kind === 'credit' ? money(st.creditCents) : 'No plan yet') + '</div>' +
+        (st.kind === 'credit' ? '<p class="dim small">Calls bill ' + money(st.priceCentsPerMinute) + ' a minute from credit.</p>' : '');
+    html += '<p style="margin:14px 0 6px"><strong>Team plan, ' + money(st.planCents) + ' a month:</strong> unlimited WhatsApp chats and ' +
+      '250 call minutes, then ' + money(st.priceCentsPerMinute) + ' a minute. Cancel any time.</p>' +
+      '<div class="form-inline"><button class="act" id="planstart">Start the team plan</button></div>';
+  }
+  html += '<p class="dim small" style="margin-top:10px">Used so far: ' + money(b.usedCents) + ' across ' + b.calls + ' call' + (b.calls === 1 ? '' : 's') +
+    ' (' + minutes(b.usedSeconds) + ')</p>';
+  if (b.billingEnabled && st.kind !== 'plan' && st.creditCents > 0) {
+    html += '<div class="form-inline">' + b.topupOptions.map(function (c) {
+      return '<button class="ghost small" data-topup="' + c + '">Add ' + money(c) + ' credit</button>';
+    }).join('') + '</div>';
   }
   html += '<div class="err" id="err"></div></div>';
 
@@ -926,6 +970,18 @@ function renderBilling() {
   }
 
   body.innerHTML = html;
+  var start = document.getElementById('planstart');
+  if (start) start.onclick = function () {
+    start.disabled = true;
+    api('/billing/plan', {}).then(function (r) { location.href = r.url; })
+      .catch(function (e) { showErr(e); start.disabled = false; });
+  };
+  var cancel = document.getElementById('plancancel');
+  if (cancel) cancel.onclick = function () {
+    cancel.disabled = true;
+    api('/billing/cancel', { cancel: cancel.dataset.cancel === 'true' }).then(loadBilling)
+      .catch(function (e) { showErr(e); cancel.disabled = false; });
+  };
   body.querySelectorAll('[data-topup]').forEach(function (btn) {
     btn.onclick = function () {
       btn.disabled = true;

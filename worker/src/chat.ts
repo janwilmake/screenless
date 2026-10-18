@@ -156,9 +156,10 @@ async function take(env: Env, p: Record<string, unknown>, msg: Record<string, un
     if (await rateLimit(env, `wastranger:${phone}`, 1, 86400)) await reply(env, phone, STRANGER);
     return;
   }
-  const org = await db.orgById(env, user.org_id);
-  if (!org || !billing.entitled(env, org)) {
-    await reply(env, phone, "Your team is out of screenless credit. An admin can top it up at screenless.sh/team.");
+  const found = await db.orgById(env, user.org_id);
+  const org = found ? await billing.refreshPlan(env, found) : null;
+  if (!org || !billing.chatAllowed(env, org)) {
+    await reply(env, phone, "Your team's screenless trial has ended. An admin can start the team plan at screenless.sh/team.");
     return;
   }
   if (!(await rateLimit(env, `wamsg:${user.id}`, 60))) {

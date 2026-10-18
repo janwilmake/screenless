@@ -82,14 +82,16 @@
     // cron sweep, which — unlike a fetch — has no request to read it from.
     "API_HOST": "screenless.sh",
 
-    // Pay-as-you-go pricing. A minute of call bills the org this many cents —
-    // set at roughly double what the minute costs us in telephony, ASR/TTS and
-    // the model. Change it here; nothing else encodes the price.
-    "PRICE_PER_MINUTE_CENTS": "30",
+    // A call minute beyond what the plan or the trial includes, in cents.
+    // Measured 18 Oct 2026: a live minute costs us ~15-18¢ in GPT-Live plus
+    // ~3¢ of telephony on a ring-back, so 40¢ keeps a margin. The plan itself
+    // ($79/month, 250 minutes, unlimited WhatsApp chats) and the trial (14
+    // days, 30 minutes) are in billing.ts.
+    "PRICE_PER_MINUTE_CENTS": "40",
 
-    // What every new org starts with, in cents: the free plan. One grant per
-    // org, ever — removing and re-adding a member never mints a second one.
-    "FREE_CREDIT_CENTS": "1000",
+    // Credit a new org starts with, in cents. 0 since the trial replaced the
+    // free $10 (session 16); kept so a self-hosted Worker can grant one.
+    "FREE_CREDIT_CENTS": "0",
 
     // --- OpenAI Realtime runs the conversation and the voice, for both
     // outbound briefs and ring-ins. Telnyx still owns the telephony and bridges

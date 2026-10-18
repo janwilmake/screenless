@@ -118,6 +118,17 @@ async function openInBrowser(url: string): Promise<void> {
 interface BillingStatus {
   active: boolean;
   status: string;
+  /** Trial, plan or credit; absent from an older Worker. */
+  standing?: {
+    kind: "trial" | "plan" | "credit" | "none";
+    trialEndsAt: number;
+    includedSecs: number;
+    includedUsedSecs: number;
+    periodEnd: number;
+    cancelAtEnd: boolean;
+    planCents: number;
+    priceCentsPerMinute: number;
+  };
   balanceCents: number;
   priceCentsPerMinute: number;
   isAdmin: boolean;
@@ -129,15 +140,25 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 function describe(status: BillingStatus): string {
   if (status.status === "unmetered") return "no billing configured on this Worker";
+  const st = status.standing;
+  const mins = (s: number) => Math.round(s / 60);
+  const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  if (st?.kind === "plan")
+    return `team plan · ${mins(st.includedUsedSecs)} of ${mins(st.includedSecs)} call minutes used · ${st.cancelAtEnd ? "ends" : "renews"} ${day(st.periodEnd)}`;
+  if (st?.kind === "trial") {
+    const days = Math.max(0, Math.ceil((st.trialEndsAt - Date.now()) / 86400000));
+    return `free trial · ${days} day${days === 1 ? "" : "s"} left · ${mins(st.includedUsedSecs)} of ${mins(st.includedSecs)} call minutes used · WhatsApp chats unlimited`;
+  }
+  if (st?.kind === "none") return "no plan: the free trial has ended";
   return status.active
     ? `${money(status.balanceCents)} credit left · calls bill ${money(status.priceCentsPerMinute)}/min`
     : `out of credit`;
 }
 
 /**
- * Says where the money stands. Pay-as-you-go has no Checkout to walk through
- * at setup: every new team starts with free credit, and topping up later is
- * the billing tab's job, not the terminal's.
+ * Says where the team stands. There is no Checkout to walk through at setup:
+ * every new team starts on the free trial, and the plan is started on the
+ * billing tab, not in the terminal.
  */
 async function showCredit(base: string, token: string): Promise<boolean> {
   const status = await api<BillingStatus>(base, "/billing/status", { token });
@@ -145,11 +166,11 @@ async function showCredit(base: string, token: string): Promise<boolean> {
     console.log(`${c.green("✓")} ${describe(status)} ${c.dim(`· team "${status.orgName}"`)}`);
     return true;
   }
-  console.log(`${c.red("✗")} ${c.bold("your team is out of screenless credit")}`);
+  console.log(`${c.red("✗")} ${c.bold(`your team has no call minutes left: ${describe(status)}`)}`);
   console.log(
     status.isAdmin
-      ? `  Top up on the billing tab: ${c.cyan(status.teamUrl)}`
-      : `  Ask a team admin to top up: ${c.cyan(status.teamUrl)}`,
+      ? `  Start the team plan on the billing tab: ${c.cyan(status.teamUrl)}`
+      : `  Ask a team admin to start the team plan: ${c.cyan(status.teamUrl)}`,
   );
   return false;
 }
@@ -398,8 +419,8 @@ async function setup(args: string[]): Promise<void> {
     await confirmEmail(base, result.token, rl);
 
 
-    // Pay-as-you-go: a fresh team starts with free credit, so there is no
-    // payment step here — just say where the balance stands.
+    // A fresh team starts on the free trial, so there is no payment step
+    // here — just say where it stands.
     const funded = await showCredit(base, result.token);
     if (!funded) return;
 

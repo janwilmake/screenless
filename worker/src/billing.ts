@@ -1,14 +1,18 @@
 /**
- * Pay-as-you-go, per organization.
+ * The free trial, the team plan, and credit, per organization (session 16).
  *
- * Every org starts with ~$10 of credit (the free plan) and calls draw it down
- * by the minute at roughly double our cost. When it runs out, calls stop until
- * an admin tops up — a one-time Stripe Checkout payment, no subscription, no
- * trial clock. The org's balance lives in D1 (`orgs.credit_cents`) with a
- * ledger row per movement; Stripe only ever hears about topups.
+ * A new team gets 14 days free with 30 call minutes. The team plan is $79 a
+ * month: unlimited WhatsApp chats and 250 call minutes, then 40¢ a minute,
+ * which Stripe adds to the next invoice, so a paying team is never cut off
+ * mid-month. WhatsApp chats cost us a fraction of a cent (the work runs on
+ * the member's own Claude subscription), so they are never metered. Credit
+ * (`orgs.credit_cents`, topped up through a one-time Checkout) still pays for
+ * call minutes outside a plan or trial: the balances of teams from before the
+ * plan keep working.
  *
- * This replaced the $99/month subscription while Stripe was still in test
- * mode, so there were no live subscribers to migrate.
+ * The plan's period is what Stripe says it is, read from the subscription:
+ * at checkout, on its webhooks, and again whenever the period on file has
+ * ended, so a missing webhook cannot leave a team blocked or unbilled.
  *
  * Two paths record a topup, deliberately:
  *   1. The webhook, the moment Stripe confirms payment.
@@ -32,15 +36,61 @@ export const TOPUP_OPTIONS = [1000, 2500, 10000];
  */
 export const billingEnabled = (env: Env): boolean => Boolean(env.STRIPE_SECRET_KEY);
 
-/** Whether this org may place or take a call right now. */
-export const entitled = (env: Env, org: db.Org): boolean =>
-  !billingEnabled(env) || org.credit_cents > 0;
+export { PLAN_CENTS, PLAN_SECS, TRIAL_SECS, planActive, trialActive, includedLeft, entitled, chatAllowed } from "./plan";
+import { PLAN_CENTS, PLAN_SECS, TRIAL_SECS, planActive, trialActive, includedLeft } from "./plan";
+
+/** Where a team stands, for the billing tab and `screenless billing`. */
+export function standing(env: Env, org: db.Org) {
+  const now = Date.now();
+  const kind = planActive(org, now) ? "plan" : trialActive(org, now) ? "trial" : org.credit_cents > 0 ? "credit" : "none";
+  return {
+    kind,
+    trialEndsAt: org.trial_ends_at,
+    includedSecs: kind === "plan" ? PLAN_SECS : kind === "trial" ? TRIAL_SECS : 0,
+    includedUsedSecs: kind === "plan" || kind === "trial" ? org.included_secs_used : 0,
+    periodEnd: org.plan_period_end,
+    cancelAtEnd: Boolean(org.plan_cancel_at_end),
+    planStatus: org.plan_status,
+    creditCents: org.credit_cents,
+    planCents: PLAN_CENTS,
+    priceCentsPerMinute: db.priceCentsPerMinute(env),
+  };
+}
+
+/**
+ * Charges a finished call: included seconds first (the plan's or the
+ * trial's), the rest at the per-minute price. On the plan, Stripe invoices
+ * the rest with the next month; otherwise it comes off the credit. A trial's
+ * last call that runs past its 30 minutes, with no credit, is on us.
+ */
+export async function chargeCall(env: Env, org: db.Org, userId: string | null, callId: string, seconds: number): Promise<void> {
+  const left = includedLeft(org);
+  const included = Math.min(seconds, left);
+  const extra = seconds - included;
+  const cents = Math.ceil((extra * db.priceCentsPerMinute(env)) / 60);
+  const onPlan = planActive(org);
+  if (onPlan && cents > 0 && org.stripe_customer_id && billingEnabled(env)) {
+    await stripe(env, "/invoiceitems", {
+      customer: org.stripe_customer_id,
+      currency: "usd",
+      amount: cents,
+      description: `Call minutes beyond the plan: ${Math.ceil(extra / 60)} min`,
+      ...(org.stripe_subscription_id ? { subscription: org.stripe_subscription_id } : {}),
+    }, `overage-${callId}`).catch((err) => console.error("overage invoice item failed", callId, (err as Error).message));
+  }
+  const chargeCredit = !onPlan && (trialActive(org) ? org.credit_cents > 0 : true);
+  await db.debitCall(env, org.id, userId, callId, seconds, chargeCredit || onPlan ? cents : 0, included, chargeCredit);
+}
 
 /* ------------------------------------------------------------ stripe glue */
 
 export class StripeError extends Error {
-  constructor(readonly status: number, readonly path: string, message: string) {
+  readonly status: number;
+  readonly path: string;
+  constructor(status: number, path: string, message: string) {
     super(message);
+    this.status = status;
+    this.path = path;
     this.name = "StripeError";
   }
 }
@@ -65,12 +115,14 @@ async function stripe<T>(
   env: Env,
   path: string,
   params?: Record<string, unknown>,
+  idempotencyKey?: string,
 ): Promise<T> {
   const res = await fetch(`${STRIPE_API}${path}`, {
     method: params ? "POST" : "GET",
     headers: {
       Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
       ...(params ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: params ? form(params).join("&") : undefined,
   });
@@ -161,7 +213,13 @@ export async function reconcilePending(env: Env, orgId: string): Promise<boolean
   const sessionId = await db.stashGet(env, pendingKey(orgId));
   if (!sessionId) return false;
   try {
-    const session = await stripe<CheckoutSession>(env, `/checkout/sessions/${sessionId}`);
+    const session = await stripe<CheckoutSession & { mode?: string; subscription?: string }>(env, `/checkout/sessions/${sessionId}`);
+    if (session.mode === "subscription") {
+      if (session.status !== "complete") return false;
+      await applyPlanSession(env, session);
+      await db.stashDelete(env, pendingKey(orgId));
+      return true;
+    }
     if (session.payment_status !== "paid") return false;
     await applyTopup(env, session);
     await db.stashDelete(env, pendingKey(orgId));
@@ -170,6 +228,102 @@ export async function reconcilePending(env: Env, orgId: string): Promise<boolean
     console.error("stripe reconcile failed", (err as Error).message);
     return false;
   }
+}
+
+/* ------------------------------------------------------------- the plan */
+
+interface Subscription {
+  id: string;
+  status: string;
+  cancel_at_period_end?: boolean;
+  customer?: string | { id: string };
+  metadata?: Record<string, string>;
+  current_period_start?: number;
+  current_period_end?: number;
+  items?: { data?: Array<{ current_period_start?: number; current_period_end?: number }> };
+}
+
+/** Starts the team plan through Stripe Checkout. */
+export async function createPlanCheckout(env: Env, org: db.Org, user: db.User): Promise<{ url: string }> {
+  const site = env.SITE_URL || "https://screenless.sh";
+  const session = await stripe<CheckoutSession>(env, "/checkout/sessions", {
+    mode: "subscription",
+    line_items: {
+      0: {
+        quantity: 1,
+        price_data: {
+          currency: "usd",
+          unit_amount: PLAN_CENTS,
+          recurring: { interval: "month" },
+          product_data: {
+            name: "screenless team plan",
+            description: "Unlimited WhatsApp chats and 250 call minutes a month; then 40¢ a minute",
+          },
+        },
+      },
+    },
+    metadata: { kind: "plan", orgId: org.id, userId: user.id },
+    subscription_data: { metadata: { orgId: org.id } },
+    ...(org.stripe_customer_id
+      ? { customer: org.stripe_customer_id }
+      : user.email
+        ? { customer_email: user.email }
+        : {}),
+    success_url: `${site}/team?plan=done`,
+    cancel_url: `${site}/team`,
+  });
+  if (!session.url) throw new StripeError(502, "/checkout/sessions", "no checkout url returned");
+  await db.stashPut(env, pendingKey(org.id), session.id, 3600);
+  return { url: session.url };
+}
+
+/** Writes a subscription's state onto its org. Newer Stripe API versions
+ *  keep the period on the subscription's items, older ones on itself. */
+async function syncSubscription(env: Env, sub: Subscription, orgId?: string): Promise<void> {
+  const org = orgId ? await db.orgById(env, orgId) : sub.metadata?.orgId ? await db.orgById(env, sub.metadata.orgId) : await db.orgBySubscription(env, sub.id);
+  if (!org) return;
+  const item = sub.items?.data?.[0];
+  const start = (sub.current_period_start ?? item?.current_period_start ?? 0) * 1000;
+  const end = (sub.current_period_end ?? item?.current_period_end ?? 0) * 1000;
+  await db.setPlan(env, org.id, {
+    status: sub.status,
+    periodStart: start,
+    periodEnd: end,
+    cancelAtEnd: !!sub.cancel_at_period_end,
+    subscriptionId: sub.id,
+  });
+  const customerId = idOf(sub.customer);
+  if (customerId) await db.setStripeCustomer(env, org.id, customerId);
+}
+
+/** Reads the plan back from Stripe when the period on file is over (or
+ *  `force`): renewals and cancellations show up without a webhook. */
+export async function refreshPlan(env: Env, org: db.Org, force = false): Promise<db.Org> {
+  if (!billingEnabled(env) || !org.stripe_subscription_id) return org;
+  if (!force && org.plan_period_end > Date.now()) return org;
+  try {
+    await syncSubscription(env, await stripe<Subscription>(env, `/subscriptions/${org.stripe_subscription_id}`), org.id);
+    return (await db.orgById(env, org.id)) ?? org;
+  } catch (err) {
+    console.error("stripe plan refresh failed", org.id, (err as Error).message);
+    return org;
+  }
+}
+
+/** Cancels at the end of the period, or takes that back. */
+export async function setPlanCancel(env: Env, org: db.Org, cancel: boolean): Promise<void> {
+  if (!org.stripe_subscription_id) throw new StripeError(400, "/subscriptions", "no plan to change");
+  const sub = await stripe<Subscription>(env, `/subscriptions/${org.stripe_subscription_id}`, { cancel_at_period_end: cancel ? "true" : "false" });
+  await syncSubscription(env, sub, org.id);
+}
+
+/** A completed plan Checkout: the subscription it created, onto the org. */
+async function applyPlanSession(env: Env, session: CheckoutSession & { mode?: string; subscription?: string | { id: string } }): Promise<void> {
+  const meta = session.metadata ?? {};
+  if (meta.kind !== "plan" || !meta.orgId) return;
+  const subId = idOf(session.subscription);
+  if (!subId) return;
+  await syncSubscription(env, await stripe<Subscription>(env, `/subscriptions/${subId}`), meta.orgId);
 }
 
 /* ----------------------------------------------------------------- webhook */
@@ -253,10 +407,15 @@ export async function handleWebhook(req: Request, env: Env): Promise<Response> {
 
   try {
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
-      await applyTopup(env, event.data.object as unknown as CheckoutSession);
+      const session = event.data.object as unknown as CheckoutSession & { mode?: string; subscription?: string };
+      if (session.mode === "subscription") await applyPlanSession(env, session);
+      else await applyTopup(env, session);
     }
-    // Subscription lifecycle events from the old model may still arrive while
-    // the Stripe endpoint subscribes to them; they are simply no longer state.
+    // The plan's renewals, failures and cancellations, when the endpoint
+    // subscribes to them; refreshPlan covers it when it does not.
+    if (event.type.startsWith("customer.subscription.")) {
+      await syncSubscription(env, event.data.object as unknown as Subscription);
+    }
   } catch (err) {
     // A 500 makes Stripe retry, which is what we want for a transient failure.
     console.error("stripe webhook failed", event.type, (err as Error).message);

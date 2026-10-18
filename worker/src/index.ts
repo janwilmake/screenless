@@ -167,11 +167,15 @@ async function requireCredit(
   env: Env,
   phone: string,
 ): Promise<{ user: db.User; org: db.Org } | Response> {
-  const { user, org } = await identify(env, phone);
+  const found = await identify(env, phone);
+  const user = found.user;
+  const org = await billing.refreshPlan(env, found.org);
   if (!billing.entitled(env, org)) {
     return json(
       {
-        error: "your team is out of screenless credit — an admin can top up on the billing tab",
+        error: billing.trialActive(org)
+          ? "your team's 30 trial call minutes are used — an admin can start the team plan on the billing tab"
+          : "your team has no plan or credit left — an admin can start the team plan on the billing tab",
         balanceCents: org.credit_cents,
         teamUrl: teamUrl(env),
       },
@@ -288,10 +292,11 @@ function withNextCall(settings: schedule.Settings, env: Env) {
 async function afterCallEnded(env: Env, callId: string, record: CallRecord): Promise<void> {
   if (record.orgId && record.status === "completed" && !record.debited && record.endedAt) {
     const seconds = Math.max(1, Math.round((record.endedAt - record.createdAt) / 1000));
-    const cents = Math.ceil((seconds * db.priceCentsPerMinute(env)) / 60);
-    await db
-      .debitCall(env, record.orgId, record.userId ?? null, callId, seconds, cents)
-      .catch((err) => console.error("debit failed", callId, (err as Error).message));
+    const org = await db.orgById(env, record.orgId);
+    if (org)
+      await billing
+        .chargeCall(env, org, record.userId ?? null, callId, seconds)
+        .catch((err) => console.error("charge failed", callId, (err as Error).message));
     record.debited = true;
     await saveCall(env, callId, record);
   }
@@ -730,9 +735,10 @@ async function knownCaller(env: Env, from: string): Promise<{ user: db.User; org
       "This is a screenless line for teams. To use it, install screenless from screenless dot s h, or ask your team for an invite. Goodbye.",
     );
   }
-  const org = await db.orgById(env, user.org_id);
+  const found = await db.orgById(env, user.org_id);
+  const org = found ? await billing.refreshPlan(env, found) : null;
   if (!org || !billing.entitled(env, org)) {
-    return sayHangup("Your team is out of screenless credit. An admin can top it up on the billing page. Goodbye.");
+    return sayHangup("Your team has no call minutes left. An admin can start the team plan on the billing page. Goodbye.");
   }
   return { user, org };
 }
@@ -1795,14 +1801,17 @@ export default {
       if (method === "POST" && path === "/stripe/webhook")
         return await billing.handleWebhook(req, env);
 
-      // The CLI's view of the money: a balance, not a subscription.
+      // The CLI's view of the money: trial, plan or credit.
       if (method === "GET" && path === "/billing/status") {
         const s = await authed(req, env);
         if (!s) return fail(401, "not authenticated — run `screenless setup`");
-        const { user, org } = await identify(env, s.phone);
+        const found = await identify(env, s.phone);
+        const user = found.user;
+        const org = await billing.refreshPlan(env, found.org);
         return json({
           active: billing.entitled(env, org),
           status: billing.billingEnabled(env) ? "payg" : "unmetered",
+          standing: billing.standing(env, org),
           balanceCents: org.credit_cents,
           priceCentsPerMinute: db.priceCentsPerMinute(env),
           isAdmin: user.role === "admin",

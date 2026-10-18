@@ -21,6 +21,21 @@ CREATE TABLE IF NOT EXISTS orgs (
   -- '' means each repo's own `default:` (session 16). Added with
   --   ALTER TABLE orgs ADD COLUMN line_default TEXT NOT NULL DEFAULT '';
   line_default TEXT NOT NULL DEFAULT '',
+  -- The free trial and the team plan (billing.ts, session 16). Added with
+  --   ALTER TABLE orgs ADD COLUMN trial_ends_at INTEGER NOT NULL DEFAULT 0;
+  --   ALTER TABLE orgs ADD COLUMN plan_status TEXT NOT NULL DEFAULT '';
+  --   ALTER TABLE orgs ADD COLUMN plan_period_start INTEGER NOT NULL DEFAULT 0;
+  --   ALTER TABLE orgs ADD COLUMN plan_period_end INTEGER NOT NULL DEFAULT 0;
+  --   ALTER TABLE orgs ADD COLUMN plan_cancel_at_end INTEGER NOT NULL DEFAULT 0;
+  --   ALTER TABLE orgs ADD COLUMN stripe_subscription_id TEXT;
+  --   ALTER TABLE orgs ADD COLUMN included_secs_used INTEGER NOT NULL DEFAULT 0;
+  trial_ends_at INTEGER NOT NULL DEFAULT 0,
+  plan_status TEXT NOT NULL DEFAULT '',
+  plan_period_start INTEGER NOT NULL DEFAULT 0,
+  plan_period_end INTEGER NOT NULL DEFAULT 0,
+  plan_cancel_at_end INTEGER NOT NULL DEFAULT 0,
+  stripe_subscription_id TEXT,
+  included_secs_used INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 

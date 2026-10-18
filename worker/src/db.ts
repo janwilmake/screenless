@@ -18,6 +18,17 @@ export interface Org {
   name: string;
   credit_cents: number;
   stripe_customer_id: string | null;
+  /** The free trial's end, ms; 0 for orgs from before the trial. */
+  trial_ends_at: number;
+  /** Stripe's word for the team plan: active, past_due, canceled, …; '' none. */
+  plan_status: string;
+  plan_period_start: number;
+  plan_period_end: number;
+  /** The plan ends at period end instead of renewing. */
+  plan_cancel_at_end: number;
+  stripe_subscription_id: string | null;
+  /** Included call seconds used in this plan period, or in the trial. */
+  included_secs_used: number;
   /** The line level of a member with none of their own; '' = each repo's default. */
   line_default: string;
   created_at: number;
@@ -56,13 +67,19 @@ export interface Invite {
   accepted_at: number;
 }
 
-/** Credit a fresh org starts with. ~$10, the free plan. */
-export const freeCreditCents = (env: Env): number =>
-  Math.max(0, parseInt(env.FREE_CREDIT_CENTS || "1000", 10) || 1000);
+/** Credit a fresh org starts with. 0 since the trial; `|| default` would
+ *  have turned a configured 0 back into $10. */
+export const freeCreditCents = (env: Env): number => {
+  const n = parseInt(env.FREE_CREDIT_CENTS ?? "0", 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
 
-/** What a minute of call costs the org. Roughly double what it costs us. */
+/** What a call minute beyond the included ones costs the org. */
 export const priceCentsPerMinute = (env: Env): number =>
-  Math.max(1, parseInt(env.PRICE_PER_MINUTE_CENTS || "30", 10) || 30);
+  Math.max(1, parseInt(env.PRICE_PER_MINUTE_CENTS || "40", 10) || 40);
+
+/** How long a new org's free trial runs. */
+export const TRIAL_MS = 14 * 86400_000;
 
 /** Invites die after a week; the row stays so the page can say "expired". */
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -195,8 +212,9 @@ export async function createOrgWithUser(
   const grant = freeCreditCents(env);
 
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO orgs (id, name, credit_cents, created_at) VALUES (?, ?, ?, ?)")
-      .bind(orgId, "My team", grant, now),
+    // Every new team starts on the free trial (billing.ts).
+    env.DB.prepare("INSERT INTO orgs (id, name, credit_cents, trial_ends_at, created_at) VALUES (?, ?, ?, ?, ?)")
+      .bind(orgId, "My team", grant, now + TRIAL_MS, now),
     env.DB.prepare(
       "INSERT INTO users (id, org_id, email, phone, name, role, phone_verified_at, created_at) VALUES (?, ?, ?, ?, ?, 'admin', ?, ?)",
     ).bind(
@@ -208,9 +226,13 @@ export async function createOrgWithUser(
       input.phone ? now : 0,
       now,
     ),
-    env.DB.prepare(
-      "INSERT INTO ledger (id, org_id, user_id, kind, delta_cents, memo, created_at) VALUES (?, ?, ?, 'grant', ?, 'free credit', ?)",
-    ).bind(`grant:${orgId}`, orgId, userId, grant, now),
+    ...(grant
+      ? [
+          env.DB.prepare(
+            "INSERT INTO ledger (id, org_id, user_id, kind, delta_cents, memo, created_at) VALUES (?, ?, ?, 'grant', ?, 'free credit', ?)",
+          ).bind(`grant:${orgId}`, orgId, userId, grant, now),
+        ]
+      : []),
   ]);
 
   const user = await userById(env, userId);
@@ -420,9 +442,11 @@ export async function credit(
 }
 
 /**
- * Charges a finished call. Keyed by call id so a duplicated status webhook
- * cannot bill twice, and allowed to push the balance below zero — the call
- * already happened; the gate stops the *next* one.
+ * Records a finished call: its seconds, the included seconds it used, and
+ * what it cost. Keyed by call id so a duplicated status webhook cannot bill
+ * twice. `fromCredit` takes the cents off the org's balance, which may go
+ * below zero (the call already happened; the gate stops the next one); a
+ * plan's overage is invoiced by Stripe instead, so the balance is left alone.
  */
 export async function debitCall(
   env: Env,
@@ -431,16 +455,38 @@ export async function debitCall(
   callId: string,
   seconds: number,
   cents: number,
+  includedSecs = 0,
+  fromCredit = true,
 ): Promise<void> {
   const ledgerId = `call:${callId}`;
   await env.DB.batch([
     env.DB.prepare(
-      "UPDATE orgs SET credit_cents = credit_cents - ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM ledger WHERE id = ?)",
-    ).bind(cents, orgId, ledgerId),
+      "UPDATE orgs SET credit_cents = credit_cents - ?, included_secs_used = included_secs_used + ? WHERE id = ? AND NOT EXISTS (SELECT 1 FROM ledger WHERE id = ?)",
+    ).bind(fromCredit ? cents : 0, includedSecs, orgId, ledgerId),
     env.DB.prepare(
       "INSERT OR IGNORE INTO ledger (id, org_id, user_id, kind, delta_cents, seconds, memo, created_at) VALUES (?, ?, ?, 'call', ?, ?, ?, ?)",
     ).bind(ledgerId, orgId, userId, -cents, seconds, callId, Date.now()),
   ]);
+}
+
+/** The team plan as Stripe last reported it. A new period resets the
+ *  included minutes used. */
+export async function setPlan(
+  env: Env,
+  orgId: string,
+  p: { status: string; periodStart: number; periodEnd: number; cancelAtEnd: boolean; subscriptionId: string },
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE orgs SET
+       included_secs_used = CASE WHEN plan_period_start != ?1 THEN 0 ELSE included_secs_used END,
+       plan_status = ?2, plan_period_start = ?1, plan_period_end = ?3, plan_cancel_at_end = ?4,
+       stripe_subscription_id = ?5
+     WHERE id = ?6`,
+  ).bind(p.periodStart, p.status, p.periodEnd, p.cancelAtEnd ? 1 : 0, p.subscriptionId, orgId).run();
+}
+
+export async function orgBySubscription(env: Env, subscriptionId: string): Promise<Org | null> {
+  return (await env.DB.prepare("SELECT * FROM orgs WHERE stripe_subscription_id = ?").bind(subscriptionId).first<Org>()) ?? null;
 }
 
 export async function setStripeCustomer(env: Env, orgId: string, customerId: string): Promise<void> {
