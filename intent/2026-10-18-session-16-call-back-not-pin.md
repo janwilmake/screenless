@@ -153,3 +153,5 @@ then:
 > go with option 2 with 2 weeks free trial and $0.40 per minute after (up to 30 minutes in the free trial). implement that and deploy. and the landingpage shoul mention unlimited whatsapp too
 
 > can u make a subagent that drives my browser to try and find buying signal on x? gimme a rundown of what you find.
+
+> yes i think this makes a ton of sense. i dont wanna do this now but keep it in mind as a new product (give your session a seat on the team). the crazy thing is a lot of it is basically free, and the phone + whatsapp are nice add-ons. so lets write it up as claude-team-seat.md with how to proof and comparison to kylon. it could basically be watchloop and screenless combined into some new name.
