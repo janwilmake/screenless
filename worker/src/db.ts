@@ -703,6 +703,14 @@ export async function stashPut(env: Env, key: string, value: string, ttlSecs: nu
   ).bind(key, value, Date.now() + ttlSecs * 1000).run();
 }
 
+/** Replaces a stash value only if it is still `expected`: a claim two
+ *  terminals can race for without both winning. */
+export async function stashSwap(env: Env, key: string, expected: string, value: string, ttlSecs: number): Promise<boolean> {
+  const res = await env.DB.prepare("UPDATE stash SET value = ?, expires_at = ? WHERE key = ? AND value = ?")
+    .bind(value, Date.now() + ttlSecs * 1000, key, expected).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
 export async function stashGet(env: Env, key: string): Promise<string | null> {
   const row = await env.DB.prepare("SELECT value FROM stash WHERE key = ? AND expires_at > ?")
     .bind(key, Date.now()).first<{ value: string }>();

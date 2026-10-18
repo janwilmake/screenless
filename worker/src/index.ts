@@ -58,6 +58,8 @@ export interface Env {
 
   // vars — set in wrangler.jsonc
   TELNYX_FROM_NUMBER: string;
+  /** Telnyx's Ed25519 public key: verifies the WhatsApp message webhook. */
+  TELNYX_PUBLIC_KEY: string;
   TELNYX_ANCHORSITE: string;
   ALLOWED_DESTINATIONS: string;
   /** Optional. Lets the welcome SMS send from a number not already bound to a
@@ -103,6 +105,7 @@ export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
 import type { CallMode, LiveConfig } from "./live";
 import * as levels from "./levels";
+import * as chat from "./chat";
 
 /** Invites one request may send, and one team a day: a whole company,
  *  sent by an agent in batches, without letting a stolen token mail-bomb. */
@@ -424,90 +427,6 @@ ${o.run
 - Short turns, plain spoken language, the caller's language.
 - The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
 - When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is handed to ${o.owner}'s session after the call.`;
-
-type Gate = "listen" | "read" | "full";
-const GATES: Gate[] = ["listen", "read", "full"];
-
-/** What a watcher's checking-in said about its repo: the level names its
- *  `.agents/permissions.md` defines with their gates, and its default. */
-interface Shared {
-  userId: string;
-  watcherId: string;
-  repo: string;
-  name?: string;
-  share: string[] | "team";
-  run?: string[];
-  levels?: Record<string, Gate>;
-  ldefault?: string;
-}
-
-/**
- * The gate a caller with `level` (from the team page; '' = default) gets in
- * one watcher's repo. A repo with a permissions file decides by its own
- * level names, and a name it does not define falls to its default, so no
- * name can widen a repo that does not know it. Without a file only the
- * built-in names mean anything. Routing only: the watcher resolves the
- * caller again from the file on disk.
- */
-function gateIn(w: Shared, level: string): Gate | null {
-  if (w.levels) {
-    const name = level && w.levels[level] ? level : w.ldefault ?? "listen";
-    return w.levels[name] ?? ((GATES as string[]).includes(name) ? (name as Gate) : null);
-  }
-  return (GATES as string[]).includes(level) ? (level as Gate) : null;
-}
-
-/**
- * A teammate's live watcher that will serve this caller: the one that gives
- * them the most. Their level on the team page, read against each watcher's
- * levels; a `callers:` line naming them in the file (session 17, kept so a
- * file that lists people still routes); or `--brief-for`. Only used when the
- * caller has no live watcher of their own, which always comes first.
- */
-async function sharedWatcher(
-  env: Env,
-  orgId: string,
-  caller: { id: string; email: string | null; phone?: string; level: string },
-): Promise<{ userId: string; watcherId: string; repo: string; name?: string; run: boolean } | null> {
-  let best: { w: Shared; gate: Gate } | null = null;
-  for (const { value } of await db.stashByPrefix(env, `liveshare:${orgId}:`)) {
-    const w = JSON.parse(value) as Shared;
-    if (w.userId === caller.id) continue;
-    const gates = [
-      gateIn(w, caller.level),
-      w.run && runsFor(w.run, caller) ? "read" : null,
-      w.share === "team" || (caller.email && Array.isArray(w.share) && w.share.includes(caller.email.toLowerCase())) ? "listen" : null,
-    ].filter((g): g is Gate => !!g);
-    for (const gate of gates)
-      if (!best || GATES.indexOf(gate) > GATES.indexOf(best.gate)) best = { w, gate };
-  }
-  return best ? { userId: best.w.userId, watcherId: best.w.watcherId, repo: best.w.repo, name: best.w.name, run: best.gate !== "listen" } : null;
-}
-
-/** `name:gate,…` from a watcher, or null when its repo has no file. */
-function parseLevels(raw: string): Record<string, Gate> | null {
-  const out: Record<string, Gate> = {};
-  for (const pair of raw.split(",").slice(0, 50)) {
-    const [name, gate] = pair.split(":").map((x) => x.trim());
-    if (name && db.LEVEL_RULE.test(name) && (GATES as string[]).includes(gate)) out[name] = gate as Gate;
-  }
-  return Object.keys(out).length ? out : null;
-}
-
-/** Whether a watcher's `run` patterns (from its permissions file: emails,
- *  `*@domain`, `*`, phones) cover this caller. Routing only: the watcher
- *  resolves the caller again and gates every request itself. */
-function runsFor(patterns: string[], caller: { email: string | null; phone?: string }): boolean {
-  const email = (caller.email ?? "").toLowerCase();
-  const digits = (s: string) => s.replace(/[^\d]/g, "");
-  const phone = digits(caller.phone ?? "");
-  return patterns.some((p) =>
-    p === "*" ||
-    (email && p === email) ||
-    (email && p.startsWith("*@") && email.endsWith(p.slice(1))) ||
-    (!p.includes("@") && phone && digits(p) === phone),
-  );
-}
 
 /** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
  *  the correlation header the webhook reads to find this call's brief. Shared by
@@ -902,7 +821,7 @@ async function ringInXml(
     ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
     : null;
   // No watcher of their own: a teammate's session may share its brief.
-  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined, level: db.levelOf(user, org) }) : null;
+  const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await levels.sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined, level: db.levelOf(user, org) }) : null;
   const owner = shared ? await db.userById(env, shared.userId) : null;
   if (watcher || (shared && owner)) {
     const w = (watcher ? JSON.parse(watcher) : shared) as { watcherId: string; repo: string; name?: string };
@@ -1231,18 +1150,18 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
       .slice(0, 100);
     // The level names its permissions file defines, `name:gate,…`, and its
     // default: what a teammate's level from the team page means here.
-    const levels = parseLevels(url.searchParams.get("levels") ?? "");
+    const reported = levels.parseLevels(url.searchParams.get("levels") ?? "");
     const ldefault = (url.searchParams.get("ldefault") ?? "").trim();
     const who = share && share !== "owner"
       ? share === "team" ? "team" : share.split(",").map((e) => e.trim()).filter((e) => e.includes("@")).slice(0, 50)
       : [];
-    if (who === "team" || who.length || run.length || levels) {
-      const entry: Shared = { userId: user.id, watcherId, repo, name, share: who, run, ...(levels ? { levels, ldefault: db.LEVEL_RULE.test(ldefault) ? ldefault : "listen" } : {}) };
+    if (who === "team" || who.length || run.length || reported) {
+      const entry: levels.Shared = { userId: user.id, watcherId, repo, name, share: who, run, ...(reported ? { levels: reported, ldefault: db.LEVEL_RULE.test(ldefault) ? ldefault : "listen" } : {}) };
       await db.stashPut(env, `liveshare:${org.id}:${user.id}`, JSON.stringify(entry), 45);
     }
     // Kept a month per repo, so the team page can offer each repo's level
     // names for a dropdown without ever reading the repo.
-    if (levels) await db.stashPut(env, `levels:${org.id}:${repo}`, JSON.stringify({ levels, default: ldefault, at: Date.now() }), 30 * 86400);
+    if (reported) await db.stashPut(env, `levels:${org.id}:${repo}`, JSON.stringify({ levels: reported, default: ldefault, at: Date.now() }), 30 * 86400);
     // Per repo too, so a test ring pinned to a repo greets as that watcher.
     await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
@@ -1260,12 +1179,17 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     }
   }
 
+  // WhatsApp messages this member's session answers, for a watcher that
+  // can run a fork (chat.ts).
+  const chats = url.searchParams.get("live") === "1" ? await chat.pendingChats(env, user.id, watcherId) : [];
+
   const queue = await db.queuedCalls(env, org.id);
   const found = liveOnly
     ? undefined
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
-  if (!found) return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode });
+  if (!found)
+    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, ...(chats.length ? { chats } : {}) });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   const callerOrg = caller ? (caller.org_id === org.id ? org : await db.orgById(env, caller.org_id)) : null;
@@ -1273,6 +1197,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     ready: true,
     watchers: watchers.length,
     queued: queue.length,
+    ...(chats.length ? { chats } : {}),
     call: {
       ...callPayload(found.id, found.record),
       caller: {
@@ -1926,6 +1851,21 @@ export default {
       }
 
       if (method === "POST" && path === "/webhooks/inbound/status") return await inboundStatus(req, env);
+      // WhatsApp messages to the line: signed by Telnyx, no secret in the URL.
+      if (method === "POST" && path === "/webhooks/whatsapp") return await chat.whatsappWebhook(req, env, ctx);
+      // The watcher's side of a WhatsApp message: its attachments, and the
+      // answer or a progress note going back.
+      if (path.startsWith("/chat/")) {
+        const s = await authed(req, env);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const { user } = await identify(env, s.phone);
+        if (method === "GET" && path === "/chat/media") return await chat.chatMedia(env, user, url.searchParams.get("key") ?? "");
+        if (method === "POST" && (path === "/chat/reply" || path === "/chat/update")) {
+          const body = (await req.json().catch(() => ({}))) as { id?: string; text?: string; progress?: boolean };
+          return await chat.chatReply(env, user, { ...body, progress: path === "/chat/update" || !!body.progress });
+        }
+        return fail(404, "not found");
+      }
 
       // OpenAI Realtime call lifecycle (a leg Telnyx bridged over SIP).
       if (method === "POST" && path === "/webhooks/openai/realtime")
@@ -1975,6 +1915,7 @@ export default {
     }
     await sweepBriefs(env);
     const stale = await sweepStaleInbound(env).catch(() => 0);
+    await chat.sweepChatMedia(env).catch((err) => console.error("chat media sweep failed", (err as Error).message));
     if (stale) console.log(`closed ${stale} stale inbound call(s)`);
     // KV gave TTLs for free; in D1 they are this one broom.
     await db.cleanupExpired(env).catch((err) =>

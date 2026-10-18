@@ -26,7 +26,9 @@ import { homedir } from "node:os";
 /* -------------------------------------------------------------------- gate */
 
 export type Decision = { decision: "allow" | "deny"; reason: string };
-export type CallMode = "full" | "restricted";
+/** `listen`: a WhatsApp message from a teammate who may only hear where
+ *  things stand; the fork answers from what it knows, with no tools. */
+export type CallMode = "full" | "restricted" | "listen";
 
 const READ_TOOLS = new Set([
   "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "TodoWrite", "TaskOutput",
@@ -148,8 +150,15 @@ export function isCodemodeRead(command: string): boolean {
 const LATER = "This is blocked during phone calls. Do not retry it or work around it: finish what you can, and end your answer with what is left for the session after the call.";
 
 /** The decision for one tool call of a fork. `cwd` is the project; anything
- *  but an explicit `full` is restricted. */
-export function decide(tool: string, input: Record<string, unknown>, cwd: string, mode: CallMode = "restricted"): Decision {
+ *  but an explicit `full` is restricted. `attachments` is where a WhatsApp
+ *  message's images and files were saved: the fork may always read those. */
+export function decide(
+  tool: string,
+  input: Record<string, unknown>,
+  cwd: string,
+  mode: CallMode = "restricted",
+  attachments = "",
+): Decision {
   const path = String(input.file_path ?? input.notebook_path ?? input.path ?? "");
   const abs = path ? resolve(cwd, path.replace(/^~(?=\/)/, homedir())) : "";
   if (abs && SECRET_PATH.test(abs))
@@ -157,6 +166,13 @@ export function decide(tool: string, input: Record<string, unknown>, cwd: string
 
   if (tool === "Bash" && SECRET_IN_COMMAND.test(String(input.command ?? "")))
     return { decision: "deny", reason: "Secrets are never read or changed on a phone call." };
+  if (attachments && tool === "Read" && abs.startsWith(resolve(attachments) + sep))
+    return { decision: "allow", reason: "an attachment of the message" };
+  if (mode === "listen")
+    return {
+      decision: "deny",
+      reason: "This person may only hear where things stand. Answer from what you already know about this session, without tools.",
+    };
   // A proven owner may do anything the session may: send, push, deploy,
   // edit outside the project.
   if (mode === "full") return { decision: "allow", reason: "the owner's own call" };
@@ -199,9 +215,10 @@ export async function gateHook(): Promise<void> {
     /* an unreadable call is denied below */
   }
   const project = process.env.SCREENLESS_PROJECT || input.cwd || process.cwd();
-  const mode: CallMode = process.env.SCREENLESS_CALL_MODE === "full" ? "full" : "restricted";
+  const m = process.env.SCREENLESS_CALL_MODE;
+  const mode: CallMode = m === "full" ? "full" : m === "listen" ? "listen" : "restricted";
   const d = input.tool_name
-    ? decide(input.tool_name, input.tool_input ?? {}, project, mode)
+    ? decide(input.tool_name, input.tool_input ?? {}, project, mode, process.env.SCREENLESS_ATTACH_DIR ?? "")
     : { decision: "deny" as const, reason: "unreadable tool call" };
   process.stdout.write(
     JSON.stringify({
@@ -231,6 +248,30 @@ export function phoneRules(mode: CallMode): string {
 - Never read out a secret: no token, key, password or .env value.`;
 }
 
+const CHAT_BASE = `You are answering a WhatsApp message to this Claude Code session, sent through screenless. The person is away from this machine; your final message is sent back to them as a WhatsApp message.
+
+- Do it now and fast. A good answer in a minute beats a perfect one in five.
+- This is a conversation: earlier messages of it may be above. Keep its thread; a short follow-up such as "and the other one?" refers to what came before.
+- Voice messages arrive already transcribed and may have recognition errors. Images and files they sent are saved on this machine at the paths given; read them with the Read tool.
+- Your final message is a WhatsApp message: plain text, short, a few sentences or a short list. WhatsApp formatting only (*bold*, _italic_, \`code\`), no markdown headings or tables. Links are fine. Never include secrets or personal data.
+- When the work will take longer than about 20 seconds, you may send a short progress note with \`screenless update "<text>"\`. Only for something worth knowing; your final message is still the answer.`;
+
+/** The fork's rules for a WhatsApp message, per mode. */
+export function chatRules(mode: CallMode, owner = "the session's owner"): string {
+  if (mode === "full")
+    return `${CHAT_BASE}
+- You may do anything this session may do: read, edit, run, commit, push, deploy, and send messages or update records through MCP tools. Do what they asked, and say in your answer what you did and who it went to.
+- The project's own rules still hold. Where they ask for a person's yes first (a merge, a production write, a deletion), ask for it in your reply and act on a clear yes in the next message.
+- Never send a secret: no token, key, password or .env value.`;
+  if (mode === "listen")
+    return `${CHAT_BASE}
+- This person may only hear where things stand. Answer from what you already know about this session (what is being worked on, what was done, what is pending), with no tools. Only what is fine for a teammate to hear: no personal data, no secrets, nothing from ${owner}'s own mail or messages.
+- If they ask for something to be done, say it is noted for ${owner}.`;
+  return `${CHAT_BASE}
+- You may read anything in the project, read through MCP tools, and do local work: edit files, run tests and builds, commit. Pushing, deploying, publishing, sending messages, deleting and anything outside the project are blocked. If the request needs that, do what you can, and end with what is left for ${owner}.
+- Never send a secret: no token, key, password or .env value.`;
+}
+
 export interface Handoff {
   id: string;
   request: string;
@@ -243,6 +284,8 @@ export interface ForkResult {
   ok: boolean;
   seconds: number;
   costUsd?: number;
+  /** The run's own session, which `continueSession` can carry on. */
+  sessionId?: string;
 }
 
 /**
@@ -265,6 +308,17 @@ export function runFork(
     callId?: string;
     /** Who is calling and what the owner's permissions file lets them do. */
     permissions?: string;
+    /** The rules instead of a phone call's: a WhatsApp message's. */
+    rules?: string;
+    /** Carry on this fork's own session instead of forking again: the next
+     *  message of a conversation. */
+    continueSession?: string;
+    /** Keep a fresh run's session, so the conversation can carry on. */
+    persist?: boolean;
+    /** More environment for the fork and its gate. */
+    env?: Record<string, string>;
+    /** What to answer when the run produced nothing. */
+    failText?: string;
   },
 ): Promise<ForkResult> {
   const started = Date.now();
@@ -289,10 +343,16 @@ export function runFork(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    [phoneRules(o.mode), o.permissions].filter(Boolean).join("\n\n"),
+    [o.rules ?? phoneRules(o.mode), o.permissions].filter(Boolean).join("\n\n"),
     "--settings",
     JSON.stringify(settings),
-    ...(o.sessionId ? ["--resume", o.sessionId, "--fork-session"] : ["--no-session-persistence"]),
+    ...(o.continueSession
+      ? ["--resume", o.continueSession]
+      : o.sessionId
+        ? ["--resume", o.sessionId, "--fork-session"]
+        : o.persist
+          ? []
+          : ["--no-session-persistence"]),
   ];
 
   return new Promise((done) => {
@@ -308,12 +368,14 @@ export function runFork(
         CLAUDE_CODE_SESSION_ID: "",
         SCREENLESS_CALL_ID: o.callId ?? "",
         SCREENLESS_REQUEST_ID: o.callId ? h.id : "",
+        ...o.env,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let final = "";
     let isError = false;
     let cost: number | undefined;
+    let session: string | undefined;
     let stderr = "";
     // Ten minutes is far past any phone call's patience; the session after
     // the call can always pick it up.
@@ -321,12 +383,13 @@ export function runFork(
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", (err) => (stderr += String(err)));
     createInterface({ input: child.stdout }).on("line", (line) => {
-      let ev: { type?: string; message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }> }; result?: string; is_error?: boolean; total_cost_usd?: number };
+      let ev: { type?: string; session_id?: string; message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown> }> }; result?: string; is_error?: boolean; total_cost_usd?: number };
       try {
         ev = JSON.parse(line);
       } catch {
         return;
       }
+      if (ev.session_id) session = ev.session_id;
       if (ev.type === "assistant") {
         for (const part of ev.message?.content ?? []) {
           if (part.type === "tool_use") o.onStep(`${part.name} ${short(part.input)}`);
@@ -344,14 +407,15 @@ export function runFork(
         console.error(`  fork failed (exit ${code}): ${stderr.trim().slice(-300)}`);
         done({
           request: h.request,
-          answer: "That did not work: the session on the computer failed to answer. It is in the transcript for after the call.",
+          answer: o.failText ?? "That did not work: the session on the computer failed to answer. It is in the transcript for after the call.",
           ok: false,
           seconds,
           costUsd: cost,
+          sessionId: session,
         });
         return;
       }
-      done({ request: h.request, answer: final.trim(), ok: !isError, seconds, costUsd: cost });
+      done({ request: h.request, answer: final.trim(), ok: !isError, seconds, costUsd: cost, sessionId: session });
     });
   });
 }

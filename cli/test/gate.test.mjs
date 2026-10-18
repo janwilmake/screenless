@@ -2,7 +2,7 @@
 // `npm test` builds first.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide, phoneRules } from "../dist/live.js";
+import { decide, phoneRules, chatRules } from "../dist/live.js";
 
 const cwd = "/work/project";
 const bash = (command) => ["Bash", { command }];
@@ -71,4 +71,22 @@ test("the fork's rules name its mode", () => {
   assert.match(phoneRules("restricted"), /restricted mode/);
   assert.doesNotMatch(phoneRules("restricted"), /push, deploy, and send/);
   for (const mode of ["full", "restricted"]) assert.match(phoneRules(mode), /screenless update/);
+});
+
+test("a listen-level WhatsApp message runs no tools, but may read its own attachments", () => {
+  const dir = "/tmp/screenless-chat/abc";
+  assert.equal(decide("Read", { file_path: "src/a.ts" }, "/repo", "listen", dir).decision, "deny");
+  assert.equal(decide("Bash", { command: "ls" }, "/repo", "listen", dir).decision, "deny");
+  assert.equal(decide("Read", { file_path: `${dir}/image-1.jpg` }, "/repo", "listen", dir).decision, "allow");
+  // Not a way out of the directory, and not another message's.
+  assert.equal(decide("Read", { file_path: `${dir}/../other/x.jpg` }, "/repo", "listen", dir).decision, "deny");
+  // Secrets stay out even beside an attachment.
+  assert.equal(decide("Read", { file_path: "/repo/.env" }, "/repo", "full", dir).decision, "deny");
+});
+
+test("chat rules say WhatsApp, and listen says no tools", () => {
+  assert.match(chatRules("full"), /WhatsApp message/);
+  assert.match(chatRules("listen", "Sam"), /with no tools/);
+  assert.match(chatRules("listen", "Sam"), /noted for Sam/);
+  assert.doesNotMatch(chatRules("restricted"), /push, deploy, and send/);
 });

@@ -203,3 +203,38 @@ export function hangupTexmlCall(apiKey: string, accountSid: string, callSid: str
     Status: "completed",
   });
 }
+
+/* ---------------------------------------------------------------- whatsapp */
+
+/**
+ * A WhatsApp text from the line's number. Only within 24 hours of the
+ * person's own last message (Meta's customer-service window), which a reply
+ * to their message always is. Bodies are capped at 4096 bytes; a longer
+ * answer is cut, and says so.
+ */
+export function sendWhatsAppText(apiKey: string, from: string, to: string, body: string) {
+  const bytes = new TextEncoder().encode(body);
+  const text = bytes.length <= 4096 ? body : `${new TextDecoder().decode(bytes.slice(0, 4000)).replace(/�$/, "")}\n\n(cut short)`;
+  return call<{ data: { id: string } }>(apiKey, "POST", "/messages/whatsapp", {
+    from,
+    to,
+    whatsapp_message: { type: "text", text: { body: text, preview_url: false } },
+  });
+}
+
+/**
+ * The bytes of an inbound WhatsApp attachment Telnyx did not pre-fetch, by
+ * Meta's media id. Telnyx may answer with the file or with JSON pointing at
+ * it; both are handled.
+ */
+export async function whatsappMedia(apiKey: string, phone: string, id: string): Promise<Response> {
+  const res = await fetch(`${BASE}/whatsapp/media/${encodeURIComponent(phone.replace(/^\+/, ""))}/${encodeURIComponent(id)}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new TelnyxError(res.status, "/whatsapp/media", await res.text().catch(() => ""));
+  if (!(res.headers.get("content-type") ?? "").includes("json")) return res;
+  const j = (await res.json()) as { data?: { url?: string }; url?: string };
+  const url = j.data?.url ?? j.url;
+  if (!url) throw new TelnyxError(500, "/whatsapp/media", j);
+  return fetch(url);
+}

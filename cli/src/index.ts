@@ -4,6 +4,7 @@ import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
 import { fetchRetry, gateHook, serveLiveCall, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
+import { answerChat, threadKey, type ChatMessage } from "./chat.js";
 import { levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Loaded, type Resolved } from "./permissions.js";
 
 /**
@@ -722,6 +723,8 @@ interface WatchNext {
    *  line rang back or took over WhatsApp, `restricted` (read and local
    *  work) on a test ring. */
   liveMode?: "full" | "restricted";
+  /** WhatsApp messages this session answers (chat.ts). */
+  chats?: ChatMessage[];
 }
 
 function printWatchCall(call: WatchCall, asJson: boolean, live: ForkResult[] = [], perms?: Resolved): void {
@@ -844,6 +847,13 @@ async function watch(args: string[]): Promise<void> {
   reloadPolicies();
   // The owner, so a line in the file that names them can narrow their calls.
   let ownerEmail: string | null = null;
+  /** What teammates call the owner, for a teammate's chat rules. */
+  let ownerName = "the session's owner";
+  // WhatsApp conversations: each person's messages one after another, in
+  // their conversation's fork; different people side by side.
+  const chatChains = new Map<string, Promise<void>>();
+  const chatsRunning = new Set<Promise<void>>();
+  const chatSeen = new Set<string>();
   const owner = (): Caller => ({ owner: true, email: ownerEmail, phone: cfg.phone });
   const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null; level?: string }): Caller =>
     who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null, level: who.level ?? "" };
@@ -869,6 +879,7 @@ async function watch(args: string[]): Promise<void> {
     try {
       const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
       ownerEmail = me.user.email;
+      ownerName = (me.user.name || "").trim().split(/\s+/)[0] || ownerName;
       console.log(`${c.bold(me.org.name)} ${c.dim(`· watching from ${repo} · team line ${me.inboundNumber}`)}`);
       console.log(c.dim("  blocks until a call or spoken request lands, prints it, and exits"));
       if (live)
@@ -894,7 +905,12 @@ async function watch(args: string[]): Promise<void> {
   }
 
   if (asJson)
-    ownerEmail = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token }).then((m) => m.user.email).catch(() => null);
+    await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token })
+      .then((m) => {
+        ownerEmail = m.user.email;
+        ownerName = (m.user.name || "").trim().split(/\s+/)[0] || ownerName;
+      })
+      .catch(() => undefined);
   const nextUrlBase =
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
     `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}` +
@@ -990,9 +1006,51 @@ async function watch(args: string[]): Promise<void> {
       serving.add(callId);
     }
 
-    // Never leave while a live call is being served: exiting would drop its
-    // requests. Another finished call waits in the queue meanwhile.
-    const busy = next?.call ? [...serving].some((id) => id !== next!.call!.callId) : false;
+    for (const m of next?.chats ?? []) {
+      if (chatSeen.has(m.id)) continue;
+      chatSeen.add(m.id);
+      const who = m.from.you ? "you" : m.from.name || m.from.email || "a teammate";
+      const perms = permissionsFor(policies, callerOf(m.from));
+      // Your own WhatsApp is tied to your account, like your WhatsApp call:
+      // full. A teammate gets their level's gate.
+      const mode = m.from.you ? "full" : perms.gate === "full" ? "full" : perms.gate === "listen" ? "listen" : "restricted";
+      if (!asJson)
+        console.log(
+          `\n${c.green("✉")} ${c.bold("whatsapp")} ${c.dim(`· ${who} · ${mode}${perms.source && !m.from.you ? ` · mode ${perms.mode}` : ""}`)}\n  ${m.text.slice(0, 240)}${
+            m.media.length ? c.dim(` (+${m.media.length} attachment${m.media.length === 1 ? "" : "s"})`) : ""
+          }`,
+        );
+      const tokens = sessionId ? contextTokens(sessionId, process.cwd()) : null;
+      const key = threadKey(process.cwd(), m);
+      const p: Promise<void> = (chatChains.get(key) ?? Promise.resolve())
+        .then(() =>
+          answerChat(m, {
+            apiUrl: cfg.apiUrl,
+            token: cfg.token,
+            cwd: process.cwd(),
+            cli: process.argv[1],
+            sessionId,
+            forkable: !!sessionId && (tokens ?? 0) <= forkLimit,
+            background: m.from.you ? brief?.current() : brief?.forTeammate(),
+            mode,
+            owner: ownerName,
+            permissions: perms.source && !m.from.you ? permissionsText(`${who}, a teammate of the session's owner, not the owner`, perms) : undefined,
+            log: (line) => !asJson && console.log(line),
+          }),
+        )
+        .then((r) => {
+          if (!asJson) console.log(`  ${c.green("↩")} replied to ${who} in ${r.seconds}s: ${r.answer.replace(/\s+/g, " ").slice(0, 160)}`);
+        })
+        .catch((err) => console.error(`  whatsapp answer failed: ${(err as Error).message}`))
+        .finally(() => chatsRunning.delete(p));
+      chatChains.set(key, p);
+      chatsRunning.add(p);
+    }
+
+    // Never leave while a live call or a WhatsApp answer is being served:
+    // exiting would drop it. Another finished call waits in the queue
+    // meanwhile.
+    const busy = (next?.call ? [...serving].some((id) => id !== next!.call!.callId) : false) || chatsRunning.size > 0;
     if (next?.ready && next.call && !busy) {
       // A call answered live is delivered once its last fork has answered, so
       // the session gets the whole story and does not redo the work.
@@ -1036,6 +1094,18 @@ async function updateCmd(args: string[]): Promise<void> {
   const given = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(words[0] ?? "") ? words.shift() : undefined;
   const text = words.join(" ").trim();
   if (!text) die('usage: screenless update [<callId>] "<short progress note>"');
+  // Run from a fork answering a WhatsApp message: the note goes to them as a
+  // message (chat.ts), at most every 15 seconds.
+  const chatId = process.env.SCREENLESS_CHAT_ID;
+  if (chatId && !given) {
+    const r = await api<{ ok: boolean; sent?: boolean; reason?: string }>(cfg.apiUrl, "/chat/update", {
+      method: "POST",
+      token: cfg.token,
+      body: { id: chatId, text },
+    });
+    console.log(r.sent ? `${c.green("✓")} sent on WhatsApp` : `${c.dim("·")} not sent (${r.reason ?? "too soon"})`);
+    return;
+  }
   const envCall = process.env.SCREENLESS_CALL_ID || undefined;
   const callId = given ?? envCall ?? "current";
   // The request id belongs to the call it came with.

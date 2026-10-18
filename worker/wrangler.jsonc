@@ -37,6 +37,11 @@
     // real NL outbound.
     "TELNYX_FROM_NUMBER": "+31850835195",
 
+    // Telnyx's Ed25519 public key (Mission Control → Keys → Public Key): every
+    // v2 webhook is signed with it, which is how a WhatsApp message is known to
+    // come from Telnyx without a secret in its URL. Public, so it lives here.
+    "TELNYX_PUBLIC_KEY": "v/kocsbDI0BbMzMYXq4lTwrFXOXFwANyi7Ua6pSY0Ug=",
+
     // The id Meta gave that number for WhatsApp, carried on each WhatsApp call
     // as x-wa-meta-phone-number-id: one half of how a WhatsApp call is told
     // from a phone call (viaWhatsApp). Telnyx shows it as the Phone Number ID.

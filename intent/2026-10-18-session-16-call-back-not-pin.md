@@ -132,3 +132,7 @@ then:
 > 1 not yet 2 yes, and deploy without preview, i trust its gonna be better
 
 > 'why not slack' is a great objection btw... and the truth is: slack IS very useful. and screenless just offers calls. adding slack is a bigger work and kinda hard, and i dont think its worth it now. but maybe its kinda low-hanging fruit though, to also add whatsapp chats. these could be routed to a claude code fork too, and answered, right? ideally also allowing screenshots and audio... the main question is though: does every msg become a new fork? or can we append to an existing fork? wdyt?
+
+> yes build it like that, and deploy
+
+> "Your team's questions, answered without you." is much more clear and powerful than "Let your team call your Claude Code, not you." which is ambiguous. so lets improve the headline. dont u think?
