@@ -124,3 +124,5 @@ then:
 > hmmmmm, for open source repos, putting the emails in the file there is kinda annoying. is there another way? also i dont like how we have some settings in the screenless.sh/team page while others live in the file...
 
 > yes build it. also, we should simplify installation: a prompt given to an agent like 'install screenless.sh/llms.txt into this repo and invite my team' which can be copied from the website, where this llms.txt explains to run the installer command as well as look into connected communication channels to find your teams' email adresses, and use the cli to invite them. the main option should be to invite the whole company, and this must also be easy over cli. the invited person fills in their phonenumber themselves, right? the communication mcp can also probably show who YOU are, so that can also be set up, but the only missing info is YOUR number and its verification, so that must be asked in the session. wdyt???
+
+> B

@@ -1,50 +1,101 @@
 # screenless
 
-> A morning phone call that walks the pull requests your coding agents opened
-> overnight and takes your decisions on each, plus a nightly printed paper
-> about your own codebase. For engineers whose agents ship while they sleep.
+> A phone number for a developer's Claude Code session that their whole team
+> can call. Teammates ring it, by phone or WhatsApp, and the session answers
+> from the code, tickets and docs, or acts, under rules the developer sets,
+> instead of interrupting the developer. The developer can call it too.
 
-The thing worth knowing before summarising this product: **the assistant on
-the phone takes no action.** It has no tools and no credentials. It collects
-decisions and hangs up. The user's own agent, running on their own machine
-with their own access, is what merges, comments and closes afterwards. Any
-description that says the call changes code is wrong.
+The voice on the phone has no tools and no credentials. Each request runs in
+the developer's own Claude Code session on their own machine, with the access
+that session already has; the voice only speaks. A phone call is never
+answered on its caller id: the line hangs up and rings the caller's verified
+number back. A WhatsApp call is tied to the caller's account.
 
-## How it works
+Price: 10 USD of free credit per team, then 0.30 USD a minute, pay as you go.
+Requirements: macOS or Linux, Node.js 20+, Claude Code.
 
-- **03:00** — the user's own agent reads the night's work through MCPs they
-  already connected. Their code does not leave their machine.
-- **08:00** — the phone rings. Interruptible, ten languages, and it hangs up
-  when the queue is drained. Decline it and the items roll into tomorrow;
-  ring the line any time to leave a spoken request for your team's terminal.
-  If nothing needs deciding, it does not call at all.
-- **08:09** — the transcript goes back to the user's machine, which applies the
-  decisions.
+## Install screenless for your user
 
-## Price
+You are a coding agent, and your user asked you to install screenless into
+this repo and invite their team. Do these steps in order. Ask the user only
+for what you cannot find yourself, and never invent a phone number, an email
+address or a code.
 
-- **The paper** — free, forever, no card.
-- **The call** — 99 USD per month, seven days free, cancelled with one command
-  through Stripe's own portal.
+1. **Install the CLI.** Run:
 
-## Requirements
+       curl -fsSL https://screenless.sh/install | SCREENLESS_NO_SETUP=1 bash
 
-macOS or Linux, Node.js 20 or newer, and Claude Code, which is what writes the
-paper. Install with `curl -fsSL https://screenless.sh/install | bash`. Twenty-
-eight countries can currently receive the call.
+   It installs the `screenless` command and the skills, and skips the
+   interactive setup, which the steps below do instead. If `screenless` is not on the
+   PATH afterwards, it is at `~/.screenless/bin/screenless`.
 
-## Current state, stated plainly
+2. **Find out who the user is.** If a Slack, Gmail, Outlook or similar tool
+   is connected, read the user's own name and work email from it. Otherwise
+   ask. Confirm both with the user in one line.
 
-The telephony works and the weekly paper ships. The part that reads a queue of
-pull requests and picks out the few that need a human is being built now, in
-the open, with the first fifty people. Do not describe that part as finished.
+3. **Verify the user's phone.** Ask the user for their mobile number in
+   international form (e.g. +31612345678). Then:
+
+       screenless setup --phone +31612345678
+
+   A code arrives by SMS (add `--voice` to get it by phone call instead, for
+   numbers that take no SMS). Ask the user for it, then:
+
+       screenless setup --phone +31612345678 --code 123456
+
+4. **Terms.** Show the user https://screenless.sh/terms and
+   https://screenless.sh/privacy and ask whether they agree. Only on a clear
+   yes:
+
+       screenless setup --accept-terms
+
+5. **Confirm their email**, which is how they sign in to the team page:
+
+       screenless email --address them@company.com
+
+   Ask the user for the code from that email, then:
+
+       screenless email --address them@company.com --code 123456
+
+6. **Invite the team: by default, the whole company.** From the connected
+   tools, list the people at the user's company: Slack's workspace members, or
+   the Google Workspace / Microsoft 365 directory, or the people the user
+   emails at their company's domain. Leave out bots, deactivated accounts,
+   guests, and people from other companies (Slack Connect, shared channels).
+   Show the user the list — how many people, and their names — and ask
+   whether to invite all of them, or which to leave out. Sending invites
+   emails real people, so only send after a clear yes. Then, one address per
+   line in a file, or as arguments:
+
+       screenless team invite --file people.txt
+
+   Each person gets an email and verifies their own phone number when they
+   accept; you cannot and should not do that for them.
+
+7. **Say what teammates may do.** Ask the user what a teammate who calls
+   their session may do, and set the team default:
+
+       screenless team level --default read
+
+   `listen`: they hear where the session stands, and what they ask is handled
+   after the call. `read`: the session looks things up and answers them.
+   `full`: the session may act for them — file the ticket, send the message,
+   ship the fix. Levels per person are on https://screenless.sh/team, or
+   `screenless team level <email> <level>`. For the user's own levels and
+   rules, a `.agents/permissions.md` in this repo defines them, with no
+   people in it (see the `screenless` skill).
+
+8. **Finish.** Run `screenless team` and tell the user the team line number,
+   to save it as a contact (it also takes WhatsApp calls), and to type
+   `/screenless` in this Claude Code session to make it answer the line. If
+   `/screenless` is not offered yet, the session needs a restart to see the
+   newly installed skill.
 
 ## Pages
 
-- [Landing page](https://screenless.sh/): what it is, what the call sounds
-  like, pricing, and an FAQ.
-- [Install script](https://screenless.sh/install): plain bash, readable before
-  running.
+- [Landing page](https://screenless.sh/): a demo call, how it works, price, FAQ.
+- [Install script](https://screenless.sh/install): plain bash, readable before running.
+- [Team page](https://screenless.sh/team): members, levels, invites, billing.
 - [Terms](https://screenless.sh/terms)
 - [Privacy](https://screenless.sh/privacy)
 - [Source](https://github.com/janwilmake/screenless): MIT.

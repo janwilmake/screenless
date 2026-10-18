@@ -182,6 +182,7 @@ interface OrgMe {
 /** Where the team lives: prints the essentials, opens the page. */
 async function teamCmd(args: string[] = []): Promise<void> {
   if (args[0] === "level") return teamLevel(args.slice(1));
+  if (args[0] === "invite") return teamInvite(args.slice(1));
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
   const me = await api<OrgMe>(cfg.apiUrl, "/org/me", { token: cfg.token });
@@ -233,9 +234,90 @@ async function teamLevel(args: string[]): Promise<void> {
   else console.log(c.dim("no repo has reported a .agents/permissions.md yet; listen, read and full work everywhere else"));
 }
 
+/**
+ * `screenless team invite` — invite people by email, as many as a company
+ * has: what an agent runs after finding the user's colleagues in Slack or a
+ * workspace directory and showing them the list. Each invitee gets an email
+ * and verifies their own phone number when they accept.
+ *
+ *   screenless team invite a@acme.dev b@acme.dev
+ *   screenless team invite --file people.txt     one address per line
+ *   ... | screenless team invite -               the same, from stdin
+ */
+async function teamInvite(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const { readFile } = await import("node:fs/promises");
+  const file = argFlag(args, "--file");
+  let text = args.filter((a, i) => a !== "-" && a !== "--file" && args[i - 1] !== "--file").join("\n");
+  if (file) text += `\n${await readFile(file, "utf8")}`;
+  if (args.includes("-")) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stdin) chunks.push(chunk as Buffer);
+    text += `\n${Buffer.concat(chunks).toString("utf8")}`;
+  }
+  const emails = [...new Set((text.match(/[^\s,;<>"']+@[^\s,;<>"']+\.[^\s,;<>"']+/g) ?? []).map((e) => e.toLowerCase()))];
+  if (!emails.length) die("no email addresses given — screenless team invite a@acme.dev b@acme.dev, or --file people.txt");
+  // The Worker takes 20 a request and paces the mail; a company goes in turns.
+  let sent = 0;
+  for (let i = 0; i < emails.length; i += 20) {
+    const r = await api<{ invited: string[]; skipped: Array<{ email: string; why: string }> }>(cfg.apiUrl, "/org/invites", {
+      method: "POST",
+      token: cfg.token,
+      body: { emails: emails.slice(i, i + 20) },
+    });
+    for (const e of r.invited) console.log(`${c.green("✓")} invited ${e}`);
+    for (const x of r.skipped) console.log(`${c.dim("·")} ${x.email} ${c.dim(`— ${x.why}`)}`);
+    sent += r.invited.length;
+  }
+  console.log(c.dim(`\n${sent} invite${sent === 1 ? "" : "s"} sent. Each person verifies their own phone when they accept; see them at screenless.sh/team.`));
+}
+
 /* ------------------------------------------------------------------- setup */
 
+/**
+ * Setup an agent can run for its user, one step at a time, with no prompts:
+ * the agent asks the user for their number and then for the code, and shows
+ * them the terms before accepting.
+ *
+ *   screenless setup --phone +31612345678 [--voice]   sends the code
+ *   screenless setup --phone +31612345678 --code 123456
+ *   screenless setup --accept-terms                    after the user agrees
+ */
+async function setupSteps(args: string[]): Promise<void> {
+  const base = (argFlag(args, "--api") || HOSTED_API).replace(/\/$/, "");
+  const phone = argFlag(args, "--phone");
+  const code = argFlag(args, "--code");
+  if (phone !== undefined) {
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) die("--phone takes an E.164 number, e.g. +31612345678");
+    if (code === undefined) {
+      const channel = args.includes("--voice") ? "call" : "sms";
+      await api(base, "/auth/start", { method: "POST", body: { phone, channel } });
+      console.log(`${c.green("✓")} code sent to ${phone} ${c.dim(channel === "call" ? "(by phone call)" : "(by SMS)")}`);
+      console.log(`next: screenless setup --phone ${phone} --code <the code>`);
+      return;
+    }
+    const result = await api<{ token: string; phone: string; expiresAt: number }>(base, "/auth/verify", {
+      method: "POST",
+      body: { phone, code: code.trim() },
+    });
+    await config.save({ apiUrl: base, token: result.token, phone: result.phone, expiresAt: result.expiresAt });
+    console.log(`${c.green("✓")} verified as ${result.phone}`);
+    const tz = machineTimezone();
+    if (tz) await api(base, "/settings", { method: "POST", body: { timezone: tz }, token: result.token }).catch(() => undefined);
+  }
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — start with screenless setup --phone <number>");
+  if (args.includes("--accept-terms")) {
+    await api(cfg.apiUrl, "/settings", { method: "POST", body: { acceptTerms: true }, token: cfg.token });
+    console.log(`${c.green("✓")} terms accepted`);
+  } else if (phone !== undefined) {
+    console.log(`next: show the user ${SITE}/terms and ${SITE}/privacy; when they agree, screenless setup --accept-terms`);
+  }
+}
+
 async function setup(args: string[]): Promise<void> {
+  if (["--phone", "--code", "--accept-terms"].some((f) => args.includes(f))) return setupSteps(args);
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     const existing = await config.load();
@@ -399,9 +481,23 @@ async function confirmEmail(
   return false;
 }
 
-async function email(): Promise<void> {
+async function email(args: string[] = []): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
+  // One step at a time, for an agent: --address sends the code, and
+  // --address with --code confirms it.
+  const address = argFlag(args, "--address");
+  if (address !== undefined) {
+    const code = argFlag(args, "--code");
+    if (code === undefined) {
+      await api(cfg.apiUrl, "/email/start", { method: "POST", body: { email: address }, token: cfg.token });
+      console.log(`${c.green("✓")} code sent to ${address}\nnext: screenless email --address ${address} --code <the code>`);
+    } else {
+      await api(cfg.apiUrl, "/email/verify", { method: "POST", body: { code: code.trim() }, token: cfg.token });
+      console.log(`${c.green("✓")} ${address} confirmed`);
+    }
+    return;
+  }
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     await confirmEmail(cfg.apiUrl, cfg.token, rl);
@@ -1418,6 +1514,7 @@ ${c.bold("Usage")}
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page
+  screenless team invite <emails…|--file f>  invite people; each verifies their own phone
   screenless team level [<email> <level>]    who may do what when they call a
                                              teammate's session (--default <level>)
   screenless transcript [--wait] [--json]    what was decided on the last call

@@ -202,6 +202,11 @@
               color:var(--ink);border:0;border-radius:9px;padding:11px 16px;flex-shrink:0}
   .cmd button:hover{background:var(--spot);color:#fff}
   .fine{font-size:13.5px;color:var(--muted);margin:18px 0 0}
+  .fine code.inline{font-size:12px;white-space:normal}
+  .paste{font-size:13.5px;font-weight:600;color:var(--ink-2);margin:34px 0 0}
+  .paste + .cmd{margin-top:10px}
+  /* The prompt is prose, so it wraps instead of scrolling like a command. */
+  .cmd.prompt code{font-family:var(--sans);font-size:15px;white-space:normal;line-height:1.45}
   /* What you call from, and what answers. */
   .works{display:flex;flex-wrap:wrap;gap:8px 22px;margin:26px 0 0;padding:0;list-style:none;
          font-size:14.5px;font-weight:500;color:var(--ink-2)}
@@ -364,13 +369,19 @@
           stop waiting on you.
         </p>
 
-        <div class="cmd">
-          <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
-          <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
+        <!-- The install is a prompt: the agent runs the installer, finds the
+             team in the user's connected tools, and only asks for the user's
+             number and codes (llms.txt). The curl is for doing it by hand. -->
+        <p class="paste">Paste into Claude Code:</p>
+        <div class="cmd prompt">
+          <code>Install https://screenless.sh/llms.txt into this repo and invite my team.</code>
+          <button type="button" data-copy="Install https://screenless.sh/llms.txt into this repo and invite my team.">copy</button>
         </div>
         <p class="fine">
-          $10 free to start · macOS or Linux · Node 20+ · Claude Code ·
-          <a href="/install">read the script first</a>
+          It installs, verifies your number and invites your team, asking you
+          only for your number and the codes. By hand:
+          <code class="inline">curl -fsSL https://screenless.sh/install | bash</code>
+          · $10 free · <a href="/install">read the script</a>
         </p>
         <ul class="works">
           <li><svg viewBox="0 0 24 24" fill="none" stroke="#0c0e14" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>Any phone</li>
@@ -436,8 +447,8 @@
       <div class="step">
         <div class="n">1</div>
         <div>
-          <h3>Install</h3>
-          <p>One command installs the CLI and verifies your phone number. Invite your team at <a href="/team">screenless.sh/team</a>.</p>
+          <h3>Install and invite</h3>
+          <p>Paste the prompt into Claude Code. It installs the CLI, verifies your number, finds your colleagues in Slack or your workspace directory, and invites them once you say yes. Each verifies their own number.</p>
         </div>
       </div>
       <div class="step">
@@ -577,13 +588,12 @@
   <div class="wrap">
     <h2>Stop being the bottleneck.</h2>
     <p class="stand">
-      One command installs it and verifies your number. Write who may do
-      what, type <code>/screenless</code> in Claude Code, and give your team
-      the number. Invite them at <a href="/team">screenless.sh/team</a>.
+      Paste this into Claude Code. It installs screenless, verifies your
+      number, invites your team, and asks you what they may do.
     </p>
-    <div class="cmd">
-      <code><span class="p">$ </span>curl -fsSL https://screenless.sh/install | bash</code>
-      <button type="button" data-copy="curl -fsSL https://screenless.sh/install | bash">copy</button>
+    <div class="cmd prompt">
+      <code>Install https://screenless.sh/llms.txt into this repo and invite my team.</code>
+      <button type="button" data-copy="Install https://screenless.sh/llms.txt into this repo and invite my team.">copy</button>
     </div>
     <p class="fine">
       $10 of credit to start, then 30¢ a minute. No subscription, and no card

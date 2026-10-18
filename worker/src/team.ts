@@ -65,9 +65,11 @@ export async function sendInvite(env: Env, invite: db.Invite, inviter: db.User, 
     `${inviter.name || inviter.email || "A teammate"} invited you to ${org.name} on screenless`,
     layout(
       env,
-      `<p><strong>${esc(who)}</strong> invited you to join <strong>${esc(org.name)}</strong> on screenless —
-a phone line for the work your team's coding agents are blocked on.</p>
-<p>Accept the invite, verify your phone number, and the team's screenless line is yours to call too.</p>
+      `<p><strong>${esc(who)}</strong> invited you to join <strong>${esc(org.name)}</strong> on screenless.</p>
+<p>It is a phone number for your team's Claude Code sessions: when you have a question about the
+product or the code, or something small that needs doing, you call it and a developer's session
+answers, instead of you waiting for the developer. By phone or WhatsApp.</p>
+<p>Accept the invite and verify your own phone number, so the line knows it is you.</p>
 ${button(url, `Join ${org.name}`)}
 <p style="color:#8d837a;">The invite is valid for seven days. If the button does not work, open:<br>
 <a href="${url}" style="color:#8d837a;">${url}</a></p>`,
@@ -322,7 +324,9 @@ async function handleApi(req: Request, env: Env, path: string, method: string): 
     if (typeof email !== "string" || !isEmail(email)) return fail(400, "a valid email is required");
     const already = await db.userByEmail(env, email);
     if (already?.org_id === gate.org.id) return fail(409, "they are already on this team");
-    if (!(await rateLimit(env, `invites:${gate.org.id}`, 30, 86400)))
+    // The same counter as the CLI's batch invites (`/org/invites`): a whole
+    // company, but not a mail bomb.
+    if (!(await rateLimit(env, `invites:${gate.org.id}`, 500, 86400)))
       return fail(429, "invite limit reached for today");
 
     const invite = await db.upsertInvite(env, gate.org.id, email, gate.user.id);

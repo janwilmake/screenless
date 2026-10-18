@@ -104,6 +104,11 @@ export { LiveCall } from "./live";
 import type { CallMode, LiveConfig } from "./live";
 import * as levels from "./levels";
 
+/** Invites one request may send, and one team a day: a whole company,
+ *  sent by an agent in batches, without letting a stolen token mail-bomb. */
+const INVITE_BATCH = 20;
+const INVITES_PER_DAY = 500;
+
 /**
  * Sessions last a year.
  *
@@ -1660,6 +1665,50 @@ export default {
           teamUrl: teamUrl(env),
           inboundNumber: env.TELNYX_FROM_NUMBER,
         });
+      }
+
+      /* ------------------------------------------------------ team invites */
+
+      // Invites from a terminal: what an agent sends after reading the
+      // company's people out of Slack or a workspace directory and showing
+      // the list to its user. Admins only, at most INVITE_BATCH a request (the
+      // CLI chunks), paced for Resend's two a second; each invitee verifies
+      // their own phone when they accept.
+      if (method === "POST" && path === "/org/invites") {
+        const s = await authed(req, env);
+        if (!s) return fail(401, "not authenticated — run `screenless setup`");
+        const { user, org } = await identify(env, s.phone);
+        if (user.role !== "admin") return fail(403, "admins only — ask an admin to invite people");
+        const { emails } = (await req.json().catch(() => ({}))) as { emails?: unknown };
+        if (!Array.isArray(emails) || !emails.length) return fail(400, "emails required");
+        if (emails.length > INVITE_BATCH) return fail(400, `at most ${INVITE_BATCH} a request`);
+        const invited: string[] = [];
+        const skipped: Array<{ email: string; why: string }> = [];
+        for (const raw of emails) {
+          const email = String(raw ?? "").trim().toLowerCase();
+          if (!isEmail(email)) {
+            skipped.push({ email, why: "not an email address" });
+            continue;
+          }
+          const already = await db.userByEmail(env, email);
+          if (already?.org_id === org.id) {
+            skipped.push({ email, why: "already on the team" });
+            continue;
+          }
+          if (!(await rateLimit(env, `invites:${org.id}`, INVITES_PER_DAY, 86400))) {
+            skipped.push({ email, why: `over ${INVITES_PER_DAY} invites today` });
+            continue;
+          }
+          const invite = await db.upsertInvite(env, org.id, email, user.id);
+          try {
+            await team.sendInvite(env, invite, user, org);
+            invited.push(email);
+          } catch (err) {
+            skipped.push({ email, why: `mail failed: ${(err as Error).message.slice(0, 80)}` });
+          }
+          await new Promise((r) => setTimeout(r, 550));
+        }
+        return json({ invited, skipped });
       }
 
       /* ----------------------------------------------------- line levels */
