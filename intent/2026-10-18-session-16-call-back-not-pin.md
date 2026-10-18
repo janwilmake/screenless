@@ -165,3 +165,9 @@ then:
 > add the pricing to claude-team-seat.md. I like $299.
 
 > no managed seat, toorisky
+
+> also interesting how this seat product could use hyre and be used in recruitment teams
+
+> yes add it .
+>
+> cody is a coder, mark is marketeer.... what should we name the 'recruiter'? we can test it internally first :)

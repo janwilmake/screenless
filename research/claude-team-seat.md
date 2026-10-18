@@ -147,6 +147,53 @@ partners.
 answers sent, time to answer, setup steps completed (the setup prompt can
 report its own progress), and payments.
 
+## Recruitment: the first market?
+
+Two directions, both through Hyre.
+
+**The seat uses Hyre.** Hyre's MCP already has the recruiting toolset: ATS
+and CRM read and write, candidate–vacancy matching, sourcing, LinkedIn
+messages, outreach drafts, tasks, calendar, and routines such as
+*Start je dag* and *Sluit je dag*. With that connected, the seat becomes a
+recruiting colleague:
+- **Slack or WhatsApp:** "Who applied to the backend vacancy today?", "Find
+  five Java developers near Utrecht for client X".
+- **A voice note after a client meeting:** the seat logs it in the ATS,
+  creates the tasks and drafts the follow-up email for the recruiter to
+  approve.
+- **Its calendar:** "Plan an intro with Sanne on Thursday". The seat finds a
+  slot and sends the invite from its own address.
+- **A morning call for recruiters on the road:** *Start je dag* by phone at
+  8:00 (today's priorities, candidates to call back, interviews). It is the
+  morning call screenless started with, in a market that drives a lot.
+
+**Recruitment teams as the market.** They match the seat's strengths:
+- **Logged-in web apps without good APIs:** LinkedIn Recruiter, ATSes, job
+  boards. That is exactly what cloud bots can't reach.
+- **WhatsApp and phone first, especially in the Netherlands.** There these
+  are the main channels, not add-ons.
+- **Non-technical:** they gain the most from "just ask a colleague".
+- **A built-in audience:** Hyre's customers. "Your Hyre comes with a
+  colleague you can WhatsApp."
+
+**To solve first:**
+- **Who runs the session?** A recruitment agency has no developer and no
+  server, and there is no managed seat. Either Hyre (the company) runs the
+  recruiting seat as part of the Hyre product, as Hyre's own agents already
+  run, or the seat stays a product for teams with a developer, and
+  recruitment is reached through Hyre itself. The choice shapes the
+  business.
+- **Compliance.** The EU AI Act classes AI used to recruit, screen or
+  evaluate candidates as high-risk, with real obligations, and candidate data
+  falls under GDPR. Everything candidate-facing (messages, rankings,
+  rejections) stays a draft a person approves: the seat prepares, the
+  recruiter sends.
+
+**Test it internally first:** a recruiter seat at Hyre, beside Cody (code)
+and Mark (marketing), with the Hyre MCP and a logged-in LinkedIn. Measure the
+same things as for Cody: asks per recruiter per week, per channel, and what
+it saved them.
+
 ## Risks
 
 - **The platforms:** Anthropic (`claude self-hosted-runner`, Claude Tag going
