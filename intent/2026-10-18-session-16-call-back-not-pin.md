@@ -102,3 +102,7 @@ then:
 > also the readme and repo desc is outdated
 
 > maybe one more change to the landingpage. i think itd be great to make clear it works from a phone line as well as whatsapp call (higher quality) and it works in claude code. btw, can we support other coding agents too? does this make sense?
+
+> btw did we have 2 numbers for the phoneline? in that case , should we also have 2 whatsapp reigstrations? if so, tell me what to do
+
+> the demo part of the landing takes a lot of space, maybe subtitles (one line at a time) makes more sense? also, i dont like the 3 tiles, maybe icons is better?
