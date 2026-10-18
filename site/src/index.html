@@ -203,6 +203,12 @@
               color:var(--ink);border:0;border-radius:9px;padding:11px 16px;flex-shrink:0}
   .cmd button:hover{background:var(--spot);color:#fff}
   .fine{font-size:13.5px;color:var(--muted);margin:18px 0 0}
+  /* What you call from, and what answers. */
+  .works{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:28px 0 0;padding:0;list-style:none}
+  .works li{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--r-sm);
+            padding:10px 14px;background:var(--card);box-shadow:var(--shadow);min-width:0}
+  .works b{font-size:14.5px;font-weight:600}
+  .works span{font-size:12.5px;color:var(--muted)}
   .fine a{color:var(--muted)}
 
   .assure{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
@@ -366,6 +372,11 @@
           $10 free to start · macOS or Linux · Node 20+ · Claude Code ·
           <a href="/install">read the script first</a>
         </p>
+        <ul class="works">
+          <li><b>Any phone</b><span>rings you straight back</span></li>
+          <li><b>WhatsApp</b><span>HD audio, picks up at once</span></li>
+          <li><b>Claude Code</b><span>/screenless in a session</span></li>
+        </ul>
       </div>
 
       <!-- A demo call, voiced with ElevenLabs from a script: the transcript
@@ -441,8 +452,9 @@
         <div>
           <h3>Call</h3>
           <p>
-            Ring the number, or call it on WhatsApp. A phone call hangs up and
-            rings you straight back, so a spoofed caller id gets nowhere. Ask,
+            Ring the number from any phone, or call it on WhatsApp for HD
+            audio. A phone call hangs up and rings you straight back, so a
+            spoofed caller id gets nowhere; WhatsApp answers at once. Ask,
             decide, have it push or deploy: answers take seconds to a few
             minutes, and it tells you how it is going in between.
           </p>

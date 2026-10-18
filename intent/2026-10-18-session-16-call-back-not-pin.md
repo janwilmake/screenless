@@ -100,3 +100,5 @@ then:
 > i can imagine the demo show as a visualization of the audio and it autoplays, and it  enables audio when clicking it. wdyt?
 
 > also the readme and repo desc is outdated
+
+> maybe one more change to the landingpage. i think itd be great to make clear it works from a phone line as well as whatsapp call (higher quality) and it works in claude code. btw, can we support other coding agents too? does this make sense?
