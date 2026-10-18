@@ -189,8 +189,9 @@ recruiting colleague:
   rejections) stays a draft a person approves: the seat prepares, the
   recruiter sends.
 
-**Test it internally first:** a recruiter seat at Hyre, beside Cody (code)
-and Mark (marketing), with the Hyre MCP and a logged-in LinkedIn. Measure the
+**Test it internally first:** **Rex**, the recruiter seat at Hyre, beside
+**Cody** (code) and **Mark** (marketing), with the Hyre MCP and a logged-in
+LinkedIn. Rex sounds like "recs", as in recruiter (Jan, 18 October 2026). Measure the
 same things as for Cody: asks per recruiter per week, per channel, and what
 it saved them.
 

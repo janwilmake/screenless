@@ -171,3 +171,7 @@ then:
 > yes add it .
 >
 > cody is a coder, mark is marketeer.... what should we name the 'recruiter'? we can test it internally first :)
+
+> cant it be Rec? or thats not a name? Rex?
+
+> ok Rex it is, add it to the doc
