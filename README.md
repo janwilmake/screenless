@@ -1,43 +1,56 @@
 # screenless
 
-**A phone line for your team and its coding agents.** Walk away from the
-keyboard and your agents don't stall: when one hits a decision only a person can
-make, it phones you — or anyone on your team — takes your answer out loud, and
-keeps working. Unblocked from anywhere. No screen.
+**Call your Claude Code session.** From a walk, the car, wherever: ring the
+line or call it on WhatsApp, ask where things stand, tell it what to do, and it
+does the work while you are still on the call. On your own machine, with the
+access your session already has.
 
-![An agent hits a decision, calls you, and continues from your answer](demo.gif)
+Hear a demo call at **[screenless.sh](https://screenless.sh)**.
 
-## What it is
+## How it works
 
-screenless is a CLI and a small Cloudflare Worker that give a team a shared
-phone number wired to the terminals it runs. The number goes both ways:
+1. **Install** — `curl -fsSL https://screenless.sh/install | bash` installs the
+   CLI and verifies your phone number.
+2. **Arm a session** — type **`/screenless`** in Claude Code. That session now
+   answers the line.
+3. **Call** — ring the number, or call it on WhatsApp. A voice talks with you;
+   each thing you ask runs in a fork of your session on your machine, and the
+   answer is spoken back during the call. Read, edit, test, commit, push,
+   deploy, post to Slack: whatever the session can do at the keyboard. It tells
+   you how longer work is going while you wait.
 
-- **Ring in** — a teammate calls the line and speaks a request, a decision, an
-  idea. It is transcribed and routed to whoever is running `screenless watch`:
-  the caller's own terminal first, any teammate's otherwise, a queue that holds
-  up to a week when nobody is. Their agent picks it up and acts.
-- **Ring out** — `screenless call "…" --to alex@team.com`, or `--all`. Dial one
-  teammate or the whole team and each conversation returns as a transcript. It
-  only ever reaches verified numbers on your own team.
-- **Watch** — `screenless watch` in a terminal is where the calls land. Arm it
-  in your coding agent with **`/screenless`** and leave it open.
-- **Call your session** — ring the line yourself while `/screenless` is armed
-  and your own Claude Code session picks up. Ask what broke, what a PR does,
-  to fix a test: each request runs in a fork of that session on your machine,
-  and the answer is spoken back during the call. Pushes, deploys and messages
-  wait for the session after the call.
+**Only you get through.** The line never answers a phone call on its caller id,
+which is easy to spoof: it hangs up and rings your verified number straight
+back, so only your phone can pick up. A WhatsApp call is tied to your account
+and is answered at once.
 
-The voice on the phone has no tools and no credentials. It collects decisions
-and hangs up; a terminal on your own machine — with the MCPs, the logged-in
-browser and the Claude subscription you already gave it — is what merges,
-comments, and closes. A teammate's request arrives marked as untrusted, weighed
-before it runs with your access. **Nothing leaves your machines but a question
-and an answer.**
+**The voice holds no keys.** It has no tools and no credentials; it talks, and
+your session acts. Your code, your MCPs, your logged-in browser and your Claude
+subscription stay on your machine. What passes through the service is the call
+itself: its audio, the transcript, and the short answers your session sends
+back to be spoken.
+
+## Your team
+
+Everyone on a team shares the one number and reaches their own session.
+Around that:
+
+- **Teammates can listen in** — share your session's brief
+  (`screenless watch --brief-for team`) and a teammate who rings hears where it
+  stands. What they ask is noted for after the call; it never runs on your
+  machine while they are on the line.
+- **Nobody watching? It waits** — call while no session is armed and the
+  request is transcribed and queued for the next teammate's terminal running
+  `screenless watch`, for up to a week.
+- **Ring out** — `screenless call "…" --to alex@team.com`, or `--all`, phones
+  one teammate or the whole team and returns each conversation as a
+  transcript. It only ever reaches verified numbers on your own team.
 
 ## Skills
 
-A *skill* is a prompt that points the line at a job. The CLI is the tooling; two
-skills ship as worked examples, and you build the rest.
+A *skill* is a prompt that points the line at a job. **screenless** itself is
+the skill that arms a session; two more ship as worked examples of agents
+calling *you*, and you build the rest.
 
 - **call-when-afk** — tell your agent you're stepping out and it stops pausing
   on questions. It phones you each one and continues the moment you answer.
@@ -62,35 +75,27 @@ curl -fsSL https://screenless.sh/install | bash
 
 One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH,
 installs the skills into every coding agent it finds, and goes into
-`screenless setup` — phone verification by SMS, no card. Then, in your agent,
-**`/screenless`** arms the watcher so the team's calls land in your terminal.
-Every team starts with **$10 of free credit**; after that calls are
-pay-as-you-go at **30¢/minute** from the team's shared balance. Node 20+
-required, never installed for you.
-
-The whole integration story is that it runs on your machine:
-
-- **Your MCP servers are the integrations.** Linear, GitHub, Slack, your ATS —
-  whatever you already connected, it can already read. No OAuth app to install.
-- **Your browser is the screenshot tool**, already logged in.
-- **Your Claude subscription is the LLM.** Nothing is metered per token by us.
-- **Nothing leaves your machine** but the call and the email.
+`screenless setup` — phone verification by SMS, no card. Then, in Claude Code,
+**`/screenless`** arms the session. Every team starts with **$10 of free
+credit**; after that calls are pay-as-you-go at **30¢/minute** from the team's
+shared balance. Node 20+ required, never installed for you.
 
 Manage your team, roles and billing at
 [screenless.sh/team](https://screenless.sh/team).
 
 ## Status
 
-The **line is real and proven**: calling out, ringing in, calling teammates,
-transcription, routing to a watching terminal, pay-as-you-go billing, teams and
-invites — all of it works on real phones today, in production at screenless.sh,
-verified end to end with live calls.
+**Calling your session works on real phones today**, in production at
+screenless.sh: phone calls with the ring-back, WhatsApp calls, live answers
+from a fork of the session, progress updates, barge-in, wideband audio.
+Ringing in to the queue, calling teammates, teams, invites and pay-as-you-go
+billing work too.
 
 What is **still early is the intelligence in the skills** — the morning
 briefing's hard part, reading a queue of pull requests and picking out the few
-that genuinely need a person, is being built in the open. The line and
-`call-when-afk` work now; the nightly loop and weekly paper render and deliver
-but have not run unattended against a real repo for a full week.
+that genuinely need a person, is being built in the open. The nightly loop and
+weekly paper render and deliver but have not run unattended against a real
+repo for a full week.
 
 ## Self-hosting
 

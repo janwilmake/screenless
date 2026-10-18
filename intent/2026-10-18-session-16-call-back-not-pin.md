@@ -98,3 +98,5 @@ then:
 > cool open the 42-sec call in finder so i can hear it
 
 > i can imagine the demo show as a visualization of the audio and it autoplays, and it  enables audio when clicking it. wdyt?
+
+> also the readme and repo desc is outdated

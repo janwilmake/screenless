@@ -401,6 +401,5 @@ skills/                    the branded skills — installable via skills.sh
     SKILL.md
     press/                     the PDF toolkit the paper skill calls
 site/src/                  the landing page and installer (screenless.sh)
-demo.gif                   the hero terminal animation
 ```
 
