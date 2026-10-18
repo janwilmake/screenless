@@ -26,6 +26,14 @@ What landed:
   and the brief fork.
 - Test rings are answered directly (there is nobody to ring back), restricted.
 
+- **WhatsApp, as it turned out.** Jan did Meta's signup (code by voice,
+  forwarded to his mobile). Telnyx's calling tab offers no route for
+  WhatsApp: calls go to the number's own TeXML application, so the signed
+  `/texml/whatsapp` URL and its token were removed again. A real WhatsApp
+  call showed `FromSipUri …@wa.meta.vc` and Meta's `SipHeader_x-wa-meta-*`
+  headers; `viaWhatsApp` requires the domain and the number's WhatsApp id
+  (`WHATSAPP_PHONE_NUMBER_ID`) together. A phone call has neither.
+
 Still open:
 
 - WhatsApp needs Meta embedded signup on the number in Mission Control (a
@@ -58,3 +66,17 @@ then:
 > check screenless. i wanna add whatsapp to telnyx on the same numbers, and i wanna still support regular calls but when they're inbound, apply a call-back strategy where it hangs up and calls you back immediately such that we dont have the risk of spoofing, and we can ciompltely remove the pin architecture.
 
 > yes drop the columns. for whatsapp, pls use the browser to make it ready so i can accept terms etc. and i dont have a whatsapp business , do i need to make somethign for that? prepare it all for me so i can just hit the things you cant do
+
+> ok saved . what now?
+
+> i filled in +31850835195 but nobody called my number
+
+> the thing is 850835195 is not my number, this is screenless i guesss? but i am not receiving screenless calls. so how am i supposed to verify then?
+
+> nope look, they say they called
+
+> ok the call came through i was just in silent mode. i fully went through the meta onboarding and telnyx said it connected succesfully. can you verify if its there now?
+
+> i cannt find screenless in whatsapp
+
+> ok i called it on whatsapp but it used the same callback pattern. that shouldnt be needed for whatsapp, just regular calls

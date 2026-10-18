@@ -115,8 +115,10 @@ keyboard, every fork passes a PreToolUse gate (`screenless gate`,
 rejected as busy and the line rings the member's *verified* number straight
 back, so the only person who can pick up is whoever holds that phone; a spoofed
 ring-in can only ring the real owner. A WhatsApp call is tied to the account,
-not the caller id, and is answered at once — recognised by the signed URL of
-its own TeXML application, never by a field the caller controls. Both are
+not the caller id, and is answered at once. Telnyx gives it no route of its
+own: it is told from a phone call by arriving from Meta's SIP domain
+(`wa.meta.vc`) with the number's WhatsApp id in Meta's headers
+(`viaWhatsApp`). Both are
 `full`: the fork may do what the session may, except read secrets. Only a test
 ring (and the fork that briefs the voice) is `restricted`: reads and local work
 in the project. This replaced a PIN keyed on the phone and STIR/SHAKEN

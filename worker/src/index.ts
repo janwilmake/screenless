@@ -43,10 +43,6 @@ export interface Env {
   /** Optional. Guards /admin/test-ring, the scripted caller used to test the
    *  line end to end without a person on the phone. Unset disables it. */
   TEST_RING_SECRET: string;
-  /** The `t` the WhatsApp TeXML application's voice URL carries: what marks
-   *  a call as WhatsApp. Its own secret rather than derived, so the URL can be
-   *  set up and rotated without the session secret. Unset, none is taken. */
-  WHATSAPP_VOICE_TOKEN: string;
   /** Runs GPT-Live for live ring-ins. A key of a project with gpt-live-1
    *  access; while unset, every ring-in is the quiet recording. */
   OPENAI_LIVE_API_KEY: string;
@@ -93,6 +89,9 @@ export interface Env {
   OPENAI_REALTIME_MODEL: string;
   /** The Realtime voice, e.g. "marin". */
   OPENAI_VOICE: string;
+  /** The id Meta gave the line's number for WhatsApp (Telnyx shows it as the
+   *  Phone Number ID). Unset, no call is taken as WhatsApp. */
+  WHATSAPP_PHONE_NUMBER_ID: string;
   /** A number on the Telnyx account that is not the line itself, used as the
    *  caller id of /admin/test-ring. */
   TEST_CALLER_NUMBER: string;
@@ -657,18 +656,14 @@ async function inboundBody(req: Request): Promise<Record<string, string>> {
  * (`ringBack`): only whoever holds that phone can pick up. Every phone call
  * with an owner is then one the line placed itself, so it may do anything
  * their session may, and no PIN is needed to prove it. WhatsApp calls are
- * tied to the account rather than the caller id and are answered at once, on
- * their own URL (`answerWhatsApp`). A stranger still hears how to become a
- * caller.
+ * tied to the account rather than the caller id and are answered at once
+ * (`viaWhatsApp`). A stranger still hears how to become a caller.
  */
 async function answerInbound(req: Request, env: Env, origin: string, ctx: ExecutionContext): Promise<Response> {
   if (!(await inboundToken(req, env))) return fail(403, "bad webhook token");
 
   const params = await inboundBody(req);
   const callerId = normalizeCallerId(params.From ?? params.from ?? "");
-  // Which fields a ring-in carries (never the values), so a WhatsApp call
-  // that reaches this URL instead of its own can be told apart in the log.
-  console.log("inbound", Object.keys(params).sort().join(","));
   // A service verifying the number by voice (Meta, for WhatsApp) reads its
   // code to whoever answers. While an admin has opened the window, a call
   // from anyone who is not a member is put through to them instead.
@@ -698,6 +693,21 @@ async function answerInbound(req: Request, env: Env, origin: string, ctx: Execut
     return ringInXml(env, { callId, user, org, params, mode: "restricted", testRepo });
   }
 
+  if (viaWhatsApp(env, params)) {
+    const callId = crypto.randomUUID();
+    await saveCall(env, callId, {
+      phone: user.phone!,
+      userId: user.id,
+      orgId: org.id,
+      status: "answered",
+      inbound: true,
+      kind: "brief",
+      queued: true,
+      createdAt: Date.now(),
+    });
+    return ringInXml(env, { callId, user, org, params, mode: "full" });
+  }
+
   // Someone ringing with a member's number over and over gets that member a
   // few calls back, then nothing for the hour.
   if (await rateLimit(env, `ringback:${user.id}`, 6)) ctx.waitUntil(ringBack(env, user, org, origin));
@@ -706,34 +716,17 @@ async function answerInbound(req: Request, env: Env, origin: string, ctx: Execut
 }
 
 /**
- * A WhatsApp call to the line. Routed here by the WhatsApp calling
- * connection's own voice URL, never the phone number's, so the signed URL is
- * what says it came through WhatsApp: a caller cannot make a phone call look
- * like one. WhatsApp ties the call to the account, not to a caller id, so it
- * is answered at once with the rights of a call the line placed itself.
+ * A WhatsApp call to the line. Telnyx delivers it to the number's own TeXML
+ * application, beside phone calls, with no separate route; what tells it
+ * apart is that it reaches Telnyx from Meta's SIP domain carrying Meta's
+ * headers, among them the id Meta gave this number. A phone call has neither.
+ * Both together, so the id, which is not public, has to be known as well as
+ * the header names.
  */
-async function answerWhatsApp(req: Request, env: Env): Promise<Response> {
-  const provided = new URL(req.url).searchParams.get("t") ?? "";
-  if (!env.WHATSAPP_VOICE_TOKEN || !safeEqual(provided, env.WHATSAPP_VOICE_TOKEN)) return fail(403, "bad webhook token");
-
-  const params = await inboundBody(req);
-  console.log("whatsapp inbound", Object.keys(params).sort().join(","));
-  const caller = await knownCaller(env, normalizeCallerId(params.From ?? params.from ?? ""));
-  if (caller instanceof Response) return caller;
-  const { user, org } = caller;
-  const callId = crypto.randomUUID();
-  await saveCall(env, callId, {
-    phone: user.phone!,
-    userId: user.id,
-    orgId: org.id,
-    status: "answered",
-    inbound: true,
-    kind: "brief",
-    queued: true,
-    createdAt: Date.now(),
-  });
-  return ringInXml(env, { callId, user, org, params, mode: "full" });
-}
+const viaWhatsApp = (env: Env, p: Record<string, string>): boolean =>
+  Boolean(env.WHATSAPP_PHONE_NUMBER_ID) &&
+  /@wa\.meta\.vc$/i.test(p.FromSipUri ?? "") &&
+  p["SipHeader_x-wa-meta-phone-number-id"] === env.WHATSAPP_PHONE_NUMBER_ID;
 
 /** A verified member with credit, or the TeXML that tells a caller why not. */
 async function knownCaller(env: Env, from: string): Promise<{ user: db.User; org: db.Org } | Response> {
@@ -1346,15 +1339,11 @@ async function inboundUrl(req: Request, env: Env, origin: string): Promise<Respo
     number: env.TELNYX_FROM_NUMBER,
     voiceUrl: `${origin}/texml/inbound?t=${token}`,
     statusCallbackUrl: `${origin}/webhooks/inbound/status?t=${token}`,
-    // A TeXML application of its own, for the WhatsApp calling connection
-    // only: its URL is what marks a call as WhatsApp (answerWhatsApp).
-    whatsappVoiceUrl: env.WHATSAPP_VOICE_TOKEN ? `${origin}/texml/whatsapp?t=${env.WHATSAPP_VOICE_TOKEN}` : null,
     next:
       "Telnyx portal → Voice → TeXML Applications → (new or existing) → set the " +
       "Voice URL above and POST, set the Status Callback URL above and POST, " +
-      "then assign this number to that application. For WhatsApp, a second " +
-      "TeXML application with the WhatsApp Voice URL and the same Status " +
-      "Callback URL, chosen for the number on its WhatsApp Calling tab.",
+      "then assign this number to that application. WhatsApp calls to the " +
+      "number arrive on the same application once calling is on for it.",
   });
 }
 
@@ -1479,8 +1468,6 @@ export default {
       // either verb for a voice_url, so accept both.
       if (path === "/texml/inbound" && (method === "POST" || method === "GET"))
         return await answerInbound(req, env, origin, ctx);
-      if (path === "/texml/whatsapp" && (method === "POST" || method === "GET"))
-        return await answerWhatsApp(req, env);
       const ringBackMatch = path.match(/^\/texml\/ring-back\/([\w-]+)$/);
       if (ringBackMatch && (method === "POST" || method === "GET"))
         return await answerRingBack(req, env, ringBackMatch[1]);

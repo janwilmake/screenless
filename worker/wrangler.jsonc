@@ -37,6 +37,11 @@
     // real NL outbound.
     "TELNYX_FROM_NUMBER": "+31850835195",
 
+    // The id Meta gave that number for WhatsApp, carried on each WhatsApp call
+    // as x-wa-meta-phone-number-id: one half of how a WhatsApp call is told
+    // from a phone call (viaWhatsApp). Telnyx shows it as the Phone Number ID.
+    "WHATSAPP_PHONE_NUMBER_ID": "1433323316523444",
+
     // Region each call's media is anchored to. Telnyx's EU GPUs are co-located
     // with the telephony PoPs in Amsterdam. Set on the TeXML application that
     // carries every call.
@@ -164,5 +169,4 @@
   //   OPENAI_WEBHOOK_SECRET — whsec_… from registering the webhook endpoint in OpenAI
   //   TEST_RING_SECRET      — optional; enables /admin/test-ring
   //   OPENAI_LIVE_API_KEY   — a key with gpt-live-1 access; unset turns live ring-ins off
-  //   WHATSAPP_VOICE_TOKEN  — the `t` of /texml/whatsapp; unset turns WhatsApp calls away
 }
