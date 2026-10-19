@@ -118,6 +118,12 @@ const handlers = {
     voicePc?.close();
     voicePc = undefined;
   },
+  // The meeting's object restarted and cannot hear this voice any more.
+  async "voice.restart"() {
+    voicePc?.close();
+    voicePc = undefined;
+    await handlers["voice.start"]();
+  },
   ping() {},
 };
 

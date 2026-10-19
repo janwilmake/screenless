@@ -157,8 +157,15 @@ export class MeetingCall {
     return new Response("not found", { status: 404 });
   }
 
-  /** Loads the meeting once per life of this object; an evicted object
-   *  starts empty and finds everything again in the stash. */
+  /**
+   * Loads the meeting once per life of this object. A deploy restarts every
+   * Durable Object, and an idle one can be evicted, while the meeting goes
+   * on: Recall and the page reconnect by themselves, but the sideband, the
+   * transcript so far and "in the meeting" live here. In the first live test
+   * a deploy left the voice talking to nobody: no delegations, a closed gate,
+   * and a transcript overwritten by the shorter one in memory. So all three
+   * come back from storage, and the sideband re-attaches to the same voice.
+   */
   private async load(callId: string): Promise<boolean> {
     if (this.cfg) return true;
     if (!callId) return false;
@@ -173,7 +180,30 @@ export class MeetingCall {
       this.schedulePersist();
     };
     this.room = room;
+    const rec = await db.getCall(this.env, callId);
+    if (rec?.transcript?.length)
+      this.lines = rec.transcript.map((l) => ({ role: l.role === "assistant" ? "assistant" : "user", text: l.text, at: l.at ?? new Date().toISOString() }));
+    if (rec?.status === "answered") {
+      this.joined = true;
+      this.wantVoice = true;
+      this.greeted = true;
+      await this.loadTeam();
+      const voice = await this.state.storage.get<string>("voiceSession");
+      if (voice) await this.attachSideband(voice);
+    }
     return true;
+  }
+
+  private async loadTeam(): Promise<void> {
+    const org = this.cfg ? await db.orgById(this.env, this.cfg.orgId) : null;
+    if (org)
+      this.team = (await db.members(this.env, org.id)).map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        level: db.levelOf(u, org),
+      }));
   }
 
   /* ---------------------------------------------------------- the bot */
@@ -216,15 +246,7 @@ export class MeetingCall {
       rec.status = "answered";
       await db.putCall(this.env, this.callId, rec);
     }
-    const org = this.cfg ? await db.orgById(this.env, this.cfg.orgId) : null;
-    if (org)
-      this.team = (await db.members(this.env, org.id)).map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        phone: u.phone,
-        level: db.levelOf(u, org),
-      }));
+    await this.loadTeam();
     await this.announce();
     this.wantVoice = true;
     this.toPage({ type: "voice.start" });
@@ -270,8 +292,11 @@ export class MeetingCall {
       return;
     }
     if (msg.type === "hello") {
-      // A page that lost its voice, after a reload, picks it up again.
+      // A page that lost its voice, after a reload, picks it up again. One
+      // whose voice this object can no longer hear (a restart with no
+      // session to re-attach to) starts a fresh one.
       if (this.wantVoice && !msg.voice) this.sendTo(ws, { type: "voice.start" });
+      else if (this.wantVoice && !this.sb) this.sendTo(ws, { type: "voice.restart" });
     } else if (msg.type === "voice.down") {
       log({ ev: "meeting voice down", call: this.callId, state: msg.state ?? "" });
       if (this.wantVoice) setTimeout(() => this.toPage({ type: "voice.start" }), 1000);
@@ -318,6 +343,7 @@ export class MeetingCall {
       return new Response("voice unavailable", { status: 502 });
     }
     const body = JSON.parse(text) as { session: { id: string }; transport: { sdp: string } };
+    await this.state.storage.put("voiceSession", body.session.id);
     await this.attachSideband(body.session.id);
     return new Response(body.transport.sdp, { headers: { "Content-Type": "application/sdp" } });
   }
@@ -334,7 +360,11 @@ export class MeetingCall {
     });
     const ws = res.webSocket;
     if (!ws) {
+      // Gone, as after a restart that outlived the session: the page starts
+      // a fresh one when it says hello.
       console.error("meeting sideband failed", this.callId, res.status);
+      await this.state.storage.delete("voiceSession");
+      this.toPage({ type: "voice.restart" });
       return;
     }
     ws.accept();
@@ -656,6 +686,7 @@ export class MeetingCall {
     this.ended = true;
     log({ ev: "meeting ended", call: this.callId, by, joined: this.joined });
     await this.state.storage.deleteAlarm();
+    await this.state.storage.delete("voiceSession");
     if (by !== "bot" && this.cfg?.botId)
       await recall.leaveCall(this.env, this.cfg.botId).catch((err) => console.error("meeting leave failed", this.callId, (err as Error).message));
     this.wantVoice = false;
