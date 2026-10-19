@@ -2,7 +2,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import * as config from "./config.js";
-import { fetchRetry, gateHook, serveLiveCall, type ForkResult } from "./live.js";
+import { fetchRetry, gateHook, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
 import { answerChat, threadKey, type ChatMessage } from "./chat.js";
 import { levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Loaded, type Resolved } from "./permissions.js";
@@ -744,6 +744,8 @@ interface WatchNext {
    *  line rang back or took over WhatsApp, `restricted` (read and local
    *  work) on a test ring. */
   liveMode?: "full" | "restricted";
+  /** Set when the live call is a meeting the line's bot sits in. */
+  liveKind?: "meeting";
   /** WhatsApp messages this session answers (chat.ts). */
   chats?: ChatMessage[];
 }
@@ -786,7 +788,7 @@ function printWatchCall(call: WatchCall, asJson: boolean, live: ForkResult[] = [
   if (call.kind === "request" && call.requestText) {
     console.log(`${c.bold("request")}  ${call.requestText}`);
   } else {
-    printTranscript(call.transcript ?? []);
+    printTranscript(call.transcript ?? [], call.kind === "meeting");
   }
 
   if (live.length) {
@@ -878,6 +880,14 @@ async function watch(args: string[]): Promise<void> {
   const owner = (): Caller => ({ owner: true, email: ownerEmail, phone: cfg.phone });
   const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null; level?: string }): Caller =>
     who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null, level: who.level ?? "" };
+  /** A meeting's asker, resolved like a caller: the owner, a member the
+   *  meeting proved (their level from the team page), or a guest, who gets
+   *  the file's default and, with no file, is only heard. */
+  const askerRules = (a: Asker) => {
+    const perms = permissionsFor(policies, callerOf(a.you ? { you: true } : { you: false, email: a.email, phone: a.phone, level: a.member ? a.level : "" }));
+    const who = a.you ? "the owner" : a.member ? `${a.name}, a teammate of the session's owner, not the owner` : `${a.name}, a guest in the meeting, not on the team`;
+    return { gate: perms.gate, permissions: perms.source ? permissionsText(who, perms) : undefined };
+  };
   /** The teammates the Worker may route to this terminal to run requests:
    *  every caller line, or `*`, whose mode is above listen. The watcher
    *  resolves each caller again on the call, so this only routes. */
@@ -978,12 +988,15 @@ async function watch(args: string[]): Promise<void> {
       const before = liveCalls.get(callId);
       const tokens = sessionId ? contextTokens(sessionId, process.cwd()) : null;
       const forkRequests = !!sessionId && (tokens ?? 0) <= forkLimit;
+      const meeting = next.liveKind === "meeting";
       const teammate = next.liveCaller && !next.liveCaller.you ? next.liveCaller.name || "a teammate" : undefined;
       const perms = permissionsFor(policies, callerOf(next.liveCaller ?? { you: true }));
       const permsNote = perms.source
         ? permissionsText(teammate ? `${teammate}, a teammate of the session's owner, not the owner` : "the owner", perms)
         : undefined;
-      if (!asJson) {
+      if (!asJson && meeting)
+        console.log(`\n${c.green("☎")} ${c.bold("meeting")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the meeting · each request gated by who asked`)}`);
+      else if (!asJson) {
         console.log(
           `\n${c.green("☎")} ${c.bold("live call")} ${c.dim(
             `· ${callId.slice(0, 8)} · ${
@@ -1010,13 +1023,16 @@ async function watch(args: string[]): Promise<void> {
           sessionId,
           cli: process.argv[1],
           log: (line) => !asJson && console.log(`  ${line}`),
-          brief: before ? undefined : teammate ? brief?.forTeammate() : brief?.current(),
+          // A meeting may hold people outside the team: the voice gets the
+          // brief a teammate would hear, never the owner's own.
+          brief: before ? undefined : teammate || meeting ? brief?.forTeammate() : brief?.current(),
           forkBrief: !before && !!brief,
           forkRequests,
           teammate,
           mode: next.liveMode,
           gate: perms.gate,
           permissions: permsNote,
+          ...(meeting ? { askerRules } : {}),
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
@@ -1088,6 +1104,40 @@ async function watch(args: string[]): Promise<void> {
     brief?.refresh();
     await sleep(interval);
   }
+}
+
+/**
+ * `screenless meet <link> [--at <time>] [--name <name>]`: sends the line's
+ * bot into a meeting under this session's name, now or at a set time. While
+ * `screenless watch` runs, requests made to it in the meeting reach this
+ * terminal like a live call's, each gated by who asked. Accepting a calendar
+ * invite is the moment to run this with `--at` and the meeting's start.
+ * `--leave <callId>` sends the bot away.
+ */
+async function meet(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const leave = argFlag(args, "--leave");
+  if (leave !== undefined) {
+    if (!leave) die("usage: screenless meet --leave <callId>");
+    await api(cfg.apiUrl, `/meet/${encodeURIComponent(leave)}/leave`, { method: "POST", token: cfg.token });
+    console.log(`${c.green("✓")} the bot left the meeting`);
+    return;
+  }
+  const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name")]);
+  const url = args.find((a) => !a.startsWith("--") && !flagged.has(a));
+  if (!url) die('usage: screenless meet <meeting link> [--at <time>] [--name "<name>"]');
+  const at = argFlag(args, "--at");
+  const r = await api<{ callId: string; botName: string; joinAt: string }>(cfg.apiUrl, "/meet", {
+    method: "POST",
+    token: cfg.token,
+    body: { url, at: at || undefined, name: argFlag(args, "--name") || process.env.SCREENLESS_NAME || undefined },
+  });
+  const when = new Date(r.joinAt);
+  const soon = when.getTime() - Date.now() < 90_000;
+  console.log(`${c.green("✓")} ${c.bold(r.botName)} ${soon ? "is joining now" : `joins at ${when.toLocaleString()}`} ${c.dim(`· ${r.callId}`)}`);
+  console.log(c.dim("  someone in the meeting may have to let it in. Requests to it reach the session where `screenless watch` runs."));
+  console.log(c.dim(`  to send it away: screenless meet --leave ${r.callId}`));
 }
 
 /** Marks a watched call as handled, so no terminal is ever handed it again. */
@@ -1380,15 +1430,16 @@ async function call(args: string[]): Promise<void> {
   printTranscript(transcript);
 }
 
-function printTranscript(transcript: Array<{ role: string; text: string }>): void {
+function printTranscript(transcript: Array<{ role: string; text: string }>, meeting = false): void {
   if (!transcript.length) {
     console.log(c.dim("  (no transcript — the call may have ended before anyone spoke)"));
     return;
   }
 
   for (const line of transcript) {
-    const who = line.role === "assistant" ? c.cyan("agent") : c.bold("you  ");
-    console.log(`${who}  ${line.text}`);
+    // A meeting's lines carry their speaker's name already.
+    if (meeting) console.log(line.role === "assistant" ? c.cyan(line.text) : line.text);
+    else console.log(`${line.role === "assistant" ? c.cyan("agent") : c.bold("you  ")}  ${line.text}`);
   }
 }
 
@@ -1602,6 +1653,8 @@ ${c.bold("Usage")}
   screenless watch                           take calls: answer yours live, then exit
                                              with each finished call
   screenless done <callId>                   mark a watched call as handled
+  screenless meet <link> [--at <time>]       send the session into a meeting as
+                                             a voice (--leave <callId> to end)
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page
@@ -1726,6 +1779,7 @@ const commands: Record<string, (args: string[]) => Promise<void> | void> = {
   watch,
   done: doneCmd,
   update: updateCmd,
+  meet,
   gate: gateHook,
   team: teamCmd,
   transcript,

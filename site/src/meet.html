@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>screenless · in a meeting</title>
+<!--
+  The meeting bot's camera and microphone (worker/src/meeting.ts). Recall.ai
+  loads this page in its own browser: what it shows is the bot's video, what it
+  plays is the bot's voice, and getUserMedia is the meeting. It holds no keys.
+-->
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #14161a; }
+  #card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+          font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: #f2efe8; }
+  #mark { width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #e8865a, #c2552d);
+          display: flex; align-items: center; justify-content: center; font-size: 96px; font-weight: 700; letter-spacing: -4px;
+          transition: transform 120ms ease-out, box-shadow 120ms ease-out; }
+  #name { font-size: 54px; font-weight: 600; }
+  #badge { font-size: 28px; padding: 6px 18px; border: 2px solid #e8865a; border-radius: 999px; color: #e8865a; }
+</style>
+</head>
+<body>
+<div id="card">
+  <div id="mark">AI</div>
+  <div id="name"></div>
+  <div id="badge">AI assistant · keeps a transcript</div>
+</div>
+<script src="meet.js"></script>
+</body>
+</html>

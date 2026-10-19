@@ -584,8 +584,9 @@ export interface CallRecord {
   status: "initiated" | "ringing" | "answered" | "completed" | "failed";
   voicemail?: boolean;
   inbound?: boolean;
-  /** brief = a conversation with the assistant; request = a recorded ask. */
-  kind?: "brief" | "request";
+  /** brief = a conversation with the assistant; request = a recorded ask;
+   *  meeting = a meeting the line's bot sat in (meeting.ts). */
+  kind?: "brief" | "request" | "meeting";
   requestText?: string;
   recordingUrl?: string;
   /** Whether this call goes to the team's watchers when it finishes. */

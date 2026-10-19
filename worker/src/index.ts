@@ -30,6 +30,9 @@ export interface Env {
   /** Per-call GPT-Live session for a ring-in a watcher can answer live,
    *  keyed by our call id: the sideband plus the handoffs to the terminal. */
   LIVE: DurableObjectNamespace;
+  /** Per-meeting GPT-Live voice in a Recall.ai bot, keyed by our call id
+   *  (meeting.ts): the meeting's sockets plus the handoffs to the terminal. */
+  MEETING: DurableObjectNamespace;
 
   // secrets — set with `wrangler secret put <NAME>`
   TELNYX_API_KEY: string;
@@ -46,6 +49,8 @@ export interface Env {
   /** Runs GPT-Live for live ring-ins. A key of a project with gpt-live-1
    *  access; while unset, every ring-in is the quiet recording. */
   OPENAI_LIVE_API_KEY: string;
+  /** Runs the meeting bot (recall.ts). While unset, `screenless meet` is off. */
+  RECALL_API_KEY: string;
   /**
    * Optional. While unset billing is inert: every org is entitled whatever its
    * balance says, which is what keeps `wrangler dev` usable.
@@ -58,6 +63,8 @@ export interface Env {
 
   // vars — set in wrangler.jsonc
   TELNYX_FROM_NUMBER: string;
+  /** Recall.ai's region, which its API key belongs to. */
+  RECALL_REGION: string;
   /** Telnyx's Ed25519 public key: verifies the WhatsApp message webhook. */
   TELNYX_PUBLIC_KEY: string;
   TELNYX_ANCHORSITE: string;
@@ -103,6 +110,10 @@ export interface Env {
 
 export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
+export { MeetingCall } from "./meeting";
+import { noticeText, type MeetingConfig } from "./meeting";
+import * as recall from "./recall";
+import { realtimeConfig } from "./room";
 import type { CallMode, LiveConfig } from "./live";
 import * as levels from "./levels";
 import * as chat from "./chat";
@@ -289,7 +300,7 @@ function withNextCall(settings: schedule.Settings, env: Env) {
  * from: bill the org for the minutes, and hand the call to the watchers.
  * Idempotent — the debit is keyed by call id and the queue dedupes.
  */
-async function afterCallEnded(env: Env, callId: string, record: CallRecord): Promise<void> {
+export async function afterCallEnded(env: Env, callId: string, record: CallRecord): Promise<void> {
   if (record.orgId && record.status === "completed" && !record.debited && record.endedAt) {
     const seconds = Math.max(1, Math.round((record.endedAt - record.createdAt) / 1000));
     const org = await db.orgById(env, record.orgId);
@@ -1139,6 +1150,8 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   /** What the call's requests may do: `full` on the owner's own call,
    *  `restricted` on a test ring; the watcher hands it to the fork's gate. */
   let liveMode: "full" | "restricted" | undefined;
+  /** Set when the live call is a meeting the line joined (meeting.ts). */
+  let liveKind: "meeting" | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
     const me = JSON.stringify({ watcherId, repo, name });
@@ -1175,10 +1188,11 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string };
       if (!c.onlyRepo || c.onlyRepo === repo) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
+        if (c.kind === "meeting") liveKind = "meeting";
         if (c.teammate !== undefined)
           liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, level: c.teammateLevel ?? "", you: false };
       }
@@ -1195,7 +1209,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
   if (!found)
-    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, ...(chats.length ? { chats } : {}) });
+    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, liveKind, ...(chats.length ? { chats } : {}) });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   const callerOrg = caller ? (caller.org_id === org.id ? org : await db.orgById(env, caller.org_id)) : null;
@@ -1237,9 +1251,93 @@ async function liveRoute(req: Request, env: Env, callId: string, action: "next" 
   // The caller's own terminal, or the teammate's whose session briefs them.
   const cfg = record ? (JSON.parse((await db.stashGet(env, `realtime:${callId}`)) ?? "{}") as Partial<LiveConfig>) : {};
   if (!record || (record.userId !== user.id && cfg.servedBy !== user.id)) return fail(404, "unknown call id");
-  const stub = env.LIVE.get(env.LIVE.idFromName(callId));
-  if (action === "next") return await stub.fetch("https://live/next");
-  return await stub.fetch(`https://live/${action}`, { method: "POST", body: await req.text() });
+  const ns = record.kind === "meeting" ? env.MEETING : env.LIVE;
+  const stub = ns.get(ns.idFromName(callId));
+  if (action === "next") return await stub.fetch(`https://live/next?call=${callId}`);
+  return await stub.fetch(`https://live/${action}?call=${callId}`, { method: "POST", body: await req.text() });
+}
+
+/**
+ * `screenless meet <link> [--at <time>]`: sends a Recall.ai bot into a
+ * meeting under the session's name, now or at a set time. Its requests reach
+ * the owner's watcher like a live call's (meeting.ts), and the finished
+ * meeting reaches the queue with its transcript. Minutes come out of the
+ * same pool as calls.
+ */
+async function startMeeting(req: Request, env: Env): Promise<Response> {
+  const s = await authed(req, env);
+  if (!s) return fail(401, "not authenticated — run `screenless setup`");
+  if (!env.RECALL_API_KEY || !env.OPENAI_LIVE_API_KEY) return fail(503, "meetings are not set up on this line");
+  const gate = await requireCredit(env, s.phone);
+  if (gate instanceof Response) return gate;
+  const { user, org } = gate;
+  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown };
+  const meetingUrl = String(body.url ?? "").trim();
+  if (!/^https:\/\/(meet\.google\.com|([\w-]+\.)?zoom\.us|teams\.microsoft\.com|teams\.live\.com)\/\S+$/i.test(meetingUrl))
+    return fail(400, "give a Google Meet, Zoom or Teams link");
+  const now = Date.now();
+  const at = body.at === undefined || body.at === null || body.at === "" ? now : Date.parse(String(body.at));
+  if (!Number.isFinite(at) || at < now - 5 * 60_000 || at > now + 6 * 86400_000)
+    return fail(400, "--at takes a time within the next six days, such as 2026-10-20T14:00:00+02:00");
+  // The bot goes by the session's name, and says it is an AI.
+  const watching = await db.stashGet(env, `livewatch:${user.id}`);
+  const sessionName = watching ? ((JSON.parse(watching) as { name?: string }).name ?? "") : "";
+  let botName = (String(body.name ?? "").trim() || sessionName || "Claude").replace(/[^\p{L}\p{N} .'()-]/gu, "").slice(0, 50);
+  if (!/\bAI\b/.test(botName)) botName = `${botName} (AI)`;
+
+  const callId = crypto.randomUUID();
+  // Queued from the start only so a meeting days ahead keeps its record;
+  // a meeting the bot never gets into is marked failed and is no work.
+  await saveCall(env, callId, {
+    phone: user.phone ?? s.phone,
+    userId: user.id,
+    orgId: org.id,
+    initiatedBy: user.id,
+    status: "initiated",
+    inbound: false,
+    kind: "meeting",
+    queued: true,
+    createdAt: now,
+  });
+  const cfg: MeetingConfig = { userId: user.id, orgId: org.id, botName, meetingUrl, joinAt: at };
+  const ttl = Math.ceil((at - now) / 1000) + 86400;
+  await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
+  const t = await webhookToken(`meet:${callId}`, env.SESSION_SECRET);
+  // The request's own host, so a Worker under `wrangler dev` behind a tunnel
+  // gets the bot back too.
+  const host = new URL(req.url).host;
+  try {
+    const bot = await recall.createBot(env, {
+      meetingUrl,
+      botName,
+      pageUrl: `https://${host}/meet.html?${new URLSearchParams({ call: callId, t, name: botName })}`,
+      joinMessage: noticeText(botName),
+      recordingConfig: realtimeConfig(`wss://${host}/meet/${callId}/recall?t=${t}`),
+      joinAt: at - now > 60_000 ? new Date(at).toISOString() : undefined,
+    });
+    cfg.botId = bot.id;
+  } catch (err) {
+    console.error("meeting bot failed", callId, (err as Error).message);
+    await db.stashDelete(env, `meeting:${callId}`);
+    const record = await loadCall(env, callId);
+    if (record) await saveCall(env, callId, { ...record, status: "failed", queued: false });
+    return fail(502, "the meeting bot could not be sent; try again in a minute");
+  }
+  await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
+  const stub = env.MEETING.get(env.MEETING.idFromName(callId));
+  await stub.fetch(`https://meeting/start?call=${callId}`, { method: "POST" });
+  return json({ callId, botName, joinAt: new Date(at).toISOString() });
+}
+
+/** `screenless meet --leave <callId>`: the bot leaves, and the meeting ends. */
+async function leaveMeeting(req: Request, env: Env, callId: string): Promise<Response> {
+  const s = await authed(req, env);
+  if (!s) return fail(401, "not authenticated");
+  const { user } = await identify(env, s.phone);
+  const record = await loadCall(env, callId);
+  if (!record || record.kind !== "meeting" || record.userId !== user.id) return fail(404, "unknown meeting");
+  const stub = env.MEETING.get(env.MEETING.idFromName(callId));
+  return await stub.fetch(`https://meeting/leave?call=${callId}`, { method: "POST" });
 }
 
 /** Marks a queued call as taken, so no other watcher ever sees it again. */
@@ -1576,6 +1674,18 @@ export default {
           return fail(403, "bad token");
         const stub = env.LIVE.get(env.LIVE.idFromName(streamMatch[1]));
         return await stub.fetch(`https://live/stream?call=${streamMatch[1]}`, req);
+      }
+      // Meetings: the bot's page and Recall's real-time feed connect here,
+      // with the meeting's own token; the owner's CLI starts and stops them.
+      if (method === "POST" && path === "/meet") return await startMeeting(req, env);
+      const meetMatch = path.match(/^\/meet\/([\w-]+)\/(session|ws|recall|leave)$/);
+      if (meetMatch) {
+        const [, meetId, action] = meetMatch;
+        if (action === "leave") return await leaveMeeting(req, env, meetId);
+        const t = url.searchParams.get("t") ?? "";
+        if (!safeEqual(t, await webhookToken(`meet:${meetId}`, env.SESSION_SECRET))) return fail(403, "bad token");
+        const stub = env.MEETING.get(env.MEETING.idFromName(meetId));
+        return await stub.fetch(`https://meeting/${action}?call=${meetId}`, req);
       }
       const liveMatch = path.match(/^\/live\/([\w-]+)\/(next|result|context|update)$/);
       if (liveMatch && (method === "GET") === (liveMatch[2] === "next"))

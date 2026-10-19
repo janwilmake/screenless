@@ -124,7 +124,11 @@
     "TEST_CALLER_NUMBER": "+16412153640",
     // The verified numbers a test ring may stand in for, so it reaches that
     // user's watcher. Only the owner's own.
-    "TEST_RING_AS": "+31681904650"
+    "TEST_RING_AS": "+31681904650",
+
+    // Recall.ai's region: the meeting bot's API lives per region, and the key
+    // belongs to one. Hyre's account for now (session 18).
+    "RECALL_REGION": "us-west-2"
   },
 
   // One per live OpenAI Realtime call: it holds the control WebSocket for the
@@ -135,12 +139,17 @@
       { "name": "REALTIME", "class_name": "RealtimeCall" },
       // A ring-in answered by GPT-Live: the sideband plus the requests handed
       // to the caller's watching terminal during the call.
-      { "name": "LIVE", "class_name": "LiveCall" }
+      { "name": "LIVE", "class_name": "LiveCall" },
+      // A meeting the line's bot sits in: its sockets, its voice's sideband,
+      // and the requests handed to the owner's terminal. Its DO storage holds
+      // only its call id, for the alarm that watches the bot get in.
+      { "name": "MEETING", "class_name": "MeetingCall" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RealtimeCall"] },
-    { "tag": "v2", "new_sqlite_classes": ["LiveCall"] }
+    { "tag": "v2", "new_sqlite_classes": ["LiveCall"] },
+    { "tag": "v3", "new_sqlite_classes": ["MeetingCall"] }
   ],
 
   // All state: users, orgs, invites, ledger, calls, briefs, watchers, outbox,
@@ -181,4 +190,5 @@
   //   OPENAI_WEBHOOK_SECRET — whsec_… from registering the webhook endpoint in OpenAI
   //   TEST_RING_SECRET      — optional; enables /admin/test-ring
   //   OPENAI_LIVE_API_KEY   — a key with gpt-live-1 access; unset turns live ring-ins off
+  //   RECALL_API_KEY        — Recall.ai, the meeting bot; unset turns `screenless meet` off
 }
