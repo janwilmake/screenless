@@ -35,7 +35,7 @@ Still open: signed-in Google bots (the Remo's meeting account in a Recall
 login group); screen sharing, frames and scouts from chimein; languages
 other than English; a phone call and a meeting at the same time share one
 `livecall:` slot; Recall's key is Hyre's; meeting minutes not yet measured
-against the price; chimein itself archived.
+against the price. chimein is archived, its README pointing here.
 
 The prompts, verbatim:
 
