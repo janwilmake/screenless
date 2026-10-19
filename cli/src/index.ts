@@ -944,7 +944,8 @@ async function watch(args: string[]): Promise<void> {
       .catch(() => undefined);
   const nextUrlBase =
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
-    `&repo=${encodeURIComponent(repo)}${live ? "&live=1" : ""}${liveOnly ? "&queue=0" : ""}` +
+    // `meet=1`: this watcher gates a meeting's requests by who asked them.
+    `&repo=${encodeURIComponent(repo)}${live ? "&live=1&meet=1" : ""}${liveOnly ? "&queue=0" : ""}` +
     (name ? `&name=${encodeURIComponent(name)}` : "") +
     (live && briefFor !== "owner" ? `&share=${encodeURIComponent(briefFor)}` : "");
   // Recomputed per poll, so an edited permissions file routes the next call.

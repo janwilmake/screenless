@@ -1,4 +1,4 @@
-// The meeting bot's voice (see meet.html). The meeting's own audio goes to a
+// The meeting bot's voice (see meet-bot.html). The meeting's own audio goes to a
 // GPT-Live session over WebRTC and its answers come back as the bot's voice.
 // The SDP exchange runs through the meeting's Durable Object, which holds the
 // key and its own sideband to the session; the data channel carries nothing.

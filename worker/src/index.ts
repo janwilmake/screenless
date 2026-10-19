@@ -1189,7 +1189,10 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
       const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string };
-      if (!c.onlyRepo || c.onlyRepo === repo) {
+      // A meeting only to a watcher that gates each request by who asked:
+      // an older CLI would run a guest's words in the meeting's base mode.
+      const fit = c.kind !== "meeting" || url.searchParams.get("meet") === "1";
+      if ((!c.onlyRepo || c.onlyRepo === repo) && fit) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
         if (c.kind === "meeting") liveKind = "meeting";
@@ -1310,7 +1313,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     const bot = await recall.createBot(env, {
       meetingUrl,
       botName,
-      pageUrl: `https://${host}/meet.html?${new URLSearchParams({ call: callId, t, name: botName })}`,
+      pageUrl: `https://${host}/meet-bot?${new URLSearchParams({ call: callId, t, name: botName })}`,
       joinMessage: noticeText(botName),
       recordingConfig: realtimeConfig(`wss://${host}/meet/${callId}/recall?t=${t}`),
       joinAt: at - now > 60_000 ? new Date(at).toISOString() : undefined,

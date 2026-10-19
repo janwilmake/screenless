@@ -2,7 +2,7 @@
  * One Durable Object per meeting the line joins: chimein, moved in (session 18).
  *
  * A Recall.ai bot sits in the meeting under the session's name. It renders
- * meet.html as its camera and microphone; that page opens a GPT-Live session
+ * meet-bot.html as its camera and microphone; that page opens a GPT-Live session
  * over WebRTC, with the meeting as its input, and this object exchanges the
  * page's SDP for it, so the key never reaches the page. Over the session's
  * sideband this object hears everything the voice hears and says, and appends

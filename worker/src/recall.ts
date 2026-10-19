@@ -1,6 +1,6 @@
 /**
  * Recall.ai, the meeting bot. It joins the meeting under a name, renders our
- * page (meet.html) as its camera and microphone, and streams the meeting's
+ * page (meet-bot.html) as its camera and microphone, and streams the meeting's
  * transcript and participant events back to the meeting's Durable Object.
  */
 
