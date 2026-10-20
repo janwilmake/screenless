@@ -1166,6 +1166,8 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   /** A meeting's purpose and room level, from `screenless meet`. */
   let livePurpose: string | undefined;
   let liveTrust: string | undefined;
+  /** The meeting's session prepared it: the voice already has the brief. */
+  let livePrepared: boolean | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
     const me = JSON.stringify({ watcherId, repo, name });
@@ -1205,7 +1207,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string; purpose?: string; trust?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string; purpose?: string; trust?: string; prepared?: boolean };
       // A meeting only to a watcher that gates each request by who asked:
       // an older CLI would run a guest's words in the meeting's base mode.
       const fit = c.kind !== "meeting" || url.searchParams.get("meet") === "1";
@@ -1221,6 +1223,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
           liveKind = "meeting";
           livePurpose = c.purpose;
           liveTrust = c.trust;
+          livePrepared = c.prepared;
         }
         if (c.teammate !== undefined)
           liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, level: c.teammateLevel ?? "", you: false };
@@ -1237,8 +1240,11 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     ? undefined
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
+  // A meeting this session sent the bot to, due within half an hour. Only
+  // on a poll that hands over nothing else: the watcher exits on a call.
+  const prep = !found && url.searchParams.get("live") === "1" ? await meetingToPrepare(env, user.id, session, watcherId) : undefined;
   if (!found)
-    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, liveKind, livePurpose, liveTrust, ...(chats.length ? { chats } : {}) });
+    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, liveKind, livePurpose, liveTrust, livePrepared, ...(chats.length ? { chats } : {}), ...(prep ? { prep } : {}) });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   const callerOrg = caller ? (caller.org_id === org.id ? org : await db.orgById(env, caller.org_id)) : null;
@@ -1365,6 +1371,46 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const stub = env.MEETING.get(env.MEETING.idFromName(callId));
   await stub.fetch(`https://meeting/start?call=${callId}`, { method: "POST" });
   return json({ callId, botName, joinAt: new Date(at).toISOString(), trust });
+}
+
+/** How long before a meeting its session is asked to prepare it, and the
+ *  least time worth preparing in: a meeting joined now gets the brief its
+ *  session writes at pickup instead. */
+const PREP_AHEAD_MS = 30 * 60_000;
+const PREP_MIN_MS = 2 * 60_000;
+
+/**
+ * A meeting this watcher's session should prepare now (session 19): one it
+ * sent the bot to, starting within half an hour, with no brief yet. Each is
+ * handed to one watcher at a time; one that brought nothing back in 15
+ * minutes is handed out again.
+ */
+async function meetingToPrepare(env: Env, userId: string, session: string, watcherId: string) {
+  if (!session) return undefined;
+  const now = Date.now();
+  for (const id of await db.upcomingMeetings(env, userId, session)) {
+    const raw = await db.stashGet(env, `meeting:${id}`);
+    if (!raw) continue;
+    const cfg = JSON.parse(raw) as MeetingConfig;
+    const ahead = (cfg.joinAt ?? now) - now;
+    if (cfg.brief || ahead > PREP_AHEAD_MS || ahead < PREP_MIN_MS) continue;
+    if (await db.stashGet(env, `prep:${id}`)) continue;
+    await db.stashPut(env, `prep:${id}`, watcherId, 15 * 60);
+    return { callId: id, joinAt: new Date(cfg.joinAt!).toISOString(), meetingUrl: cfg.meetingUrl, purpose: cfg.purpose, trust: cfg.trust };
+  }
+  return undefined;
+}
+
+/** `screenless meet --brief <callId>`, or the watcher after a prep: the
+ *  brief the voice starts the meeting with. */
+async function meetingBrief(req: Request, env: Env, callId: string): Promise<Response> {
+  const s = await authed(req, env);
+  if (!s) return fail(401, "not authenticated");
+  const { user } = await identify(env, s.phone);
+  const record = await loadCall(env, callId);
+  if (!record || record.kind !== "meeting" || record.userId !== user.id) return fail(404, "unknown meeting");
+  const stub = env.MEETING.get(env.MEETING.idFromName(callId));
+  return await stub.fetch(`https://meeting/brief?call=${callId}`, { method: "POST", body: await req.text() });
 }
 
 /** `screenless meet --leave <callId>`: the bot leaves, and the meeting ends. */
@@ -1716,10 +1762,11 @@ export default {
       // Meetings: the bot's page and Recall's real-time feed connect here,
       // with the meeting's own token; the owner's CLI starts and stops them.
       if (method === "POST" && path === "/meet") return await startMeeting(req, env);
-      const meetMatch = path.match(/^\/meet\/([\w-]+)\/(session|ws|recall|leave)$/);
+      const meetMatch = path.match(/^\/meet\/([\w-]+)\/(session|ws|recall|leave|brief)$/);
       if (meetMatch) {
         const [, meetId, action] = meetMatch;
         if (action === "leave") return await leaveMeeting(req, env, meetId);
+        if (action === "brief" && method === "POST") return await meetingBrief(req, env, meetId);
         const t = url.searchParams.get("t") ?? "";
         if (!safeEqual(t, await webhookToken(`meet:${meetId}`, env.SESSION_SECRET))) return fail(403, "bad token");
         const stub = env.MEETING.get(env.MEETING.idFromName(meetId));

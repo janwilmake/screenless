@@ -3,7 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
 import { createHash } from "node:crypto";
 import * as config from "./config.js";
-import { fetchRetry, gateHook, serveLiveCall, type Asker, type ForkResult } from "./live.js";
+import { fetchRetry, gateHook, PREP_RULES, runFork, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
 import { answerChat, threadKey, type ChatMessage } from "./chat.js";
 import { inRoom, levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Gate, type Loaded, type Resolved } from "./permissions.js";
@@ -750,6 +750,10 @@ interface WatchNext {
   /** That meeting's purpose and room level, from `screenless meet`. */
   livePurpose?: string;
   liveTrust?: Gate;
+  /** The meeting was prepared: the voice starts with the session's brief. */
+  livePrepared?: boolean;
+  /** A meeting this session sent the bot to, due soon: prepare it now. */
+  prep?: { callId: string; joinAt: string; meetingUrl: string; purpose?: string; trust?: Gate };
   /** WhatsApp messages this session answers (chat.ts). */
   chats?: ChatMessage[];
 }
@@ -881,6 +885,9 @@ async function watch(args: string[]): Promise<void> {
   const chatChains = new Map<string, Promise<void>>();
   const chatsRunning = new Set<Promise<void>>();
   const chatSeen = new Set<string>();
+  // Meetings being prepared, so a poll that hands one out again while its
+  // fork still runs starts nothing new.
+  const preparing = new Set<string>();
   const owner = (): Caller => ({ owner: true, email: ownerEmail, phone: cfg.phone });
   const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null; level?: string }): Caller =>
     who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null, level: who.level ?? "" };
@@ -1041,7 +1048,8 @@ async function watch(args: string[]): Promise<void> {
           // A meeting may hold people outside the team: the voice gets the
           // brief a teammate would hear, never the owner's own.
           brief: before ? undefined : teammate || meeting ? brief?.forTeammate() : brief?.current(),
-          forkBrief: !before && !!brief,
+          // A prepared meeting's voice already has its brief.
+          forkBrief: !before && !!brief && !(meeting && next.livePrepared),
           forkRequests,
           teammate,
           mode: next.liveMode,
@@ -1056,6 +1064,43 @@ async function watch(args: string[]): Promise<void> {
           });
       liveCalls.set(callId, before ? Promise.all([before, served]).then((r) => r.flat()) : served);
       serving.add(callId);
+    }
+
+    // Meeting prep (session 19): the Worker hands over a meeting this
+    // session sent the bot to, 30 minutes ahead; a fork prepares it with the
+    // project's `prep-meeting` skill if it has one, and the brief goes to the
+    // meeting for the voice to start with.
+    const prep = next?.prep;
+    if (prep && !preparing.has(prep.callId)) {
+      preparing.add(prep.callId);
+      if (!asJson)
+        console.log(`\n${c.green("✎")} ${c.bold("prep")} ${c.dim(`· ${prep.callId.slice(0, 8)} · meeting at ${new Date(prep.joinAt).toLocaleTimeString()}`)}`);
+      void runFork(
+        { id: `prep-${prep.callId.slice(0, 8)}`, request: "(prepare the meeting)", context: "" },
+        {
+          cwd: process.cwd(),
+          sessionId,
+          cli: process.argv[1],
+          // Prep reads and works locally; nothing leaves the project.
+          mode: "restricted",
+          rules: PREP_RULES,
+          onStep: (step) => !asJson && console.log(c.dim(`    · ${step}`)),
+          prompt:
+            `Prepare this meeting now. It starts at ${prep.joinAt} (${new Date(prep.joinAt).toString()}).\n` +
+            `Link: ${prep.meetingUrl}\n` +
+            (prep.purpose ? `What it is for: ${prep.purpose}\n` : "") +
+            (prep.trust ? `Room level: ${prep.trust} (what anyone in the meeting may have this session do).\n` : "") +
+            "\nReply with the brief only.",
+        },
+      ).then(async (r) => {
+        if (!r.ok || !r.answer.trim()) {
+          preparing.delete(prep.callId);
+          if (!asJson) console.log(c.dim(`    ✗ prep ${prep.callId.slice(0, 8)} brought nothing back; the line asks again`));
+          return;
+        }
+        await api(cfg.apiUrl, `/meet/${encodeURIComponent(prep.callId)}/brief`, { method: "POST", token: cfg.token, body: { text: r.answer } }).catch(() => undefined);
+        if (!asJson) console.log(c.dim(`    ✓ prepared ${prep.callId.slice(0, 8)} in ${r.seconds}s (${r.answer.length} chars)`));
+      });
     }
 
     for (const m of next?.chats ?? []) {
@@ -1140,6 +1185,17 @@ async function meet(args: string[]): Promise<void> {
     if (!leave) die("usage: screenless meet --leave <callId>");
     await api(cfg.apiUrl, `/meet/${encodeURIComponent(leave)}/leave`, { method: "POST", token: cfg.token });
     console.log(`${c.green("✓")} the bot left the meeting`);
+    return;
+  }
+  const briefFor = argFlag(args, "--brief");
+  if (briefFor !== undefined) {
+    const file = argFlag(args, "--file");
+    if (!briefFor || !file) die("usage: screenless meet --brief <callId> --file <brief.md>");
+    const { readFileSync } = await import("node:fs");
+    const text = readFileSync(file, "utf8").trim();
+    if (!text) die(`${file} is empty`);
+    const r = await api<{ chars: number }>(cfg.apiUrl, `/meet/${encodeURIComponent(briefFor)}/brief`, { method: "POST", token: cfg.token, body: { text } });
+    console.log(`${c.green("✓")} the voice starts the meeting with this brief ${c.dim(`(${r.chars} chars)`)}`);
     return;
   }
   const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name"), argFlag(args, "--purpose"), argFlag(args, "--trust")]);
@@ -1693,7 +1749,8 @@ ${c.bold("Usage")}
                                              a voice (--leave <callId> to end);
                                              --purpose "<what for>", and --trust
                                              listen|read|full for everyone in it
-                                             (default read)
+                                             (default read); --brief <callId>
+                                             --file <f> sets the prepared brief
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page

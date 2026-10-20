@@ -752,6 +752,15 @@ export async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo
   }));
 }
 
+/** Meetings a session sent the bot to that have not started yet: the ones
+ *  its watcher may be asked to prepare. */
+export async function upcomingMeetings(env: Env, userId: string, home: string): Promise<string[]> {
+  const res = await env.DB.prepare(
+    "SELECT id FROM calls WHERE user_id = ? AND home = ? AND kind = 'meeting' AND status = 'initiated' AND expires_at > ? ORDER BY created_at LIMIT 10",
+  ).bind(userId, home, Date.now()).all<{ id: string }>();
+  return (res.results ?? []).map((r) => r.id);
+}
+
 /** The call's home session, set by the first watcher that serves it unless
  *  `screenless meet` already named one. Returns the home either way. */
 export async function claimHome(env: Env, callId: string, session: string): Promise<string> {

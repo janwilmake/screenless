@@ -44,6 +44,9 @@ export interface MeetingConfig {
   /** The room's level for anyone not tied to the team; the watcher
    *  enforces it. Unset (an older meeting): the permissions file's default. */
   trust?: "listen" | "read" | "full";
+  /** What the session prepared before the meeting (`prep-meeting`), for the
+   *  voice's instructions at join. */
+  brief?: string;
 }
 
 /** Who asked, as the watcher needs it to look them up in its permissions file. */
@@ -93,6 +96,9 @@ const APPEND_CHARS = 1400;
  *  way; one answered
  *  sooner, or refused, needs none. */
 const ACK_AFTER_MS = 4_000;
+/** The prepared brief the voice gets in its instructions. How much it can
+ *  take before its answers get worse is not measured yet. */
+const PREP_BRIEF_CHARS = 6000;
 /** The meeting transcript a delegated request carries to the session. */
 const MEETING_CONTEXT_CHARS = 60_000;
 
@@ -167,6 +173,8 @@ export class MeetingCall {
         return this.context(await req.json());
       case "/update":
         return this.update(await req.json());
+      case "/brief":
+        return this.prepared(await req.json());
     }
     return new Response("not found", { status: 404 });
   }
@@ -276,7 +284,7 @@ export class MeetingCall {
     await db.stashPut(
       this.env,
       `livecall:${this.cfg!.userId}`,
-      JSON.stringify({ callId: this.callId, mode: "full", kind: "meeting", purpose: this.cfg!.purpose, trust: this.cfg!.trust }),
+      JSON.stringify({ callId: this.callId, mode: "full", kind: "meeting", purpose: this.cfg!.purpose, trust: this.cfg!.trust, prepared: !!this.cfg!.brief }),
       7200,
     );
   }
@@ -346,7 +354,7 @@ export class MeetingCall {
       body: JSON.stringify({
         session: {
           model: "gpt-live-1",
-          instructions: meetingInstructions(this.cfg!.botName, this.cfg!.purpose),
+          instructions: meetingInstructions(this.cfg!.botName, this.cfg!.purpose, this.cfg!.brief),
           audio: { output: { voice: this.env.OPENAI_VOICE || "cedar" } },
           delegation: { type: "client" },
           // The page is in a stranger's browser: it may send no event, and needs none.
@@ -657,6 +665,23 @@ export class MeetingCall {
     });
   }
 
+  /**
+   * The brief the session prepared before the meeting (session 19). Kept
+   * with the meeting so the voice starts with it; a voice already talking
+   * hears it as background.
+   */
+  private async prepared(body: unknown): Promise<Response> {
+    const text = String((body as { text?: unknown } | null)?.text ?? "").trim();
+    if (!text) return new Response("empty brief", { status: 400 });
+    if (this.ended) return Response.json({ ok: false, ended: true });
+    this.cfg!.brief = text.slice(0, PREP_BRIEF_CHARS);
+    const ttl = Math.ceil(Math.max(0, (this.cfg!.joinAt ?? Date.now()) - Date.now()) / 1000) + 86400;
+    await db.stashPut(this.env, `meeting:${this.callId}`, JSON.stringify(this.cfg), ttl);
+    if (this.sb) this.thinking(`The session prepared this brief for the meeting; use it:\n${this.cfg!.brief}`);
+    if (this.joined) await this.announce();
+    return Response.json({ ok: true, chars: this.cfg!.brief.length });
+  }
+
   /** A result, or a progress note, from the session. */
   private async result(body: unknown): Promise<Response> {
     const { id, text, final, refused } = (body ?? {}) as { id?: string; text?: string; final?: boolean; refused?: boolean };
@@ -780,14 +805,14 @@ export const noticeText = (botName: string): string =>
 
 /** The voice's rules in a meeting (chimein's, measured in its eval), with the
  *  session behind it instead of a terminal. */
-export function meetingInstructions(botName: string, purpose?: string): string {
+export function meetingInstructions(botName: string, purpose?: string, brief?: string): string {
   const name = wakeName(botName);
   return `# Role
 You are "${botName}", an AI assistant that sits in a live online meeting with several people. You hear everybody through one microphone. People call you "${name}".
 Behind you is a Claude Code session that works on the team's code and tools. It does the real work: looking things up, reading files, running checks, making changes.
-${purpose ? `\n# This meeting\nWhat it is for: ${purpose}\nLet that decide what you answer yourself and what you hand off.\n` : ""}
+${purpose ? `\n# This meeting\nWhat it is for: ${purpose}\nLet that decide what you answer yourself and what you hand off.\n` : ""}${brief ? `\n# Prepared brief\nThe session prepared this before the meeting. Answer from it first: what it already answers needs no hand-off.\n${brief}\n` : ""}
 # The room brief
-Soon after you join, the session sends a brief for this meeting: what to answer yourself, what to hand off, and what not to do here. Follow it over the general rules below. When a request falls under "not here", say so in one sentence instead of handing it off.
+${brief ? "The prepared brief above is your room brief" : "Soon after you join, the session sends a brief for this meeting"}: what to answer yourself, what to hand off, and what not to do here. Follow it over the general rules below. When a request falls under "not here", say so in one sentence instead of handing it off.
 Everyone in the meeting hears you. Never list the session's tools, connections or accounts, and never repeat the owner's private context: describe only what you can do, as far as the brief says.
 
 # When to speak

@@ -256,6 +256,19 @@ const MEETING_BASE = `You are answering a request made in a live online meeting.
 - Everyone in the meeting hears it, and some may not be on the team. Never say secrets or personal data, and nothing from the owner's own mail or private messages unless the person who asked may hear it and it is fine for the room.
 - When the work will take longer than about 20 seconds, you may say how it is going with \`screenless update "<one short spoken sentence>"\`. Only for something worth hearing, never instead of the answer.`;
 
+/**
+ * The fork's rules for preparing a meeting (session 19): nobody is waiting,
+ * the reply is the brief the meeting voice starts with, and the room will
+ * hear that voice.
+ */
+export const PREP_RULES = `You are preparing a meeting that this Claude Code session will sit in as a voice, through screenless. Nobody is waiting on you: take the minutes you need to look things up, within about five minutes.
+
+- If this project has a \`prep-meeting\` skill, follow it.
+- Otherwise: gather the invite and purpose, who comes and how to talk to them, open items from earlier meetings on the topic, and the facts the agenda will need; look them up now, because the voice cannot.
+- Your final message is the brief, and nothing else: plain sentences, at most 5,000 characters, most important first. Include likely questions with their answers, what the voice should answer itself, what to hand off to this session (as capabilities, never tool or account names), and what not to do in this meeting.
+- Everyone in the meeting hears the voice. Mark anything private as not to be said; never include secrets.
+- Read freely and work locally; send, post, push or change nothing outside this project.`;
+
 /** The fork's rules for a meeting's request, per the asker's mode. */
 export function meetingRules(mode: CallMode): string {
   if (mode === "full")
