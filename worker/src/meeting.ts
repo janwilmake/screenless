@@ -464,6 +464,11 @@ export class MeetingCall {
         this.saidDelta(msg.delta ?? "");
         break;
       case "session.delegation.created":
+        // Silent until the answer, or the word that it is under way: told
+        // to say nothing, the voice still said "Give me a second to check"
+        // before the 4 s line (session 19's test), so the gate enforces it.
+        this.openUntil = 0;
+        this.toPage({ type: "voice.gate", open: false });
         if (msg.delegation?.id) await this.onDelegation(msg.delegation.id, msg.offset_ms ?? 0);
         break;
       case "error":
