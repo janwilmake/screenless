@@ -48,7 +48,9 @@ export async function createBot(env: Env, o: CreateBot): Promise<{ id: string }>
       recording_config: o.recordingConfig,
       // Recall's default leaves 2 s after the last person, before anyone can
       // be let back in.
-      automatic_leave: { everyone_left_timeout: { timeout: 30 } },
+      // Nobody ever joining keeps the bot (and the voice, billed per second)
+      // waiting 20 minutes by Recall's default; five is enough.
+      automatic_leave: { everyone_left_timeout: { timeout: 30 }, noone_joined_timeout: 300 },
     }),
   });
 }
