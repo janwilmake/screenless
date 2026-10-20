@@ -554,11 +554,13 @@ export async function serveLiveCall(o: {
     running.add(p);
     void p.finally(() => running.delete(p));
   }
-  const post = (id: string, text: string, final: boolean) =>
+  // `refused` tells a meeting this asker's requests never run, so it stops
+  // handing them over and the voice answers what the meeting itself holds.
+  const post = (id: string, text: string, final: boolean, refused = false) =>
     fetchRetry(`${o.apiUrl}/live/${o.callId}/result`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({ id, text, final }),
+      body: JSON.stringify({ id, text, final, ...(refused ? { refused } : {}) }),
     }).catch(() => undefined);
 
   let failures = 0;
@@ -598,6 +600,7 @@ export async function serveLiveCall(o: {
           h.asker
             ? `${h.asker.name}'s permissions do not let requests run during the meeting. It is noted in the transcript for afterwards.`
             : "This caller's permissions do not let requests run during the call. It is noted, and the session gets it after the call.",
+          true,
           true,
         );
         continue;

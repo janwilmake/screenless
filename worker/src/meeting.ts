@@ -84,6 +84,9 @@ const ADMIT_TIMEOUT_MS = 20 * 60_000;
 /** One append of thinking or commentary holds about 500 tokens; chimein's
  *  1,900-character scout notes went over it. */
 const APPEND_CHARS = 1400;
+/** A request with no answer by now gets a spoken "On it."; one answered
+ *  sooner, or refused, needs none. */
+const ACK_AFTER_MS = 4_000;
 /** The meeting transcript a delegated request carries to the session. */
 const MEETING_CONTEXT_CHARS = 60_000;
 
@@ -124,6 +127,9 @@ export class MeetingCall {
   private lines: Line[] = [];
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private handoffs: Handoff[] = [];
+  /** Askers the watcher refused: their permissions do not let requests run,
+   *  so later ones are answered here without asking it again. */
+  private refused = new Set<string>();
   private waiters: Array<() => void> = [];
 
   constructor(
@@ -562,6 +568,13 @@ export class MeetingCall {
       level: member?.level ?? "",
     };
     log({ ev: "meeting request", call: this.callId, known: !!who, member: asker.member, you: asker.you });
+    const key = who ? askerKey(asker) : null;
+    if (key && this.refused.has(key)) {
+      this.handoffs.push({ id, request, context: "", asker, at: Date.now(), claimed: true, answered: true, voice: this.voiceGen });
+      this.allowSpeech(20_000);
+      this.commentary(refusalText(asker.name, request), id);
+      return;
+    }
     const h: Handoff = {
       id,
       request,
@@ -576,6 +589,11 @@ export class MeetingCall {
     };
     this.handoffs.push(h);
     this.wake();
+    setTimeout(() => {
+      if (h.answered || this.ended || h.voice !== this.voiceGen) return;
+      this.allowSpeech(8_000);
+      this.commentary('The session is working on it. Say only "On it." and go quiet; the answer follows.', h.id);
+    }, ACK_AFTER_MS);
     setTimeout(() => {
       if (h.claimed || h.answered || this.ended) return;
       h.answered = true;
@@ -625,10 +643,18 @@ export class MeetingCall {
 
   /** A result, or a progress note, from the session. */
   private async result(body: unknown): Promise<Response> {
-    const { id, text, final } = (body ?? {}) as { id?: string; text?: string; final?: boolean };
+    const { id, text, final, refused } = (body ?? {}) as { id?: string; text?: string; final?: boolean; refused?: boolean };
     const h = this.handoffs.find((x) => x.id === id);
     if (!h || typeof text !== "string" || !text.trim()) return new Response("bad result", { status: 400 });
     if (this.ended) return Response.json({ ok: false, ended: true });
+    if (refused) {
+      h.answered = true;
+      if (h.asker.name !== "someone in the meeting") this.refused.add(askerKey(h.asker));
+      this.allowSpeech(20_000);
+      if (h.voice === this.voiceGen) this.commentary(refusalText(h.asker.name, h.request), h.id);
+      else this.instruct(refusalText(h.asker.name, h.request));
+      return Response.json({ ok: true });
+    }
     const answer = text.trim();
     if (final === false) {
       this.thinking(answer, h.voice === this.voiceGen ? h.id : null);
@@ -725,6 +751,13 @@ export class MeetingCall {
   }
 }
 
+const askerKey = (a: Asker): string => (a.email ?? a.name).trim().toLowerCase();
+
+/** A request whose asker may not have anything run: the voice answers what
+ *  the meeting itself holds, and otherwise says it is kept for afterwards. */
+const refusalText = (name: string, request: string): string =>
+  `${name}'s permissions do not let the session run requests during this meeting. If what you heard in the meeting answers "${request.slice(0, 160)}", answer it now, briefly. Otherwise say in one sentence that it is noted in the transcript for afterwards. Do not say "On it."`;
+
 /** What the bot posts in the meeting chat when it joins. */
 export const noticeText = (botName: string): string =>
   `I am ${botName}, an AI assistant. I listen and I keep a transcript. Say ${wakeName(botName)} when you want something.`;
@@ -755,7 +788,8 @@ Answer yourself, without delegating, anything about this meeting's own conversat
 Do not delegate when the background you were given already holds the answer, or when nobody addressed you.
 Never answer "I don't know" yourself: the session behind you knows the project and its owner's work, so delegate.
 Never refuse, skip or postpone a request yourself because of who asked, permissions or safety rules: the session decides what may run for that person and tells you the outcome. Your job is only to delegate it.
-When you delegate, say only "On it." and go quiet. Do not guess the result while waiting.
+Do not delegate greetings, small talk, or questions about yourself or whether you can hear people ("are you there?", "can you hear me?"): answer those yourself, in a few words.
+When you delegate, say nothing and go quiet. If the work takes a while you will be told to say so. Do not guess the result while waiting.
 When a result arrives, first say which question it answers ("About the nightly run: ..."), then the short answer.
 When somebody asks how far you are, answer from the list of requests you were given, without delegating.
 
