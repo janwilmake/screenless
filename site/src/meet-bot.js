@@ -11,6 +11,15 @@ const queue = [];
 let ws;
 
 document.getElementById("name").textContent = params.get("name") || "AI assistant";
+// The session's photo in the circle, when it has one (`--photo`); "AI" when
+// it has none or it fails to load.
+const photo = params.get("photo") || "";
+if (/^https:\/\//.test(photo)) {
+  const img = new Image();
+  img.alt = "";
+  img.onload = () => document.getElementById("mark").replaceChildren(img);
+  img.src = photo;
+}
 
 function send(msg) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));

@@ -851,6 +851,8 @@ async function watch(args: string[]): Promise<void> {
   // What the voice knows the moment it picks up (see brief.ts). Its name:
   // what the session goes by elsewhere, such as in Slack.
   const name = argFlag(args, "--name") || process.env.SCREENLESS_NAME || "";
+  const photo = argFlag(args, "--photo") || process.env.SCREENLESS_PHOTO || "";
+  if (photo && !/^https:\/\//.test(photo)) die("--photo takes an https:// link to an image");
   // Who else may hear this session's brief when they ring in without a live
   // watcher of their own: nobody by default, the whole team, or the members
   // with these emails. They hear the brief; nothing they ask runs here.
@@ -962,6 +964,8 @@ async function watch(args: string[]): Promise<void> {
     `&repo=${encodeURIComponent(repo)}${live ? "&live=1&meet=1" : ""}${liveOnly ? "&queue=0" : ""}` +
     (sessionHash() ? `&session=${sessionHash()}` : "") +
     (name ? `&name=${encodeURIComponent(name)}` : "") +
+    // The face a meeting this session sends the bot to shows (`--photo`).
+    (photo ? `&photo=${encodeURIComponent(photo)}` : "") +
     (live && briefFor !== "owner" ? `&share=${encodeURIComponent(briefFor)}` : "");
   // Recomputed per poll, so an edited permissions file routes the next call.
   const nextUrlOf = () => {
@@ -1198,7 +1202,7 @@ async function meet(args: string[]): Promise<void> {
     console.log(`${c.green("✓")} the voice starts the meeting with this brief ${c.dim(`(${r.chars} chars)`)}`);
     return;
   }
-  const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name"), argFlag(args, "--purpose"), argFlag(args, "--trust")]);
+  const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name"), argFlag(args, "--purpose"), argFlag(args, "--trust"), argFlag(args, "--photo")]);
   const url = args.find((a) => !a.startsWith("--") && !flagged.has(a));
   if (!url) die('usage: screenless meet <meeting link> [--at <time>] [--name "<name>"] [--purpose "<what for>"] [--trust listen|read|full]');
   const at = argFlag(args, "--at");
@@ -1213,6 +1217,7 @@ async function meet(args: string[]): Promise<void> {
       name: argFlag(args, "--name") || process.env.SCREENLESS_NAME || undefined,
       purpose: argFlag(args, "--purpose") || undefined,
       trust: trust || undefined,
+      photo: argFlag(args, "--photo") || process.env.SCREENLESS_PHOTO || undefined,
       // The meeting belongs to this session: its watcher serves it, and is
       // handed the finished meeting.
       session: sessionHash() || undefined,
@@ -1749,8 +1754,10 @@ ${c.bold("Usage")}
                                              a voice (--leave <callId> to end);
                                              --purpose "<what for>", and --trust
                                              listen|read|full for everyone in it
-                                             (default read); --brief <callId>
-                                             --file <f> sets the prepared brief
+                                             (default read); --photo <https url>
+                                             for the face in its circle;
+                                             --brief <callId> --file <f> sets
+                                             the prepared brief
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page
@@ -1808,6 +1815,8 @@ ${c.bold("Watch options")}
   --live-only          answer your calls live, but never take finished calls
                        (leave those for your main session's watcher)
   --no-live            never answer during a call; ring-ins are recorded only
+  --photo <https url>  the face in the bot's circle when this session sends
+                       it into a meeting (or SCREENLESS_PHOTO)
   --fork               always run live requests in a fork of this session,
                        even when it is too long to load quickly (150k tokens)
   --brief-for <who>    who else hears this session's brief when they ring in
