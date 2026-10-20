@@ -61,3 +61,22 @@ test("Meet's static participant id marks a participant as signed in, and stays",
   room.handle(event("participant_events.leave", { id: 3, name: "Ada" }));
   assert.equal(room.present().length, 0);
 });
+
+test("arrivals and departures are reported, and decide how the voice speaks", async () => {
+  const { speakingFor } = await import("../src/conversation.ts");
+  const room = new Room("Claude (AI)");
+  let changes = 0;
+  room.onPresence = () => changes++;
+  room.handle(event("participant_events.join", { id: 1, name: "Wijnand" }));
+  assert.equal(speakingFor(room.present().length), "direct");
+  room.handle(event("participant_events.join", { id: 2, name: "Bruna" }));
+  assert.equal(speakingFor(room.present().length), "addressed");
+  // Speaking again is no arrival; the bot itself never counts.
+  room.handle(event("transcript.data", { id: 2, name: "Bruna" }, ["hi"]));
+  room.handle(event("participant_events.join", { id: 9, name: "Claude (AI)" }));
+  room.handle(event("participant_events.leave", { id: 2, name: "Bruna" }));
+  assert.equal(changes, 3);
+  assert.equal(speakingFor(room.present().length), "direct");
+  // Nobody known yet: wait for the name, never answer a room's chatter.
+  assert.equal(speakingFor(0), "addressed");
+});

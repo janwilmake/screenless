@@ -48,6 +48,8 @@ export class Room {
   readonly utterances: Utterance[] = [];
   /** Called with each new utterance, for the transcript. */
   onUtterance?: (u: Utterance) => void;
+  /** Called when someone arrives or leaves: who is present changed. */
+  onPresence?: () => void;
 
   private botName: string;
 
@@ -115,6 +117,7 @@ export class Room {
       }
     }
     this.participants.set(p.id, person);
+    if (person.present !== (known?.present ?? false)) this.onPresence?.();
   }
 }
 

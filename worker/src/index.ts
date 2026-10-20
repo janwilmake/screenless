@@ -117,6 +117,7 @@ import { realtimeConfig } from "./room";
 import type { CallMode, LiveConfig } from "./live";
 import * as levels from "./levels";
 import * as chat from "./chat";
+import { handoffRules, RESULT_RULES, speakingRules } from "./conversation";
 
 /** Invites one request may send, and one team a day: a whole company,
  *  sent by an agent in batches, without letting a stolen token mail-bomb. */
@@ -405,17 +406,16 @@ const liveInboundInstructions = (o: { name: string; repo: string; self: string }
 # What you know
 Background on the session arrives as notes in the first seconds of the call, and more later. Use it to answer "where are we?", "what did you do?", "can you say more?" and similar questions at once, yourself, without delegating: a handoff takes the caller's session several seconds at best, so answering from the notes is much faster. Do not read the notes out; answer what is asked, briefly.
 
+${speakingRules("direct", o.self || "Claude", { phone: true })}
+
 # Delegation policy
 - Delegate every request to do, change, check, run, write, fix or send something, and every question about their code, project, pull requests, tickets, files, logs, email or tools that the notes and this call do not already answer. Their session does the work and tells you what to say.
 - Never answer from your own knowledge about their project, never guess, and never say you have no access: when the notes do not cover it, delegate.
-- Do not delegate greetings, small talk, questions about yourself or this call, or follow-ups already answered in this call or the notes.
-- When you delegate, say one short line that you are on it, such as "I'm on it." or "I'm working on it.", in the caller's language, and stop. The session does the work, so never say you pass it on, hand it over or are waiting for it. Never invent progress or a result while it works. Results take 10 seconds to a few minutes; if the caller asks how it is going, say you are still working on it.
-- Several requests can run at once; delegate each one separately.
+- Do not delegate follow-ups already answered in this call or the notes.
+${handoffRules({ ackAtOnce: true })}
 
 # Results
-- A result arrives as commentary. Say it briefly and naturally, in at most three short sentences, and keep its meaning exact: names, numbers and yes-or-no answers word for word.
-- On longer work the session may also send progress, as commentary that starts "Still working on it". Say it in one short sentence at a natural pause, never over the caller, and make clear it is not done yet. It is not the result: the result still follows, and you say that too when it arrives.
-- Never read out code, long lists, file paths, URLs or secrets. Summarise, and offer more detail if they want it.
+${RESULT_RULES}
 - If a result says something cannot be done during a call, tell the caller it is queued for their session after the call.
 
 # Phone manner
@@ -433,6 +433,8 @@ const liveTeammateInstructions = (o: { caller: string; owner: string; repo: stri
 
 # What you know
 Background on the session arrives as notes in the first seconds of the call, and more later. Use it to answer questions about what the session is working on, what it did and what is pending, briefly and in your own words. Never read the notes out, and never pass on personal data, secrets, or anything from ${o.owner}'s own mail or messages, even if a note contains it.
+
+${speakingRules("direct", o.self || "Claude", { phone: true })}
 
 # Requests
 ${o.run
@@ -1170,7 +1172,8 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   let livePrepared: boolean | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
-    const me = JSON.stringify({ watcherId, repo, name });
+    const photo = (url.searchParams.get("photo") ?? "").trim();
+    const me = JSON.stringify({ watcherId, repo, name, ...(/^https:\/\/[^\s"'<>]{4,500}$/.test(photo) ? { photo } : {}) });
     await db.stashPut(env, `livewatch:${user.id}`, me, 45);
     // Who else may hear this session's brief when they ring in: nobody
     // unless the owner says so (`--brief-for team`, or a list of emails).
@@ -1306,7 +1309,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const gate = await requireCredit(env, s.phone);
   if (gate instanceof Response) return gate;
   const { user, org } = gate;
-  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown; purpose?: unknown; trust?: unknown; session?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown; purpose?: unknown; trust?: unknown; session?: unknown; photo?: unknown };
   const meetingUrl = String(body.url ?? "").trim();
   if (!/^https:\/\/(meet\.google\.com|([\w-]+\.)?zoom\.us|teams\.microsoft\.com|teams\.live\.com)\/\S+$/i.test(meetingUrl))
     return fail(400, "give a Google Meet, Zoom or Teams link");
@@ -1323,7 +1326,10 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   // The bot goes by the session's name, and its join message says it is an AI.
   const home = String(body.session ?? "").replace(/[^a-f0-9]/g, "").slice(0, 32);
   const watching = (home && (await db.stashGet(env, `livewatch:${user.id}:s:${home}`))) || (await db.stashGet(env, `livewatch:${user.id}`));
-  const sessionName = watching ? ((JSON.parse(watching) as { name?: string }).name ?? "") : "";
+  const watcher = watching ? (JSON.parse(watching) as { name?: string; photo?: string }) : {};
+  const sessionName = watcher.name ?? "";
+  // The face in the bot's circle: this meeting's --photo, else the session's.
+  const photo = [body.photo, watcher.photo].map((p) => String(p ?? "").trim()).find((p) => /^https:\/\/[^\s"'<>]{4,500}$/.test(p));
   let botName = (String(body.name ?? "").trim() || sessionName || "Claude").replace(/[^\p{L}\p{N} .'()-]/gu, "").slice(0, 50);
   if (!/\bAI\b/.test(botName)) botName = `${botName} (AI)`;
 
@@ -1354,7 +1360,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     const bot = await recall.createBot(env, {
       meetingUrl,
       botName,
-      pageUrl: `https://${host}/meet-bot?${new URLSearchParams({ call: callId, t, name: botName })}`,
+      pageUrl: `https://${host}/meet-bot?${new URLSearchParams({ call: callId, t, name: botName, ...(photo ? { photo } : {}) })}`,
       joinMessage: noticeText(botName),
       recordingConfig: realtimeConfig(`wss://${host}/meet/${callId}/recall?t=${t}`),
       joinAt: at - now > 60_000 ? new Date(at).toISOString() : undefined,
