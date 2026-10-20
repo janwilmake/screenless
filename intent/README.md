@@ -24,6 +24,7 @@ exactly how something was worded.
 
 | Session | What it decided |
 |---|---|
+| [Session 19 — meeting manners](2026-10-20-session-19-meeting-manners.md) | After a practice interview with the bot along: it arrives with a chat message, not a spoken notice; answers questions about the meeting from what it heard; says "On it." only when a request is slow, and never for one the watcher refuses; leaves an empty meeting after 5 minutes. |
 | [Session 18 — meetings join the line](2026-10-19-session-18-meetings.md) | chimein moves in: `screenless meet <link> [--at]` sends a Recall.ai bot into a meeting as the session's voice; each request is gated by who asked, through the same permissions file. Proven in a live Meet, through a mid-meeting deploy. |
 | [Session 17 — who may do what, in a file the owner writes](2026-10-18-session-17-permissions-file.md) | `.agents/permissions.md` maps callers to a mode: a gate screenless enforces (listen, read, full) and the owner's own rules as text, shared with other agent tools such as the Slack loop. Teammates it names above listen get live calls into the owner's session; the owner keeps full unless named. |
 | [Session 16 — call back instead of a PIN](2026-10-18-session-16-call-back-not-pin.md) | The line stops trusting caller ids: a phone ring-in is rejected and the line rings the verified number straight back, and WhatsApp calls to the same number are answered at once on their own signed URL. Both get full rights, so the PIN, the keypad and the attestation check are removed. |
