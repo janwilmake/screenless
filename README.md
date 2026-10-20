@@ -98,8 +98,8 @@ One command: the CLI lands in `~/.screenless`, gets a launcher on your PATH,
 installs the skills into every coding agent it finds, and goes into
 `screenless setup` — phone verification by SMS, no card. Then, in Claude Code,
 **`/screenless`** arms the session. Every team starts with **two weeks free**
-(no card: unlimited WhatsApp chats, 30 call minutes); then the **team plan** is
-**$79/month**: unlimited WhatsApp chats and 250 call minutes, then 40¢/minute.
+(no card: unlimited WhatsApp chats, 30 call and meeting minutes); then the **team plan** is
+**$79/month**: unlimited WhatsApp chats and 250 call and meeting minutes, then 40¢/minute.
 Node 20+ required, never installed for you.
 
 Manage your team, roles and billing at
