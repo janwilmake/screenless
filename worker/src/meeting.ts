@@ -183,7 +183,11 @@ export class MeetingCall {
     const rec = await db.getCall(this.env, callId);
     if (rec?.transcript?.length)
       this.lines = rec.transcript.map((l) => ({ role: l.role === "assistant" ? "assistant" : "user", text: l.text, at: l.at ?? new Date().toISOString() }));
-    if (rec?.status === "answered") {
+    // An object woken after the meeting ended (a late --leave, once the old
+    // one was evicted) must not finish it again: it would not know it had
+    // joined, and would overwrite the delivered record as failed.
+    if (rec?.status === "completed" || rec?.status === "failed") this.ended = true;
+    else if (rec?.status === "answered") {
       this.joined = true;
       this.wantVoice = true;
       this.greeted = true;
