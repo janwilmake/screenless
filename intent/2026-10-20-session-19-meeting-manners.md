@@ -22,7 +22,8 @@ along to give feedback afterwards. What it showed, and what landed:
 - **"On it."** The voice said it on every delegation, including "are you
   there?" and requests the watcher then refused. Now: greetings, small talk
   and questions about the bot are never delegated; a delegation is silent,
-  and the object asks for "On it." only when no answer has come in 4 s. The
+  and only when no answer has come in 4 s does the object ask the voice to
+  say, in its own words, what is being done for it (first a fixed "On it."). The
   watcher flags a refusal (`refused` on `/live/:id/result`), the voice
   answers what the meeting holds or says it is noted, and later requests by
   the same asker are settled in the object without the round trip. The
@@ -65,3 +66,5 @@ takes a while.
 > pwd
 
 > commit and push screnelss
+
+> btw it shouldnt only say 'on it' it should be more dynamic in what itll say when handing smth off

@@ -84,7 +84,8 @@ const ADMIT_TIMEOUT_MS = 20 * 60_000;
 /** One append of thinking or commentary holds about 500 tokens; chimein's
  *  1,900-character scout notes went over it. */
 const APPEND_CHARS = 1400;
-/** A request with no answer by now gets a spoken "On it."; one answered
+/** A request with no answer by now gets a spoken word that it is under
+ *  way; one answered
  *  sooner, or refused, needs none. */
 const ACK_AFTER_MS = 4_000;
 /** The meeting transcript a delegated request carries to the session. */
@@ -592,7 +593,12 @@ export class MeetingCall {
     setTimeout(() => {
       if (h.answered || this.ended || h.voice !== this.voiceGen) return;
       this.allowSpeech(8_000);
-      this.commentary('The session is working on it. Say only "On it." and go quiet; the answer follows.', h.id);
+      // In its own words, about this request: a fixed "On it." on every
+      // hand-off was what the owner noticed first.
+      this.commentary(
+        `The session is working on "${h.request.slice(0, 160)}" for ${h.asker.name}. Tell them in one short sentence, in your own words, what is being done for it, such as looking something up, checking the code or making the change. Vary the wording; never just "On it." Then go quiet; the answer follows.`,
+        h.id,
+      );
     }, ACK_AFTER_MS);
     setTimeout(() => {
       if (h.claimed || h.answered || this.ended) return;
@@ -756,7 +762,7 @@ const askerKey = (a: Asker): string => (a.email ?? a.name).trim().toLowerCase();
 /** A request whose asker may not have anything run: the voice answers what
  *  the meeting itself holds, and otherwise says it is kept for afterwards. */
 const refusalText = (name: string, request: string): string =>
-  `${name}'s permissions do not let the session run requests during this meeting. If what you heard in the meeting answers "${request.slice(0, 160)}", answer it now, briefly. Otherwise say in one sentence that it is noted in the transcript for afterwards. Do not say "On it."`;
+  `${name}'s permissions do not let the session run requests during this meeting. If what you heard in the meeting answers "${request.slice(0, 160)}", answer it now, briefly. Otherwise say in one sentence that it is noted in the transcript for afterwards. Do not say you are working on it.`;
 
 /** What the bot posts in the meeting chat when it joins. */
 export const noticeText = (botName: string): string =>
