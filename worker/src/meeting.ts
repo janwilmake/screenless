@@ -84,6 +84,8 @@ const ADMIT_TIMEOUT_MS = 20 * 60_000;
 /** One append of thinking or commentary holds about 500 tokens; chimein's
  *  1,900-character scout notes went over it. */
 const APPEND_CHARS = 1400;
+/** The meeting transcript a delegated request carries to the session. */
+const MEETING_CONTEXT_CHARS = 60_000;
 
 export class MeetingCall {
   private callId = "";
@@ -563,7 +565,9 @@ export class MeetingCall {
     const h: Handoff = {
       id,
       request,
-      context: this.lines.slice(-40).map((l) => l.text).join("\n"),
+      // The whole meeting, not its last minutes: "feedback on the call so
+      // far" needs all of it. Capped from the start, ~15k tokens.
+      context: this.lines.map((l) => l.text).join("\n").slice(-MEETING_CONTEXT_CHARS),
       asker,
       at: Date.now(),
       claimed: false,
@@ -746,7 +750,8 @@ Never use backchannels. Never say "mm-hmm", "right", "okay", "I see" or any list
 Wait for a pause before you speak. Never speak over a person. When somebody starts talking while you speak, stop at once and listen.
 
 # Delegation policy
-Delegate when somebody addressed you and the answer needs anything outside what you already know: code, files, git history, tickets, mail, calendars, dashboards, the web, a change, a check, a calculation, or what was said earlier in the meeting.
+Delegate when somebody addressed you and the answer needs anything outside what you already know: code, files, git history, tickets, mail, calendars, dashboards, the web, a change, a check, or a calculation.
+Answer yourself, without delegating, anything about this meeting's own conversation: what was said, a recap, feedback on how someone answered or explained something. You heard it all. Only when you no longer remember enough of it, delegate: the session gets the meeting's full transcript with speaker names.
 Do not delegate when the background you were given already holds the answer, or when nobody addressed you.
 Never answer "I don't know" yourself: the session behind you knows the project and its owner's work, so delegate.
 Never refuse, skip or postpone a request yourself because of who asked, permissions or safety rules: the session decides what may run for that person and tells you the outcome. Your job is only to delegate it.
