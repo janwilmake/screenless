@@ -67,6 +67,26 @@ along to give feedback afterwards. What it showed, and what landed:
   The answer read out a long list (33 s), past the voice's 20 s limit.
 - **The landing page** sells meetings too.
 
+- **Speaking by the head count, one set of rules for calls and meetings**
+  (`worker/src/conversation.ts`). One other person: the voice answers what
+  they say; several: only when named. A meeting switches as people come and
+  go, once a count has held 10 s; a call starts direct and the voice
+  switches itself when it hears several people. Tested in a real Meet:
+  one guest, an un-named question answered; two, silence until named; one
+  again, answered. On test calls, a voice told to hand off in silence
+  stopped handing off and made up an answer ("370 lines" for a 72-line
+  file; the old rules delegated and got 72), so a call says one line in its
+  own words at once, while a meeting stays silent until the 4 s line.
+- **A face in the bot's circle:** `meet --photo`, or `watch --photo` for
+  the session. Meet's own participant-list avatar needs a signed-in bot.
+- **Gmail and Calendar for watchloop:** claude.ai connectors cannot be
+  called by agent-codemode. gws needs an own Cloud project, an Internal
+  consent screen (an External app in testing loses its refresh token after
+  7 days) and one sign-in as the Remo; the owner did not like it. Nylas
+  (official MCP, API-key auth, its own verified Google app, webhooks) is
+  the recommendation; it waits on a Nylas account and connecting the
+  Remo's mailbox, which are the owner's to do.
+
 Still open: the room brief and `--trust` are deployed but not yet tried in
 a meeting; invites do not yet fill `--purpose` by themselves. The finished meeting
 went to the owner's earliest-started watcher; fixed above, not yet seen in
@@ -164,3 +184,10 @@ run unattended with chimein's rig.
 > wdyt?
 
 > also screenless landingpage is outdated! we also do g'meetings now
+
+The session agreed with all three, with the photo's limit (the participant
+list needs a signed-in bot) and calls' weaker head count.
+
+> yes build the 3 ideas. but before starting: lets talk about the watchloop adding gmail and calendar... how would auth work for gws cli?
+
+> i still dont like it. there must be a third party mcp for email and calendar with good reliability
