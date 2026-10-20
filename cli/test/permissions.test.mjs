@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parsePolicy, resolve, combine, baseline, loadPolicies, permissionsFor, permissionsText, levelsOf } from "../dist/permissions.js";
+import { parsePolicy, resolve, combine, baseline, loadPolicies, permissionsFor, permissionsText, levelsOf, inRoom } from "../dist/permissions.js";
 
 const FILE = `---
 default: team
@@ -165,4 +165,19 @@ test("without a file, only the built-in levels mean anything", () => {
 test("the watcher reports the file's levels, and a bare default with them", () => {
   assert.deepEqual(levelsOf(parsePolicy(OPEN)), { levels: "reviewer:read,lead:full,listen:listen", default: "listen" });
   assert.deepEqual(levelsOf(parsePolicy(FILE)), { levels: "team:read,data:read,lead:full", default: "team" });
+});
+
+test("a meeting room's level: guests get it, the team gets no more than it", () => {
+  const l = { repo: parsePolicy(FILE), personal: null, warnings: [], paths: { repo: "", personal: "" } };
+  const guest = { owner: false, email: null };
+  // Without a room level a guest only gets the file's default; in a room, the room's.
+  assert.equal(inRoom(l, guest, false, "read").gate, "read");
+  assert.equal(inRoom(l, guest, false, "full").gate, "full");
+  assert.deepEqual(inRoom(l, guest, false, "full").never, l.repo.never);
+  // A member the meeting proved keeps their own level, capped by the room.
+  assert.equal(inRoom(l, { owner: false, email: "wijnand@hyre.io" }, true, "read").gate, "read");
+  assert.equal(inRoom(l, { owner: false, email: "luc@hyre.io" }, true, "full").gate, "read");
+  assert.equal(inRoom(l, { owner: true }, true, "listen").gate, "listen");
+  // No file at all: a room level still means what it says.
+  assert.equal(inRoom({ repo: null, personal: null, warnings: [], paths: { repo: "", personal: "" } }, guest, false, "read").gate, "read");
 });

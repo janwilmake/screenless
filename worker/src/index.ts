@@ -1152,6 +1152,9 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   let liveMode: "full" | "restricted" | undefined;
   /** Set when the live call is a meeting the line joined (meeting.ts). */
   let liveKind: "meeting" | undefined;
+  /** A meeting's purpose and room level, from `screenless meet`. */
+  let livePurpose: string | undefined;
+  let liveTrust: string | undefined;
   if (url.searchParams.get("live") === "1") {
     const name = (url.searchParams.get("name") ?? "").replace(/[^\p{L}\p{N} .'-]/gu, "").slice(0, 40);
     const me = JSON.stringify({ watcherId, repo, name });
@@ -1188,14 +1191,18 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     // mid-call picks the call back up.
     const current = await db.stashGet(env, `livecall:${user.id}`);
     if (current) {
-      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string };
+      const c = JSON.parse(current) as { callId: string; onlyRepo?: string; teammate?: string; teammateEmail?: string; teammatePhone?: string; teammateLevel?: string; mode?: string; kind?: string; purpose?: string; trust?: string };
       // A meeting only to a watcher that gates each request by who asked:
       // an older CLI would run a guest's words in the meeting's base mode.
       const fit = c.kind !== "meeting" || url.searchParams.get("meet") === "1";
       if ((!c.onlyRepo || c.onlyRepo === repo) && fit) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
-        if (c.kind === "meeting") liveKind = "meeting";
+        if (c.kind === "meeting") {
+          liveKind = "meeting";
+          livePurpose = c.purpose;
+          liveTrust = c.trust;
+        }
         if (c.teammate !== undefined)
           liveCaller = { name: c.teammate, email: c.teammateEmail ?? null, phone: c.teammatePhone ?? null, level: c.teammateLevel ?? "", you: false };
       }
@@ -1212,7 +1219,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     : queue.find(({ record }) => assignee(record, watchers)?.watcherId === watcherId);
 
   if (!found)
-    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, liveKind, ...(chats.length ? { chats } : {}) });
+    return json({ ready: false, watchers: watchers.length, queued: queue.length, live, liveCaller, liveMode, liveKind, livePurpose, liveTrust, ...(chats.length ? { chats } : {}) });
 
   const caller = found.record.userId ? await db.userById(env, found.record.userId) : null;
   const callerOrg = caller ? (caller.org_id === org.id ? org : await db.orgById(env, caller.org_id)) : null;
@@ -1274,7 +1281,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const gate = await requireCredit(env, s.phone);
   if (gate instanceof Response) return gate;
   const { user, org } = gate;
-  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown; purpose?: unknown; trust?: unknown };
   const meetingUrl = String(body.url ?? "").trim();
   if (!/^https:\/\/(meet\.google\.com|([\w-]+\.)?zoom\.us|teams\.microsoft\.com|teams\.live\.com)\/\S+$/i.test(meetingUrl))
     return fail(400, "give a Google Meet, Zoom or Teams link");
@@ -1282,6 +1289,12 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const at = body.at === undefined || body.at === null || body.at === "" ? now : Date.parse(String(body.at));
   if (!Number.isFinite(at) || at < now - 5 * 60_000 || at > now + 6 * 86400_000)
     return fail(400, "--at takes a time within the next six days, such as 2026-10-20T14:00:00+02:00");
+  // What the meeting is for, which shapes what the voice answers and hands
+  // off; and the room's level, which the watcher enforces for everyone the
+  // meeting cannot tie to the team (session 19).
+  const purpose = String(body.purpose ?? "").replace(/\s+/g, " ").trim().slice(0, 1000) || undefined;
+  const trust = body.trust === undefined || body.trust === "" ? "read" : String(body.trust);
+  if (trust !== "listen" && trust !== "read" && trust !== "full") return fail(400, "--trust takes listen, read or full");
   // The bot goes by the session's name, and its join message says it is an AI.
   const watching = await db.stashGet(env, `livewatch:${user.id}`);
   const sessionName = watching ? ((JSON.parse(watching) as { name?: string }).name ?? "") : "";
@@ -1302,7 +1315,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     queued: true,
     createdAt: now,
   });
-  const cfg: MeetingConfig = { userId: user.id, orgId: org.id, botName, meetingUrl, joinAt: at };
+  const cfg: MeetingConfig = { userId: user.id, orgId: org.id, botName, meetingUrl, joinAt: at, purpose, trust };
   const ttl = Math.ceil((at - now) / 1000) + 86400;
   await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
   const t = await webhookToken(`meet:${callId}`, env.SESSION_SECRET);
@@ -1329,7 +1342,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
   const stub = env.MEETING.get(env.MEETING.idFromName(callId));
   await stub.fetch(`https://meeting/start?call=${callId}`, { method: "POST" });
-  return json({ callId, botName, joinAt: new Date(at).toISOString() });
+  return json({ callId, botName, joinAt: new Date(at).toISOString(), trust });
 }
 
 /** `screenless meet --leave <callId>`: the bot leaves, and the meeting ends. */

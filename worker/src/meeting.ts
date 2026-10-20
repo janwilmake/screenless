@@ -39,6 +39,11 @@ export interface MeetingConfig {
   botId?: string;
   /** When the bot is due in the meeting, ms. Unset: now. */
   joinAt?: number;
+  /** What the meeting is for, in the owner's or session's words. */
+  purpose?: string;
+  /** The room's level for anyone not tied to the team; the watcher
+   *  enforces it. Unset (an older meeting): the permissions file's default. */
+  trust?: "listen" | "read" | "full";
 }
 
 /** Who asked, as the watcher needs it to look them up in its permissions file. */
@@ -271,7 +276,7 @@ export class MeetingCall {
     await db.stashPut(
       this.env,
       `livecall:${this.cfg!.userId}`,
-      JSON.stringify({ callId: this.callId, mode: "full", kind: "meeting" }),
+      JSON.stringify({ callId: this.callId, mode: "full", kind: "meeting", purpose: this.cfg!.purpose, trust: this.cfg!.trust }),
       7200,
     );
   }
@@ -341,7 +346,7 @@ export class MeetingCall {
       body: JSON.stringify({
         session: {
           model: "gpt-live-1",
-          instructions: meetingInstructions(this.cfg!.botName),
+          instructions: meetingInstructions(this.cfg!.botName, this.cfg!.purpose),
           audio: { output: { voice: this.env.OPENAI_VOICE || "cedar" } },
           delegation: { type: "client" },
           // The page is in a stranger's browser: it may send no event, and needs none.
@@ -770,11 +775,15 @@ export const noticeText = (botName: string): string =>
 
 /** The voice's rules in a meeting (chimein's, measured in its eval), with the
  *  session behind it instead of a terminal. */
-export function meetingInstructions(botName: string): string {
+export function meetingInstructions(botName: string, purpose?: string): string {
   const name = wakeName(botName);
   return `# Role
 You are "${botName}", an AI assistant that sits in a live online meeting with several people. You hear everybody through one microphone. People call you "${name}".
 Behind you is a Claude Code session that works on the team's code and tools. It does the real work: looking things up, reading files, running checks, making changes.
+${purpose ? `\n# This meeting\nWhat it is for: ${purpose}\nLet that decide what you answer yourself and what you hand off.\n` : ""}
+# The room brief
+Soon after you join, the session sends a brief for this meeting: what to answer yourself, what to hand off, and what not to do here. Follow it over the general rules below. When a request falls under "not here", say so in one sentence instead of handing it off.
+Everyone in the meeting hears you. Never list the session's tools, connections or accounts, and never repeat the owner's private context: describe only what you can do, as far as the brief says.
 
 # When to speak
 Respond only when somebody addresses you by name ("${name}") and asks or tells you something, or when the result of one of your own delegated requests arrives.

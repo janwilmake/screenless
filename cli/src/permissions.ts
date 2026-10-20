@@ -218,6 +218,22 @@ export function combine(base: Resolved, personal: Resolved | null): Resolved {
   };
 }
 
+/**
+ * A meeting's asker, in a room the owner gave one level with `meet --trust`
+ * (session 19). Tying a speaker to a team account rests on a display name,
+ * so the room is the unit: anyone the meeting could not tie to the team gets
+ * the room's level, and anyone it could gets their own, never above the
+ * room's. Never lines and the personal file still narrow both.
+ */
+export function inRoom(l: Loaded, c: Caller, recognized: boolean, room: Gate): Resolved {
+  if (recognized) {
+    const r = permissionsFor(l, c);
+    return { ...r, gate: lowest(r.gate, room) };
+  }
+  const base: Resolved = { mode: `room (${room})`, gate: room, rules: "", never: l.repo?.never ?? [], source: "the meeting's --trust" };
+  return combine(base, l.personal ? resolve(l.personal, c, "~/.agents/permissions.md") : null);
+}
+
 export interface Loaded {
   repo: Policy | null;
   personal: Policy | null;

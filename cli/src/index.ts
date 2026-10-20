@@ -5,7 +5,7 @@ import * as config from "./config.js";
 import { fetchRetry, gateHook, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
 import { answerChat, threadKey, type ChatMessage } from "./chat.js";
-import { levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Loaded, type Resolved } from "./permissions.js";
+import { inRoom, levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Gate, type Loaded, type Resolved } from "./permissions.js";
 
 /**
  * The zone this machine is set to.
@@ -746,6 +746,9 @@ interface WatchNext {
   liveMode?: "full" | "restricted";
   /** Set when the live call is a meeting the line's bot sits in. */
   liveKind?: "meeting";
+  /** That meeting's purpose and room level, from `screenless meet`. */
+  livePurpose?: string;
+  liveTrust?: Gate;
   /** WhatsApp messages this session answers (chat.ts). */
   chats?: ChatMessage[];
 }
@@ -881,10 +884,13 @@ async function watch(args: string[]): Promise<void> {
   const callerOf = (who: { you: boolean; email?: string | null; phone?: string | null; level?: string }): Caller =>
     who.you ? owner() : { owner: false, email: who.email ?? null, phone: who.phone ?? null, level: who.level ?? "" };
   /** A meeting's asker, resolved like a caller: the owner, a member the
-   *  meeting proved (their level from the team page), or a guest, who gets
-   *  the file's default and, with no file, is only heard. */
-  const askerRules = (a: Asker) => {
-    const perms = permissionsFor(policies, callerOf(a.you ? { you: true } : { you: false, email: a.email, phone: a.phone, level: a.member ? a.level : "" }));
+   *  meeting proved (their level from the team page), or a guest. In a room
+   *  given a level with `meet --trust`, a guest gets that level and nobody
+   *  more; in an older meeting, a guest gets the file's default and, with
+   *  no file, is only heard. */
+  const askerRules = (a: Asker, trust?: Gate) => {
+    const caller = callerOf(a.you ? { you: true } : { you: false, email: a.email, phone: a.phone, level: a.member ? a.level : "" });
+    const perms = trust ? inRoom(policies, caller, a.you || a.member, trust) : permissionsFor(policies, caller);
     const who = a.you ? "the owner" : a.member ? `${a.name}, a teammate of the session's owner, not the owner` : `${a.name}, a guest in the meeting, not on the team`;
     return { gate: perms.gate, permissions: perms.source ? permissionsText(who, perms) : undefined };
   };
@@ -990,13 +996,19 @@ async function watch(args: string[]): Promise<void> {
       const tokens = sessionId ? contextTokens(sessionId, process.cwd()) : null;
       const forkRequests = !!sessionId && (tokens ?? 0) <= forkLimit;
       const meeting = next.liveKind === "meeting";
+      // Kept apart from `next`, which the next poll replaces.
+      const room = { purpose: next.livePurpose, trust: next.liveTrust };
       const teammate = next.liveCaller && !next.liveCaller.you ? next.liveCaller.name || "a teammate" : undefined;
       const perms = permissionsFor(policies, callerOf(next.liveCaller ?? { you: true }));
       const permsNote = perms.source
         ? permissionsText(teammate ? `${teammate}, a teammate of the session's owner, not the owner` : "the owner", perms)
         : undefined;
       if (!asJson && meeting)
-        console.log(`\n${c.green("☎")} ${c.bold("meeting")} ${c.dim(`· ${callId.slice(0, 8)} · answering during the meeting · each request gated by who asked`)}`);
+        console.log(
+          `\n${c.green("☎")} ${c.bold("meeting")} ${c.dim(
+            `· ${callId.slice(0, 8)} · answering during the meeting · ${next.liveTrust ? `room: ${next.liveTrust}` : "each request gated by who asked"}`,
+          )}${next.livePurpose ? c.dim(`\n    for: ${next.livePurpose.slice(0, 160)}`) : ""}`,
+        );
       else if (!asJson) {
         console.log(
           `\n${c.green("☎")} ${c.bold("live call")} ${c.dim(
@@ -1033,7 +1045,7 @@ async function watch(args: string[]): Promise<void> {
           mode: next.liveMode,
           gate: perms.gate,
           permissions: permsNote,
-          ...(meeting ? { askerRules } : {}),
+          ...(meeting ? { askerRules: (a: Asker) => askerRules(a, room.trust), meeting: room } : {}),
         })
           .catch(() => [] as ForkResult[])
           .finally(() => {
@@ -1108,11 +1120,14 @@ async function watch(args: string[]): Promise<void> {
 }
 
 /**
- * `screenless meet <link> [--at <time>] [--name <name>]`: sends the line's
+ * `screenless meet <link> [--at <time>] [--name <name>] [--purpose "<what
+ * for>"] [--trust listen|read|full]`: sends the line's
  * bot into a meeting under this session's name, now or at a set time. While
  * `screenless watch` runs, requests made to it in the meeting reach this
  * terminal like a live call's, each gated by who asked. Accepting a calendar
  * invite is the moment to run this with `--at` and the meeting's start.
+ * `--purpose` tells the voice what the meeting is for; `--trust` is what
+ * anyone in it may have this session do (default read: look up, no sends).
  * `--leave <callId>` sends the bot away.
  */
 async function meet(args: string[]): Promise<void> {
@@ -1125,21 +1140,36 @@ async function meet(args: string[]): Promise<void> {
     console.log(`${c.green("✓")} the bot left the meeting`);
     return;
   }
-  const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name")]);
+  const flagged = new Set([argFlag(args, "--at"), argFlag(args, "--name"), argFlag(args, "--purpose"), argFlag(args, "--trust")]);
   const url = args.find((a) => !a.startsWith("--") && !flagged.has(a));
-  if (!url) die('usage: screenless meet <meeting link> [--at <time>] [--name "<name>"]');
+  if (!url) die('usage: screenless meet <meeting link> [--at <time>] [--name "<name>"] [--purpose "<what for>"] [--trust listen|read|full]');
   const at = argFlag(args, "--at");
-  const r = await api<{ callId: string; botName: string; joinAt: string }>(cfg.apiUrl, "/meet", {
+  const trust = argFlag(args, "--trust");
+  if (trust !== undefined && !["listen", "read", "full"].includes(trust)) die("--trust takes listen, read or full");
+  const r = await api<{ callId: string; botName: string; joinAt: string; trust?: string }>(cfg.apiUrl, "/meet", {
     method: "POST",
     token: cfg.token,
-    body: { url, at: at || undefined, name: argFlag(args, "--name") || process.env.SCREENLESS_NAME || undefined },
+    body: {
+      url,
+      at: at || undefined,
+      name: argFlag(args, "--name") || process.env.SCREENLESS_NAME || undefined,
+      purpose: argFlag(args, "--purpose") || undefined,
+      trust: trust || undefined,
+    },
   });
   const when = new Date(r.joinAt);
   const soon = when.getTime() - Date.now() < 90_000;
   console.log(`${c.green("✓")} ${c.bold(r.botName)} ${soon ? "is joining now" : `joins at ${when.toLocaleString()}`} ${c.dim(`· ${r.callId}`)}`);
   console.log(c.dim("  someone in the meeting may have to let it in. Requests to it reach the session where `screenless watch` runs."));
+  if (r.trust) console.log(c.dim(`  room: ${r.trust} — anyone in the meeting may ${ROOM_SAYS[r.trust as Gate] ?? r.trust} (--trust to change)`));
   console.log(c.dim(`  to send it away: screenless meet --leave ${r.callId}`));
 }
+
+const ROOM_SAYS: Record<Gate, string> = {
+  listen: "only be heard; nothing runs",
+  read: "have this session look things up; nothing is sent, pushed or deleted",
+  full: "have this session do what it may for you",
+};
 
 /** Marks a watched call as handled, so no terminal is ever handed it again. */
 async function doneCmd(args: string[]): Promise<void> {
@@ -1655,7 +1685,10 @@ ${c.bold("Usage")}
                                              with each finished call
   screenless done <callId>                   mark a watched call as handled
   screenless meet <link> [--at <time>]       send the session into a meeting as
-                                             a voice (--leave <callId> to end)
+                                             a voice (--leave <callId> to end);
+                                             --purpose "<what for>", and --trust
+                                             listen|read|full for everyone in it
+                                             (default read)
   screenless update [<callId>] "<text>"      say a short progress note in the
                                              live call now going on
   screenless team                            your team: members, credit, the page

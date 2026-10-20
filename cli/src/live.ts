@@ -476,6 +476,34 @@ export async function fetchRetry(url: string, init?: RequestInit): Promise<Respo
   }
 }
 
+const ROOM_LEVELS = {
+  listen: "nothing runs during the meeting; requests are noted for the owner",
+  read: "the session may look things up and do local, reversible work; nothing is sent, posted, pushed, merged or deleted",
+  full: "the session may do what it may for its owner, except read secrets",
+} as const;
+
+/**
+ * The room brief (session 19): the session, which knows its own tools and
+ * the work in progress, tells the voice what this meeting needs from it.
+ * Everyone in the room hears the voice, so capabilities are described, never
+ * named, and nothing private goes in.
+ */
+function roomBriefPrompt(m: { purpose?: string; trust?: "listen" | "read" | "full" }): string {
+  const purpose = m.purpose
+    ? `Your owner sent you there for this: "${m.purpose}".`
+    : "Nobody said what the meeting is for; infer it from this session if you can, and say plainly if you cannot.";
+  const level = m.trust ? `Anyone in the room may make requests at this level: ${ROOM_LEVELS[m.trust]}.` : "";
+  return `You are in an online meeting right now, as a voice that people address by name. ${purpose} ${level}
+
+Write the brief for that voice, at most 180 words of plain sentences, in three short parts:
+ANSWER YOURSELF: what the voice should answer from what it hears in the meeting and from this brief, without handing anything to you.
+HAND OFF: what to hand to you, described as what you can do from this session (for example "look up a ticket", "check the code", "find a CRM contact"), only what fits this meeting and the room's level. Describe capabilities, never tool, server or account names.
+NOT HERE: what the voice should decline in this meeting.
+Then at most two sentences of background the room may hear, only if it fits the purpose.
+
+Everyone in the meeting hears the voice: no personal data, no secrets, nothing from your owner's mail, messages or private context. Answer from what you already know in this session; use no tools.`;
+}
+
 /**
  * Serves one live call until it ends and every fork has answered: long-polls
  * the worker for handed-off requests, runs each in its own fork, and posts
@@ -508,6 +536,9 @@ export async function serveLiveCall(o: {
   permissions?: string;
   /** A meeting: each request is gated by who asked it, through this. */
   askerRules?: (asker: Asker) => { gate: "listen" | "read" | "full"; permissions?: string };
+  /** A meeting's purpose and room level: the fork writes the voice a brief
+   *  for this room instead of the owner's. */
+  meeting?: { purpose?: string; trust?: "listen" | "read" | "full" };
 }): Promise<ForkResult[]> {
   // The file can only lower what the line gave the call, never raise it.
   const cap = (m: CallMode): CallMode => (o.gate === "read" ? "restricted" : m);
@@ -540,14 +571,16 @@ export async function serveLiveCall(o: {
         // The brief only reads what the session knows.
         mode: "restricted",
         onStep: () => undefined,
-        prompt: o.teammate
+        prompt: o.meeting
+          ? roomBriefPrompt(o.meeting)
+          : o.teammate
           ? `${o.teammate}, a teammate of your owner, is calling the phone line right now, and your owner shares this session's brief with teammates. Brief the voice that talks with them: in at most 120 words of plain sentences, say what we are working on, what was done last, and what is pending or blocked. Only what is fine for a teammate to hear: no personal data, no secrets, nothing from your owner's own mail or private messages. Answer from what you already know in this session; use no tools.`
           : "Your owner is calling you on the phone right now, and a voice model is talking with them. Brief that voice so it can answer questions about where things stand without asking you: in at most 120 words of plain sentences, say what we are working on, what was done last, what is pending or blocked, and anything the owner will probably ask about. Answer from what you already know in this session; use no tools unless something essential is missing.",
       },
     ).then(async (r) => {
       if (r.ok) {
         summary = r.answer;
-        await context(`The session itself adds: ${r.answer}`);
+        await context(o.meeting ? `The room brief for this meeting, from the session: ${r.answer}` : `The session itself adds: ${r.answer}`);
         o.log(`  session briefed the voice in ${r.seconds}s`);
       }
     });

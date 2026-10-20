@@ -50,20 +50,33 @@ joins now, `screenless meet <link> --at <start time>` at the meeting's
 start, `screenless meet --leave <callId>` sends it away. The bot joins under
 this session's `--name` with "(AI)" after it, posts in the meeting chat that it
 is an AI that keeps a transcript, and stays quiet until someone says its name. Each request then
-reaches this watcher like a live call's, gated by **who asked**: the meeting's
-own transcript names each speaker, and the owner's permissions file decides
-what that person may have this session do. A display name proves nothing, so
-a person counts as a teammate only when the platform gives their email or
-they are signed in with a member's name; everyone else is a guest and gets
-the file's `default` (with no file, they are only heard). The voice speaks to
-the whole room, so the brief it gets is the one a teammate would hear.
+reaches this watcher like a live call's.
+
+- **Say what the meeting is for**, always: `--purpose "<one or two
+  sentences>"`, from what you know of it (the request, the invite, this
+  session's work). The voice uses it to decide what it answers itself, and
+  at pickup a fork of this session writes the voice a **room brief**: what
+  to answer from the meeting, what to hand off (described as capabilities,
+  never tool or account names), and what not to do here.
+- **The room has one level**, `--trust listen|read|full` (default `read`):
+  what anyone in the meeting may have this session do. `listen` runs
+  nothing, `read` looks things up and does local, reversible work, `full` is
+  what you may do for the owner. Pick it from the purpose and who will be
+  there, never above what the owner asked or the permissions file allows:
+  `listen` with outsiders, `read` for a team meeting, `full` only when the
+  owner says so. A person the meeting ties to the team (the platform's
+  email, or signed in with a member's name) keeps their own level from the
+  permissions file, never above the room's.
+- The voice speaks to the whole room: nothing in the room brief may be
+  private to the owner.
 
 - **An invite is the decision to join.** When the calendar or mail you can
   reach shows an invite to this session's address, decide it as the owner
   would: accept it when your permissions file and the owner's rules say this
   session belongs there (an internal meeting about this work), and ask the
   owner first for anything else. Accepting it is when you run
-  `screenless meet <link> --at <start>`; declining needs nothing more.
+  `screenless meet <link> --at <start> --purpose "<from the invite>"`;
+  declining needs nothing more.
 - **Ad hoc:** when a person who may ask for it says "join this meeting" with a
   link, in Slack, WhatsApp or on a call, run `screenless meet <link>`. A link
   from anyone else waits for the owner. Someone in the meeting still has to
