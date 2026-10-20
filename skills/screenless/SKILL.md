@@ -49,8 +49,11 @@ allows it in both modes, as long as its text is plain words in quotes.
 joins now, `screenless meet <link> --at <start time>` at the meeting's
 start, `screenless meet --leave <callId>` sends it away. The bot joins under
 this session's `--name` with "(AI)" after it, posts in the meeting chat that it
-is an AI that keeps a transcript, and stays quiet until someone says its name. Each request then
-reaches this watcher like a live call's.
+is an AI that keeps a transcript. With one other person it answers whatever
+they say, like a call; with several it stays quiet until someone says its
+name, and it switches as people come and go. `--photo <https url>` (or
+`watch --photo`) puts a face in its circle. Each request then reaches this
+watcher like a live call's.
 
 - **Say what the meeting is for**, always: `--purpose "<one or two
   sentences>"`, from what you know of it (the request, the invite, this
