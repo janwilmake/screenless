@@ -1197,6 +1197,9 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     if (reported) await db.stashPut(env, `levels:${org.id}:${repo}`, JSON.stringify({ levels: reported, default: ldefault, at: Date.now() }), 30 * 86400);
     // Per repo too, so a test ring pinned to a repo greets as that watcher.
     await db.stashPut(env, `livewatch:${user.id}:${repo}`, me, 45);
+    // And per session, so a meeting this session sends the bot to goes by
+    // its name rather than whichever watcher polled last.
+    if (session) await db.stashPut(env, `livewatch:${user.id}:s:${session}`, me, 45);
     // Any of your live watchers may serve your call: each request is claimed
     // once, so two terminals never run the same one, and a watcher re-armed
     // mid-call picks the call back up.
@@ -1312,7 +1315,8 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const trust = body.trust === undefined || body.trust === "" ? "read" : String(body.trust);
   if (trust !== "listen" && trust !== "read" && trust !== "full") return fail(400, "--trust takes listen, read or full");
   // The bot goes by the session's name, and its join message says it is an AI.
-  const watching = await db.stashGet(env, `livewatch:${user.id}`);
+  const home = String(body.session ?? "").replace(/[^a-f0-9]/g, "").slice(0, 32);
+  const watching = (home && (await db.stashGet(env, `livewatch:${user.id}:s:${home}`))) || (await db.stashGet(env, `livewatch:${user.id}`));
   const sessionName = watching ? ((JSON.parse(watching) as { name?: string }).name ?? "") : "";
   let botName = (String(body.name ?? "").trim() || sessionName || "Claude").replace(/[^\p{L}\p{N} .'()-]/gu, "").slice(0, 50);
   if (!/\bAI\b/.test(botName)) botName = `${botName} (AI)`;
@@ -1330,7 +1334,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     kind: "meeting",
     queued: true,
     // The session that sent the bot serves the meeting and gets it after.
-    home: String(body.session ?? "").replace(/[^a-f0-9]/g, "").slice(0, 32) || undefined,
+    home: home || undefined,
     createdAt: now,
   });
   const cfg: MeetingConfig = { userId: user.id, orgId: org.id, botName, meetingUrl, joinAt: at, purpose, trust };
