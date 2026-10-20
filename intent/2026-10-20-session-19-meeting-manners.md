@@ -1,4 +1,4 @@
-# Session 19 — meeting manners: arrive quietly, answer from the meeting, "On it." only when slow
+# Session 19 — meeting manners: arrive quietly, answer from the meeting, trust the room
 
 author: Wijnand (wijnand@hyre.io), via Claude Code in the work session
 
@@ -29,9 +29,23 @@ along to give feedback afterwards. What it showed, and what landed:
   the same asker are settled in the object without the round trip. The
   refusal stays the watcher's call: only it reads the permissions file.
 
-Still open: the owner was a **guest** in their own meeting (Meet gave a
-display name only; a name counts only for a signed-in participant matching
-exactly one member), so nothing could run for them. The finished meeting
+- **The room, not the name.** Recall gives no participant emails to bots
+  made through the Create Bot API (checked on this meeting's own data:
+  `email: null` for both, both signed in), and the owner was a guest
+  because their account is named differently from their Google name.
+  Rather than match names harder, the meeting is the unit:
+  `screenless meet --purpose "<what for>" --trust listen|read|full`
+  (default `read`). Anyone the meeting cannot tie to the team gets the
+  room's level; a member it can keeps their own, never above the room's;
+  Never lines and the personal file still narrow (`inRoom`,
+  `cli/src/permissions.ts`). The purpose goes into the voice's rules, and
+  at pickup a fork of the session writes a **room brief**: answer yourself,
+  hand off (capabilities, never tool names), not here. It replaces the
+  fork brief meetings used before, which was the owner's phone-call prompt
+  and so asked for context the whole room would hear.
+
+Still open: the room brief and `--trust` are deployed but not yet tried in
+a meeting; invites do not yet fill `--purpose` by themselves. The finished meeting
 went to the owner's **earliest-started watcher**, not the one that served it
 live, and another terminal marked it done; the session recommends routing a
 live call back to its serving watcher, not yet decided.
@@ -68,3 +82,20 @@ takes a while.
 > commit and push screnelss
 
 > btw it shouldnt only say 'on it' it should be more dynamic in what itll say when handing smth off
+
+The session found Recall gives Google Meet bots no emails, and proposed
+renaming the account, or linking the Google participant id, or Recall's
+calendar integration.
+
+> mmmmmm can you test if the model can ever see emails in a g'meet?
+
+> i dont know, i dont quite like your proposals. i am looking for a very simple solution because most of the time the ppl in the meetings are trusted, but yea, as you said, we can't just rely on name, however, maybe we kinda can?
+
+> oh wut? the bot doesnt get the exact name for every sentence said????
+
+> what if the gpt live gets context about the purpose of the meeting and knows also the harness of the connected claude a bit such as connected mcps/clis and the context of the loop? based on the purpose of the meeting and harness info, we could also provide what to delegate and what not to delegate... not per speaker per se, but per room..? wdyt?
+
+The session agreed, with one split: the voice's context decides what it
+attempts, the room level enforced by the watcher decides what may run.
+
+> yes build it, steps 1-3 plus --trust
