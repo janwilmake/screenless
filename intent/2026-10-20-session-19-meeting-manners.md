@@ -52,6 +52,21 @@ along to give feedback afterwards. What it showed, and what landed:
   or repo: a watcher gets a new id each time it re-arms, and an agent's
   working directory drifts.
 
+- **Tested in real Meets**, with chimein's rig as the guest (Ada): no
+  spoken arrival; "are you there?" and a recap answered by the voice in
+  under 2 s with no hand-off; a repo question handed off, run at the
+  room's `read` for a guest, answered in 14 s; the finished meeting
+  delivered to the session that sent the bot; an empty meeting left after
+  5 min 7 s. Two bugs found and fixed: the voice said "Give me a second"
+  at once despite its rules (the gate now closes on a hand-off), and the
+  bot took another session's name (watchers register a name per session).
+- **Meetings are prepared.** The Worker hands a meeting to its home
+  session 30 minutes ahead; a fork prepares it (a Remo's `prep-meeting`
+  skill when present) and the brief goes into the voice's instructions at
+  join. Tested: brief in 19 s, a question it covered answered in 2.4 s.
+  The answer read out a long list (33 s), past the voice's 20 s limit.
+- **The landing page** sells meetings too.
+
 Still open: the room brief and `--trust` are deployed but not yet tried in
 a meeting; invites do not yet fill `--purpose` by themselves. The finished meeting
 went to the owner's earliest-started watcher; fixed above, not yet seen in
@@ -122,3 +137,30 @@ attempts, the room level enforced by the watcher decides what may run.
 > 4. how would this work in claude code? how do we architect this?
 >
 > i like your recommendations btw, some already answered some q's. we didnt productize remo really yet; where would we put the remo's files? would it be files on the server of the remo's watchloop and screenless watcher? or would we have a repo per remo? or maybe a drive or other type of knowledgebase? wdyt?
+
+The session proposed prep at T−30 held by the Worker's clock, the Remo
+architecture as a mind plus loops, and a private git repo per Remo.
+
+> push it and summarize the work high level in screenless and remo. i guess we'd need a remo-template we can fork and make private and accessible for the remo for each remo mind
+
+> ok so what is todo for remo and for screenless now?
+
+> can you do it all? or do you need me for anything
+
+Answers: the template private (janwilmake/remo-template); test meetings
+run unattended with chimein's rig.
+
+> Some more things that are missing right now:
+> - watchloop needs to watch email (gmail)
+> - watchloop needs to watch calendar and wake before a meeting to get it prepped
+> are these able to be installed as regular mcps in claude code (not claude.ai) so they can be used by agent-codemode properly?
+>
+> Btw, please also push work/remo/ to a private repo btw.
+
+> another thing for screenless:
+> - the photo should be able to be set when joining a meeting (the thing in the circle can be a pfp)
+> - we should determine the behavior of not speaking unless somone names you dynamically; this should be the default when theres more than 1 other participant, but if theres just 1 participant it would be weird. and since partiicpants can change over time during a meeting, the instructions should update dynamically
+> - meetings and calls should have the same instructions for handoff and speaking when spoken to, depending on detected participants. calls can also have more than 1 speaker at the other end....
+> wdyt?
+
+> also screenless landingpage is outdated! we also do g'meetings now
