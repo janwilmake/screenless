@@ -44,11 +44,18 @@ along to give feedback afterwards. What it showed, and what landed:
   fork brief meetings used before, which was the owner's phone-call prompt
   and so asked for context the whole room would hear.
 
+- **A call belongs to a session.** `calls.home` holds a hash of the Claude
+  Code session that sent the bot (`meet` sends it) or that first picked up a
+  live call; watchers report theirs (`watchers.session`). That session's
+  watcher serves the call and is handed it when it ends, as long as one
+  runs; otherwise routing is as before. The session id, not the watcher id
+  or repo: a watcher gets a new id each time it re-arms, and an agent's
+  working directory drifts.
+
 Still open: the room brief and `--trust` are deployed but not yet tried in
 a meeting; invites do not yet fill `--purpose` by themselves. The finished meeting
-went to the owner's **earliest-started watcher**, not the one that served it
-live, and another terminal marked it done; the session recommends routing a
-live call back to its serving watcher, not yet decided.
+went to the owner's earliest-started watcher; fixed above, not yet seen in
+a real meeting.
 
 The prompts, verbatim (the colleague's name and the meeting link redacted;
 this repo is public):
@@ -99,3 +106,19 @@ The session agreed, with one split: the voice's context decides what it
 attempts, the room level enforced by the watcher decides what may run.
 
 > yes build it, steps 1-3 plus --trust
+
+> i think an important thing any remote worker should grasp after they get onboarded onto tools, is learning the way people communicate, the team and the relationships between ppl,  the context of the company, the meetings. 
+>
+> also, i think it should always prepare meetings beforehand instead of only at the start of the meeting; this could make a big difference in context given to gpt live. also after meetings, the meeting should be fed back into its skills / harness. right?
+>
+> i feel like any remote worker should do this after onboarding and maybe reflect on it every now and then too. also any remote worker would prep meetings and have post meeting reflection.
+>
+> makes sense right?
+> ps. close screenless watcher here, cody is already watching
+
+> 1. yes. and its ok to be crrepy and personal. and it shouldnt be readable by the ppl described as its basically the remote workers mind.
+> 2. 100% we should give it the maximally useful context within the bounds of what gpt live can handle. how do we ensure the llm prepares meetings on time?
+> 3. 100%. ok do the routing fix. 
+> 4. how would this work in claude code? how do we architect this?
+>
+> i like your recommendations btw, some already answered some q's. we didnt productize remo really yet; where would we put the remo's files? would it be files on the server of the remo's watchloop and screenless watcher? or would we have a repo per remo? or maybe a drive or other type of knowledgebase? wdyt?
