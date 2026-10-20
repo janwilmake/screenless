@@ -1282,7 +1282,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const at = body.at === undefined || body.at === null || body.at === "" ? now : Date.parse(String(body.at));
   if (!Number.isFinite(at) || at < now - 5 * 60_000 || at > now + 6 * 86400_000)
     return fail(400, "--at takes a time within the next six days, such as 2026-10-20T14:00:00+02:00");
-  // The bot goes by the session's name, and says it is an AI.
+  // The bot goes by the session's name, and its join message says it is an AI.
   const watching = await db.stashGet(env, `livewatch:${user.id}`);
   const sessionName = watching ? ((JSON.parse(watching) as { name?: string }).name ?? "") : "";
   let botName = (String(body.name ?? "").trim() || sessionName || "Claude").replace(/[^\p{L}\p{N} .'()-]/gu, "").slice(0, 50);

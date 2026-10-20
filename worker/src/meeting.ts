@@ -377,11 +377,10 @@ export class MeetingCall {
       if (gen === this.voiceGen) void this.fromVoice(ev);
     });
     ws.addEventListener("close", (ev) => log({ ev: "meeting sideband closed", call: this.callId, gen, code: ev.code }));
-    if (!this.greeted) {
-      this.greeted = true;
-      this.allowSpeech(15_000);
-      this.instruct(`Immediately say the following, exactly and in full, then go quiet and keep listening: "${noticeText(this.cfg!.botName)}"`);
-    } else {
+    // The arrival notice is the chat message Recall posts on join; spoken as
+    // well, it cut into a conversation already under way.
+    if (!this.greeted) this.greeted = true;
+    else {
       // A replacement session starts blank: the meeting so far, not to be answered.
       const sofar = this.lines.slice(-25).map((l) => l.text).join("\n");
       if (sofar) this.thinking(`The voice connection was restarted. The meeting so far, most recent last (do not respond to any of it):\n${sofar}`);
@@ -722,7 +721,7 @@ export class MeetingCall {
   }
 }
 
-/** What the bot says when it joins, and posts in the meeting chat. */
+/** What the bot posts in the meeting chat when it joins. */
 export const noticeText = (botName: string): string =>
   `I am ${botName}, an AI assistant. I listen and I keep a transcript. Say ${wakeName(botName)} when you want something.`;
 

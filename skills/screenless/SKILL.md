@@ -48,8 +48,8 @@ allows it in both modes, as long as its text is plain words in quotes.
 (Google Meet; Zoom and Teams untested) as a voice: `screenless meet <link>`
 joins now, `screenless meet <link> --at <start time>` at the meeting's
 start, `screenless meet --leave <callId>` sends it away. The bot joins under
-this session's `--name` with "(AI)" after it, says it is an AI that keeps a
-transcript, and stays quiet until someone says its name. Each request then
+this session's `--name` with "(AI)" after it, posts in the meeting chat that it
+is an AI that keeps a transcript, and stays quiet until someone says its name. Each request then
 reaches this watcher like a live call's, gated by **who asked**: the meeting's
 own transcript names each speaker, and the owner's permissions file decides
 what that person may have this session do. A display name proves nothing, so
