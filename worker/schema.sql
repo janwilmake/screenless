@@ -143,6 +143,10 @@ CREATE TABLE IF NOT EXISTS calls (
   transcript TEXT,
   created_at INTEGER NOT NULL,
   ended_at INTEGER,
+  -- The Claude Code session the call belongs to (a hash of its id): the one
+  -- that sent the bot to a meeting, or the first to pick up a live call. Its
+  -- watcher serves the call and is handed it when it ends (session 19).
+  home TEXT,
   -- Queued calls keep 7 days so a request survives a weekend with no watcher;
   -- everything else 24 hours. The cron deletes what has expired.
   expires_at INTEGER NOT NULL
@@ -167,6 +171,8 @@ CREATE TABLE IF NOT EXISTS watchers (
   watcher_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   repo TEXT NOT NULL DEFAULT '',
+  -- A hash of the Claude Code session the watcher runs in; '' outside one.
+  session TEXT NOT NULL DEFAULT '',
   started_at INTEGER NOT NULL,
   last_seen INTEGER NOT NULL,
   PRIMARY KEY (org_id, watcher_id)

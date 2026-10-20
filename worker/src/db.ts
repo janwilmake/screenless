@@ -596,6 +596,8 @@ export interface CallRecord {
   /** Guards the ledger against a duplicated end-of-call webhook. */
   debited?: boolean;
   conversationId?: string;
+  /** The session the call belongs to (calls.home). */
+  home?: string;
   createdAt: number;
   endedAt?: number;
 }
@@ -618,6 +620,7 @@ function rowToCall(row: Record<string, unknown>): CallRecord {
     handledBy: (row.handled_by as string) ?? undefined,
     debited: Boolean(row.debited),
     conversationId: (row.conversation_id as string) ?? undefined,
+    home: (row.home as string) || undefined,
     transcript: row.transcript ? (JSON.parse(String(row.transcript)) as TranscriptLine[]) : undefined,
     createdAt: Number(row.created_at),
     endedAt: row.ended_at ? Number(row.ended_at) : undefined,
@@ -625,12 +628,15 @@ function rowToCall(row: Record<string, unknown>): CallRecord {
 }
 
 export async function putCall(env: Env, id: string, r: CallRecord): Promise<void> {
+  // The whole row is replaced, but a record read before claimHome set the
+  // home must not erase it: an unset home keeps the stored one.
   await env.DB.prepare(
     `INSERT OR REPLACE INTO calls
        (id, org_id, user_id, initiated_by, phone, assistant_id, texml_app_id, status, voicemail,
         inbound, kind, request_text, recording_url, queued, handled_by, debited,
-        conversation_id, transcript, created_at, ended_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        conversation_id, transcript, created_at, ended_at, expires_at, home)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+       COALESCE(?, (SELECT home FROM calls WHERE id = ?)))`,
   ).bind(
     id,
     r.orgId ?? null,
@@ -653,6 +659,8 @@ export async function putCall(env: Env, id: string, r: CallRecord): Promise<void
     r.createdAt,
     r.endedAt ?? null,
     r.createdAt + (r.queued ? QUEUED_CALL_TTL_MS : CALL_TTL_MS),
+    r.home ?? null,
+    id,
   ).run();
 }
 
@@ -715,6 +723,8 @@ export interface WatcherInfo {
   userId: string;
   startedAt: number;
   repo: string;
+  /** Hash of the Claude Code session it runs in; '' when none. */
+  session: string;
 }
 
 export async function heartbeatWatcher(
@@ -723,22 +733,32 @@ export async function heartbeatWatcher(
   w: WatcherInfo,
 ): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO watchers (org_id, watcher_id, user_id, repo, started_at, last_seen)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO watchers (org_id, watcher_id, user_id, repo, session, started_at, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (org_id, watcher_id) DO UPDATE SET last_seen = excluded.last_seen`,
-  ).bind(orgId, w.watcherId, w.userId, w.repo, w.startedAt, Date.now()).run();
+  ).bind(orgId, w.watcherId, w.userId, w.repo, w.session, w.startedAt, Date.now()).run();
 }
 
 export async function liveWatchers(env: Env, orgId: string): Promise<WatcherInfo[]> {
   const res = await env.DB.prepare(
-    "SELECT watcher_id, user_id, started_at, repo FROM watchers WHERE org_id = ? AND last_seen > ?",
+    "SELECT watcher_id, user_id, started_at, repo, session FROM watchers WHERE org_id = ? AND last_seen > ?",
   ).bind(orgId, Date.now() - WATCHER_TTL_MS).all<Record<string, unknown>>();
   return (res.results ?? []).map((r) => ({
     watcherId: String(r.watcher_id),
     userId: String(r.user_id),
     startedAt: Number(r.started_at),
     repo: String(r.repo ?? ""),
+    session: String(r.session ?? ""),
   }));
+}
+
+/** The call's home session, set by the first watcher that serves it unless
+ *  `screenless meet` already named one. Returns the home either way. */
+export async function claimHome(env: Env, callId: string, session: string): Promise<string> {
+  if (session)
+    await env.DB.prepare("UPDATE calls SET home = ? WHERE id = ? AND (home IS NULL OR home = '')").bind(session, callId).run();
+  const row = await env.DB.prepare("SELECT home FROM calls WHERE id = ?").bind(callId).first<{ home: string | null }>();
+  return row?.home ?? "";
 }
 
 /* ------------------------------------------------------------------- stash */

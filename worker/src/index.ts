@@ -1101,11 +1101,20 @@ async function getCall(callId: string, req: Request, env: Env): Promise<Response
  * have two), any teammate's otherwise. Deciding at poll time rather than at
  * call time is what makes the queue survivable — a call that ends into an
  * empty room is simply assigned to the first watcher that shows up.
+ *
+ * A call with a home session goes back to that session's watcher while one
+ * runs (session 19): a meeting went to the owner's earliest terminal, not
+ * the session that sent the bot and served it, and was marked done there.
  */
 function assignee(record: CallRecord, watchers: db.WatcherInfo[]): db.WatcherInfo | null {
   if (!watchers.length) return null;
   const byStart = (a: db.WatcherInfo, b: db.WatcherInfo) =>
     a.startedAt - b.startedAt || a.watcherId.localeCompare(b.watcherId);
+  // A live-only watcher is registered as started last and never takes a call.
+  const home = record.home
+    ? watchers.filter((w) => w.session === record.home && w.startedAt !== Number.MAX_SAFE_INTEGER).sort(byStart)
+    : [];
+  if (home.length) return home[0];
   const own = watchers.filter((w) => w.userId === record.userId).sort(byStart);
   if (own.length) return own[0];
   return [...watchers].sort(byStart)[0];
@@ -1127,6 +1136,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
   const watcherId = url.searchParams.get("watcher") ?? "";
   const startedAt = Number(url.searchParams.get("started")) || Date.now();
   const repo = url.searchParams.get("repo") ?? "";
+  const session = (url.searchParams.get("session") ?? "").replace(/[^a-f0-9]/g, "").slice(0, 32);
   if (!/^[\w-]{6,64}$/.test(watcherId)) return fail(400, "watcher id required");
   // A live-only watcher answers ring-ins during the call but takes no
   // finished calls. Registered as the latest-started terminal, it is never
@@ -1138,6 +1148,7 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     userId: user.id,
     startedAt: liveOnly ? Number.MAX_SAFE_INTEGER : startedAt,
     repo,
+    session,
   });
   const watchers = await db.liveWatchers(env, org.id);
 
@@ -1195,7 +1206,12 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
       // A meeting only to a watcher that gates each request by who asked:
       // an older CLI would run a guest's words in the meeting's base mode.
       const fit = c.kind !== "meeting" || url.searchParams.get("meet") === "1";
-      if ((!c.onlyRepo || c.onlyRepo === repo) && fit) {
+      // One session owns the call: the one that sent the bot, or the first
+      // to pick it up. Another session serves it only while none of the
+      // home session's watchers runs.
+      const home = fit && (!c.onlyRepo || c.onlyRepo === repo) ? await db.claimHome(env, c.callId, session) : "";
+      const homeElsewhere = !!home && home !== session && watchers.some((w) => w.session === home && w.userId === user.id);
+      if ((!c.onlyRepo || c.onlyRepo === repo) && fit && !homeElsewhere) {
         live = c.callId;
         liveMode = c.mode === "full" ? "full" : "restricted";
         if (c.kind === "meeting") {
@@ -1281,7 +1297,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   const gate = await requireCredit(env, s.phone);
   if (gate instanceof Response) return gate;
   const { user, org } = gate;
-  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown; purpose?: unknown; trust?: unknown };
+  const body = (await req.json().catch(() => ({}))) as { url?: unknown; at?: unknown; name?: unknown; purpose?: unknown; trust?: unknown; session?: unknown };
   const meetingUrl = String(body.url ?? "").trim();
   if (!/^https:\/\/(meet\.google\.com|([\w-]+\.)?zoom\.us|teams\.microsoft\.com|teams\.live\.com)\/\S+$/i.test(meetingUrl))
     return fail(400, "give a Google Meet, Zoom or Teams link");
@@ -1313,6 +1329,8 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     inbound: false,
     kind: "meeting",
     queued: true,
+    // The session that sent the bot serves the meeting and gets it after.
+    home: String(body.session ?? "").replace(/[^a-f0-9]/g, "").slice(0, 32) || undefined,
     createdAt: now,
   });
   const cfg: MeetingConfig = { userId: user.id, orgId: org.id, botName, meetingUrl, joinAt: at, purpose, trust };

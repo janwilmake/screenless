@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, exit, platform } from "node:process";
+import { createHash } from "node:crypto";
 import * as config from "./config.js";
 import { fetchRetry, gateHook, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
@@ -952,6 +953,7 @@ async function watch(args: string[]): Promise<void> {
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
     // `meet=1`: this watcher gates a meeting's requests by who asked them.
     `&repo=${encodeURIComponent(repo)}${live ? "&live=1&meet=1" : ""}${liveOnly ? "&queue=0" : ""}` +
+    (sessionHash() ? `&session=${sessionHash()}` : "") +
     (name ? `&name=${encodeURIComponent(name)}` : "") +
     (live && briefFor !== "owner" ? `&share=${encodeURIComponent(briefFor)}` : "");
   // Recomputed per poll, so an edited permissions file routes the next call.
@@ -1155,6 +1157,9 @@ async function meet(args: string[]): Promise<void> {
       name: argFlag(args, "--name") || process.env.SCREENLESS_NAME || undefined,
       purpose: argFlag(args, "--purpose") || undefined,
       trust: trust || undefined,
+      // The meeting belongs to this session: its watcher serves it, and is
+      // handed the finished meeting.
+      session: sessionHash() || undefined,
     },
   });
   const when = new Date(r.joinAt);
@@ -1792,6 +1797,13 @@ ${c.bold("Setup options")}
   --voice              receive the OTP as a phone call instead of an SMS
 `);
 }
+
+/** The Claude Code session this runs in, as the line knows it: a hash, so
+ *  the id itself never leaves the machine. '' outside a session. */
+const sessionHash = (): string => {
+  const id = process.env.CLAUDE_CODE_SESSION_ID;
+  return id ? createHash("sha256").update(id).digest("hex").slice(0, 32) : "";
+};
 
 const argFlag = (args: string[], flag: string): string | undefined => {
   const i = args.indexOf(flag);
