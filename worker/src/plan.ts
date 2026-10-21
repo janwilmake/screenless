@@ -3,9 +3,14 @@
  * can load them in plain Node (billing.ts does the money).
  */
 
-export const PLAN_CENTS = 7900;
-export const PLAN_SECS = 250 * 60;
-export const TRIAL_SECS = 30 * 60;
+/** The founding price, $200 for 40 hours: about break-even on a team that
+ *  uses all of it, a bet that the voice gets cheaper within the year (session
+ *  20). Each subscription carries its own Stripe price, so raising this later
+ *  leaves the founding teams where they are. */
+export const PLAN_CENTS = 20000;
+export const PLAN_SECS = 40 * 3600;
+/** Two hours: enough to judge the bot in a real meeting or two. */
+export const TRIAL_SECS = 2 * 3600;
 
 /** What the rules read off an org row. */
 interface Allowance {

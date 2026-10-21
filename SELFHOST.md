@@ -114,9 +114,9 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET  # whsec_… from the command abov
 npx wrangler deploy
 ```
 
-Every new org gets a 14-day trial with 30 call minutes; the team plan is $79 a
-month with 250 call minutes (both in `worker/src/plan.ts`), and minutes beyond
-them cost `PRICE_PER_MINUTE_CENTS` (default 40¢), invoiced on the plan or taken
+Every new org gets a 14-day trial with 2 hours of calls; the team plan is $200 a
+month with 40 hours (both in `worker/src/plan.ts`), and minutes beyond
+them cost `PRICE_PER_MINUTE_CENTS` (default 15¢), invoiced on the plan or taken
 from credit. `FREE_CREDIT_CENTS` (default 0) grants credit to new orgs. Both are
 plain vars in `wrangler.jsonc`. Going live is the two secrets swapped for their live-mode
 equivalents — there is no code path that differs.

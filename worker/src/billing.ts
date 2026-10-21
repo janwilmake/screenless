@@ -1,8 +1,9 @@
 /**
  * The free trial, the team plan, and credit, per organization (session 16).
  *
- * A new team gets 14 days free with 30 call minutes. The team plan is $79 a
- * month: unlimited WhatsApp chats and 250 call minutes, then 40¢ a minute,
+ * A new team gets 14 days free with 2 hours of calls. The team plan is $200 a
+ * month, the founding price: unlimited WhatsApp chats and 40 hours of calls
+ * and meetings, then 15¢ a minute,
  * which Stripe adds to the next invoice, so a paying team is never cut off
  * mid-month. WhatsApp chats cost us a fraction of a cent (the work runs on
  * the member's own Claude subscription), so they are never metered. Credit
@@ -53,6 +54,7 @@ export function standing(env: Env, org: db.Org) {
     planStatus: org.plan_status,
     creditCents: org.credit_cents,
     planCents: PLAN_CENTS,
+    planSecs: PLAN_SECS,
     priceCentsPerMinute: db.priceCentsPerMinute(env),
   };
 }
@@ -257,7 +259,7 @@ export async function createPlanCheckout(env: Env, org: db.Org, user: db.User): 
           recurring: { interval: "month" },
           product_data: {
             name: "screenless team plan",
-            description: "Unlimited WhatsApp chats and 250 call minutes a month; then 40¢ a minute",
+            description: `Founding price, locked for 12 months. Unlimited WhatsApp chats and ${PLAN_SECS / 3600} hours of calls and meetings a month; then ${db.priceCentsPerMinute(env)}¢ a minute`,
           },
         },
       },

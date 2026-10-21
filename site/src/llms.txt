@@ -12,9 +12,9 @@ that session already has; the voice only speaks. A phone call is never
 answered on its caller id: the line hangs up and rings the caller's verified
 number back. A WhatsApp call is tied to the caller's account.
 
-Price: two weeks free per team (no card; unlimited WhatsApp chats, 30 call and meeting minutes),
-then 79 USD a month per team: unlimited WhatsApp chats and 250 call and meeting minutes, then
-0.40 USD a minute.
+Price: two weeks free per team (no card; unlimited WhatsApp chats, 2 hours of calls and meetings),
+then 200 USD a month per team, the founding price (500 USD after; locked for 12 months for teams
+that join now): unlimited WhatsApp chats and 40 hours of calls and meetings, then 0.15 USD a minute.
 Requirements: macOS or Linux, Node.js 20+, Claude Code.
 
 ## Install screenless for your user

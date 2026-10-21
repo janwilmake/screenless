@@ -927,7 +927,8 @@ function renderBilling() {
         '<div class="balance">' + (st.kind === 'credit' ? money(st.creditCents) : 'No plan yet') + '</div>' +
         (st.kind === 'credit' ? '<p class="dim small">Calls bill ' + money(st.priceCentsPerMinute) + ' a minute from credit.</p>' : '');
     html += '<p style="margin:14px 0 6px"><strong>Team plan, ' + money(st.planCents) + ' a month:</strong> unlimited WhatsApp chats and ' +
-      '250 call minutes, then ' + money(st.priceCentsPerMinute) + ' a minute. Cancel any time.</p>' +
+      Math.round(st.planSecs / 3600) + ' hours of calls and meetings, then ' + money(st.priceCentsPerMinute) + ' a minute. ' +
+      'Founding price, locked for 12 months. Cancel any time.</p>' +
       '<div class="form-inline"><button class="act" id="planstart">Start the team plan</button></div>';
   }
   html += '<p class="dim small" style="margin-top:10px">Used so far: ' + money(b.usedCents) + ' across ' + b.calls + ' call' + (b.calls === 1 ? '' : 's') +

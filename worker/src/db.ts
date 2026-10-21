@@ -76,7 +76,7 @@ export const freeCreditCents = (env: Env): number => {
 
 /** What a call minute beyond the included ones costs the org. */
 export const priceCentsPerMinute = (env: Env): number =>
-  Math.max(1, parseInt(env.PRICE_PER_MINUTE_CENTS || "40", 10) || 40);
+  Math.max(1, parseInt(env.PRICE_PER_MINUTE_CENTS || "15", 10) || 15);
 
 /** How long a new org's free trial runs. */
 export const TRIAL_MS = 14 * 86400_000;

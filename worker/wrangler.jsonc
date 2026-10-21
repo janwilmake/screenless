@@ -83,11 +83,13 @@
     "API_HOST": "screenless.sh",
 
     // A call minute beyond what the plan or the trial includes, in cents.
-    // Measured 18 Oct 2026: a live minute costs us ~15-18¢ in GPT-Live plus
-    // ~3¢ of telephony on a ring-back, so 40¢ keeps a margin. The plan itself
-    // ($79/month, 250 minutes, unlimited WhatsApp chats) and the trial (14
-    // days, 30 minutes) are in billing.ts.
-    "PRICE_PER_MINUTE_CENTS": "40",
+    // Measured 21 Oct 2026 against the OpenAI usage page: $10.33 of GPT-Live
+    // for 193 billed minutes, ~5.4¢ a minute (the 18 Oct note said 15-18¢).
+    // Add ~1¢ of Recall in a meeting, or ~3-5¢ of telephony on a ring-back,
+    // and ~3% Stripe: a phone minute costs up to ~12¢, so 15¢ stays above it.
+    // The plan itself ($200/month, 40 hours, unlimited WhatsApp chats) and the
+    // trial (14 days, 2 hours) are in plan.ts.
+    "PRICE_PER_MINUTE_CENTS": "15",
 
     // Credit a new org starts with, in cents. 0 since the trial replaced the
     // free $10 (session 16); kept so a self-hosted Worker can grant one.
