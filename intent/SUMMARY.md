@@ -1,7 +1,8 @@
 # Intent, resolved
 
-Last updated: 2026-10-19 — covers sessions 1–9 in full (through the 03:35
-prompt on 22 Aug), plus the live-call rows from sessions 12–13 and 16–18. Sessions 10–11 are
+Last updated: 2026-10-21 — covers sessions 1–9 in full (through the 03:35
+prompt on 22 Aug), plus the live-call rows from sessions 12–13 and 16–18, and
+the money rows from sessions 16 and 20. Sessions 10–11 are
 in their own files.
 If the session files carry prompts newer than that, this document is behind
 them and they win.
@@ -74,8 +75,10 @@ team infrastructure, and its final prompt reframed it as tooling.)*
 
 | Intent | Status |
 |---|---|
-| Billing per organization, pay-as-you-go: ~$10 free credit up front, then usage *(was: $99/month, 7-day trial, card up front)* | **built and proven** — $10 granted on first sight in production |
-| Price at roughly double the cost | built — 30¢/min (`PRICE_PER_MINUTE_CENTS`), against ~7–15¢ COGS |
+| Billing per organization: two weeks free with 2 hours of calls, no card, then one team plan *(session 20; was: 30 trial minutes and $79 for 250 minutes (session 16); before that ~$10 free credit then pay-as-you-go (session 9); before that $99/month, 7-day trial, card up front)* | built — `plan.ts`; the $79 plan had only the owner on it |
+| One plan, sold as a founding price: ~~$500~~ $200 a month for 40 hours of calls and meetings and unlimited WhatsApp, locked for 12 months; roughly break-even at full use, a bet that the voice gets cheaper within the year *(session 20; offered and declined: three tiers at $79 / $200 / $500)* | built — site, llms.txt, terms, billing tab and Checkout say so; the lock is each subscription's own Stripe price |
+| Overage above break-even, not double the cost: 15¢ a minute *(session 20; was 40¢, before that 30¢ as "about double")* | built — `PRICE_PER_MINUTE_CENTS`; cost measured 21 Oct at ~5.4¢/min of GPT-Live (the 18 Oct note of 15–18¢ was wrong), ~6.5¢ a meeting minute, up to ~12¢ a phone minute with telephony and Stripe |
+| Keep GPT-Live in meetings, listening the whole time; no cheaper model and no switching it on and off, so the bot can become more proactive *(session 20)* | built — unchanged |
 | Billing tab, visible to admins only: credit used and left, per-day statistics, who calls/costs most | built — rendered live with the grant; call stats have no calls to show yet |
 | Topping up | built — **Stripe is live** (keys set by the user; a `cs_live_` Checkout session created and verified); no real payment made yet, and the live webhook endpoint's event list is unverified — the billing page's own poll covers it either way |
 | Calls debit the org by the minute when they complete | **built and proven** — a 50s demo call billed 25¢ and two ring-ins 11¢ and 8¢, all in the ledger |
@@ -175,8 +178,9 @@ Decisions taken without a specific instruction, each reversible cheaply.
 
 **Money**
 
-- 30¢/minute as "about double the cost", and $10.00 exactly as "give or take
-  $10"; both are wrangler vars.
+- $500 as the price after the founding period, and 12 months as the lock;
+  the trial's 2 hours as "a real meeting or two". Telnyx's Dutch-mobile rate
+  and Recall's `web_4_core` surcharge are estimated, not read off an invoice.
 - Topup buttons at $10 / $25 / $100, custom amounts only via the API; bounds
   $5–$1000 per topup.
 - Billed per second at the minute rate, only for **completed** calls — a
