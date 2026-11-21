@@ -34,6 +34,11 @@ author: Jan, via Claude Code in the screenless session
 > btw are we able to leverage the new pricing discount for inactive
 > live-voice-sessions of 1.1? in meetings as well as calls?
 
+> 1 can u ask them for me? then: worht! 2: how would this work, where would
+> the openai api key live? 3: lets wait until the other 2 r done
+
+> it can be max 600 chars so i couldnt send it. pls rewrite the note
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -130,7 +135,13 @@ so every "yes" or "skip" was followed by a dead gap.
   all sessions on this Mac, with a brief ready before a call. To plan with
   him before building.
 
-Open: the EU region (OpenAI sales, a new project) for ~0.15 s; whether SIP
+- Asked OpenAI sales (contact form, sent by Jan on 21 Nov) for EU data
+  residency and inbound GPT-Live SIP on that project. With SIP the key stays
+  a Worker secret: OpenAI's signed webhook announces the call, the Worker
+  accepts it with the key and keeps a sideband for transcript and handoffs,
+  and the audio skips the relay. The chief idea waits until both are done.
+
+Open: OpenAI's answer on EU residency and SIP; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
