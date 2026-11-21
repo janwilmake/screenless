@@ -750,8 +750,11 @@ export class LiveCall {
       this.send({
         type: "session.commentary.append",
         delegation_id: id,
+        // Said only when it fits: on 21 Nov the voice handed off an idea Jan
+        // was describing, and announcing "nothing can be done during this
+        // call" in the middle of it sounded hesitant and odd.
         content:
-          "Nothing can be looked up or done during this call. Tell the caller in one short line that it is noted: their own agent gets it from this call's transcript afterwards. Never say it was done.",
+          "Nothing can be looked up or done during this call. Only if the caller asked for something to be done or looked up now, say in a few words that their agent picks it up from the transcript after the call. If they were describing an idea or answering you, say nothing about this and carry on the conversation. Never say anything was done.",
       });
       return;
     }
