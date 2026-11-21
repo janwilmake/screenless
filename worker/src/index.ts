@@ -1317,6 +1317,16 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
   let botName = (String(body.name ?? "").trim() || sessionName || "Claude").replace(/[^\p{L}\p{N} .'()-]/gu, "").slice(0, 50);
   if (!/\bAI\b/.test(botName)) botName = `${botName} (AI)`;
 
+  // One bot per meeting: the chief's hourly agenda run asks again for what
+  // it already scheduled, and gets that one back (session 21).
+  const slot = `meetslot:${user.id}:${meetingUrl}:${Math.round(at / 60_000)}`;
+  const booked = await db.stashGet(env, slot);
+  if (booked) {
+    const prior = await loadCall(env, booked);
+    if (prior && prior.status !== "failed")
+      return json({ callId: booked, botName, joinAt: new Date(at).toISOString(), trust, already: true });
+  }
+
   const callId = crypto.randomUUID();
   // Queued from the start only so a meeting days ahead keeps its record;
   // a meeting the bot never gets into is marked failed and is no work.
@@ -1358,6 +1368,7 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     return fail(502, "the meeting bot could not be sent; try again in a minute");
   }
   await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
+  await db.stashPut(env, slot, callId, ttl);
   const stub = env.MEETING.get(env.MEETING.idFromName(callId));
   await stub.fetch(`https://meeting/start?call=${callId}`, { method: "POST" });
   return json({ callId, botName, joinAt: new Date(at).toISOString(), trust });

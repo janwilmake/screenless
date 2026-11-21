@@ -6,6 +6,7 @@ import * as config from "./config.js";
 import { fetchRetry, gateHook, PREP_RULES, runFork, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
 import { ChiefBrief } from "./chief.js";
+import { decide as decideMeeting, loadRules, RULES_PATH, type CalendarEvent } from "./agenda.js";
 import { answerChat, threadKey, type ChatMessage } from "./chat.js";
 import { inRoom, levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Gate, type Loaded, type Resolved } from "./permissions.js";
 
@@ -1094,7 +1095,12 @@ async function watch(args: string[]): Promise<void> {
         { id: `prep-${prep.callId.slice(0, 8)}`, request: "(prepare the meeting)", context: "" },
         {
           cwd: process.cwd(),
-          sessionId,
+          // The chief prepares from every session's notes, in a fresh run:
+          // its own session is too long to fork for each meeting.
+          sessionId: chiefBrief ? undefined : sessionId,
+          background: chiefBrief
+            ? `${chiefBrief.current()}\n\nThe sessions whose title or notes name this meeting's people, their company or its subject are the ones to brief from; read their notes above, and their repositories if needed.${loadRules()?.notes ? `\n\nThe owner's notes on meetings: ${loadRules()!.notes}` : ""}`
+            : undefined,
           cli: process.argv[1],
           // Prep reads and works locally; nothing leaves the project.
           mode: "restricted",
@@ -1240,6 +1246,64 @@ async function meet(args: string[]): Promise<void> {
   console.log(c.dim("  someone in the meeting may have to let it in. Requests to it reach the session where `screenless watch` runs."));
   if (r.trust) console.log(c.dim(`  room: ${r.trust} — anyone in the meeting may ${ROOM_SAYS[r.trust as Gate] ?? r.trust} (--trust to change)`));
   console.log(c.dim(`  to send it away: screenless meet --leave ${r.callId}`));
+}
+
+/**
+ * `screenless agenda`: calendar events in (a file or stdin, as JSON), and
+ * the bot sent to each one `~/.screenless/meetings.md` says it joins
+ * (agenda.ts). The chief's hourly tick pipes the next hours of the owner's
+ * calendar in; running it again sends nothing twice (the Worker knows each
+ * meeting by its link and start).
+ */
+async function agendaCmd(args: string[]): Promise<void> {
+  const cfg = await config.load();
+  if (!cfg) die("not set up yet — run `screenless setup`");
+  const rules = loadRules();
+  if (!rules) die(`no ${RULES_PATH}: nothing is joined until you write one (see screenless help)`);
+  const file = argFlag(args, "--file");
+  const { readFileSync } = await import("node:fs");
+  const raw = file ? readFileSync(file, "utf8") : readFileSync(0, "utf8");
+  const parsed = JSON.parse(raw) as CalendarEvent[] | { events?: CalendarEvent[]; items?: CalendarEvent[] };
+  const events = Array.isArray(parsed) ? parsed : parsed.events ?? parsed.items ?? [];
+  const hours = Math.min(24 * 6, Math.max(1, Number(argFlag(args, "--hours") ?? 3)));
+  const dry = args.includes("--dry-run");
+  const asJson = args.includes("--json");
+  const out: Array<Record<string, unknown>> = [];
+  for (const e of events) {
+    const d = decideMeeting(e, rules, Date.now(), hours * 3600_000);
+    if (!d.join || dry) {
+      out.push({ title: d.title, start: Number.isFinite(d.start) ? new Date(d.start).toISOString() : null, join: d.join, why: d.why, trust: d.trust });
+      continue;
+    }
+    try {
+      const r = await api<{ callId: string; joinAt: string; already?: boolean }>(cfg.apiUrl, "/meet", {
+        method: "POST",
+        token: cfg.token,
+        body: {
+          url: d.link,
+          at: new Date(d.start).toISOString(),
+          name: rules.name || process.env.SCREENLESS_NAME || undefined,
+          purpose: d.purpose,
+          trust: d.trust,
+          photo: process.env.SCREENLESS_PHOTO || undefined,
+          session: sessionHash() || undefined,
+        },
+      });
+      out.push({ title: d.title, start: new Date(d.start).toISOString(), join: true, why: d.why, trust: d.trust, callId: r.callId, scheduled: r.already ? "already" : "now" });
+    } catch (err) {
+      out.push({ title: d.title, start: new Date(d.start).toISOString(), join: true, why: d.why, error: (err as Error).message });
+    }
+  }
+  if (asJson) {
+    console.log(JSON.stringify(out, null, 2));
+    return;
+  }
+  if (!out.length) console.log(c.dim("no events"));
+  for (const o of out) {
+    const when = o.start ? new Date(String(o.start)).toLocaleString() : "";
+    const mark = o.error ? c.red("✗") : o.callId ? c.green(o.scheduled === "already" ? "=" : "✓") : o.join ? c.cyan("→") : c.dim("·");
+    console.log(`${mark} ${o.title} ${c.dim(when)} ${c.dim(`— ${o.error ?? (o.scheduled === "already" ? "already scheduled" : o.why)}${o.trust ? ` · ${o.trust}` : ""}`)}`);
+  }
 }
 
 const ROOM_SAYS: Record<Gate, string> = {
@@ -1781,6 +1845,10 @@ ${c.bold("Usage")}
   screenless watch                           take calls: answer yours live, then exit
                                              with each finished call
   screenless done <callId>                   mark a watched call as handled
+  screenless agenda [--file <events.json>]   send the bot to the meetings among
+                                             these calendar events (JSON, or on
+                                             stdin) that ~/.screenless/meetings.md
+                                             says it joins; --dry-run, --hours
   screenless meet <link> [--at <time>]       send the session into a meeting as
                                              a voice (--leave <callId> to end);
                                              --purpose "<what for>", and --trust
@@ -1923,6 +1991,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const [command, ...rest] = argv.slice(2);
 
 const commands: Record<string, (args: string[]) => Promise<void> | void> = {
+  agenda: agendaCmd,
   setup,
   call,
   test,
