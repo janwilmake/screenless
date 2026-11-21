@@ -157,6 +157,8 @@ export interface TexmlCallOptions {
    *  brief): omitting it means Telnyx runs no answering-machine detection at
    *  all, so a real person can never be hung up on by a false verdict. */
   amdCallback?: string;
+  /** Test rings only: record both channels and report the file here. */
+  recordingCallback?: string;
 }
 
 /**
@@ -182,6 +184,14 @@ export function initiateTexmlCall(
       StatusCallback: o.statusCallback,
       StatusCallbackEvent: "initiated ringing answered completed",
       StatusCallbackMethod: "POST",
+      ...(o.recordingCallback
+        ? {
+            Record: "true",
+            RecordingChannels: "dual",
+            RecordingStatusCallback: o.recordingCallback,
+            RecordingStatusCallbackMethod: "POST",
+          }
+        : {}),
       ...(o.amdCallback
         ? {
             MachineDetection: "Enable",

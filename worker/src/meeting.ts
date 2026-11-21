@@ -375,8 +375,9 @@ export class MeetingCall {
     const model = this.env.OPENAI_LIVE_MODEL || "gpt-live-1";
     // Standby: after a minute with nothing said either way, inference pauses
     // and bills at 2¢ a minute instead of 5¢, and the next speech wakes it.
-    // Only WebRTC sessions get that rate, which is why meetings have it and
-    // phone ring-ins do not. The minute is the maximum, so a request the
+    // Only WebRTC sessions have it: over a WebSocket, which phone calls use,
+    // OpenAI refuses the session ("idle_timeout_s requires a standard WebRTC
+    // session with wake policy support", tried 21 Nov). The minute is the maximum, so a request the
     // watcher is still working on has the longest wait before the voice could
     // be paused under its answer.
     const standby = { idle_timeout_s: 60, wake_policy: { type: "speech" } };

@@ -191,9 +191,22 @@ export class LiveCall {
   private loudRun = 0;
   /** The phone's L16 byte order, read off the caller's audio (audio.ts). */
   private order = new ByteOrder("be");
+  /** The rate GPT-Live hears and speaks on this call: its native 24 kHz, or
+   *  the phone's own 16 kHz, which it also takes, with nothing resampled. */
+  private rate = VOICE_RATE;
   /** Caller audio up to the voice's rate, the voice's down to the phone's. */
-  private up = new Resampler(PHONE_RATE, VOICE_RATE);
-  private down = new Resampler(VOICE_RATE, PHONE_RATE);
+  private up: { push(s: Int16Array): Int16Array } = new Resampler(PHONE_RATE, VOICE_RATE);
+  private down: { push(s: Int16Array): Int16Array } = new Resampler(VOICE_RATE, PHONE_RATE);
+  /** Audio sent to the current voice, in ms, and when: to map the voice's
+   *  own `end_ms` of the caller's speech back to a wall-clock time. */
+  private sentMs = 0;
+  private sent: Array<[number, number]> = [];
+  /** The end of the caller's last speech, in the voice's audio time, and
+   *  when its transcript arrived. */
+  private heardEndMs = -1;
+  private heardAt = 0;
+  /** The voice's recent output loudness. */
+  private voiceLevel = 0;
   /** Voice audio short of a whole 20 ms frame, sent with the next chunk. */
   private outRest = new Int16Array(0);
 
@@ -240,6 +253,14 @@ export class LiveCall {
       }
     }
 
+    // Chosen once per call: a reconnected stream keeps its resamplers.
+    if (!this.ws && !this.everStarted) {
+      this.rate = Number(this.env.LIVE_AUDIO_RATE) === PHONE_RATE ? PHONE_RATE : VOICE_RATE;
+      const same = { push: (x: Int16Array) => x };
+      this.up = this.rate === PHONE_RATE ? same : new Resampler(PHONE_RATE, VOICE_RATE);
+      this.down = this.rate === PHONE_RATE ? same : new Resampler(VOICE_RATE, PHONE_RATE);
+    }
+
     const pair = new WebSocketPair();
     const phone = pair[1];
     phone.accept();
@@ -263,6 +284,11 @@ export class LiveCall {
     void fetch("https://cloudflare.com/cdn-cgi/trace")
       .then((r) => r.text())
       .then((t) => log({ ev: "live colo", call: callId, colo: /colo=(\w+)/.exec(t)?.[1] ?? "" }))
+      .catch(() => undefined);
+    // The round trip to OpenAI's US and EU hosts from here, the second of
+    // two requests so the connection is warm: what the EU region would save.
+    void Promise.all([rtt("https://api.openai.com/v1/models"), rtt("https://eu.api.openai.com/v1/models")])
+      .then(([us, eu]) => log({ ev: "live rtt", call: callId, usMs: us, euMs: eu }))
       .catch(() => undefined);
     if (!this.ws && !(await this.connectVoice())) {
       phone.close(1011, "voice unavailable");
@@ -307,7 +333,7 @@ export class LiveCall {
       session: {
         model: (this.liveModel ??= this.env.OPENAI_LIVE_MODEL || "gpt-live-1"),
         instructions: [cfg.instructions, cfg.mode === "full" || cfg.unwatched || (cfg.teammate && !cfg.teammate.run) ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
-        audio: { format: { type: "audio/pcm", rate: VOICE_RATE }, output: { voice: cfg.voice } },
+        audio: { format: { type: "audio/pcm", rate: this.rate }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
     });
@@ -360,9 +386,15 @@ export class LiveCall {
       this.noiseFloor = level < this.noiseFloor ? level : this.noiseFloor + (level - this.noiseFloor) * 0.01;
       if (level > Math.max(500, this.noiseFloor * 3)) {
         this.callerSpeechAt = Date.now();
-        if (++this.loudRun === BARGE_FRAMES) this.bargeIn("loud");
+        if (++this.loudRun === BARGE_FRAMES) this.bargeIn("loud", level);
       } else this.loudRun = 0;
-      this.toVoice(encodePcm(this.up.push(samples), "le"));
+      const up = this.up.push(samples);
+      if (this.live) {
+        this.sentMs += (up.length / this.rate) * 1000;
+        this.sent.push([this.sentMs, Date.now()]);
+        if (this.sent.length > 4000) this.sent.splice(0, 1000);
+      }
+      this.toVoice(encodePcm(up, "le"));
     } else if (msg.event === "start") {
       log({ ev: "live media format", call: this.ourCallId, format: msg.start?.media_format ?? null });
     } else if (msg.event === "stop") {
@@ -413,6 +445,8 @@ export class LiveCall {
       delegation?: { id?: string; target?: string };
       error?: unknown;
       reason?: string;
+      start_ms?: number;
+      end_ms?: number;
     };
     try {
       msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
@@ -441,6 +475,11 @@ export class LiveCall {
           // Caller audio sent in one burst now, ahead of real time.
           earlyFrames: this.early.length,
         });
+        // A new voice session counts its audio from zero; the early burst is
+        // sent now, 20 ms a frame.
+        this.sentMs = this.early.length * 20;
+        this.sent = [[this.sentMs, Date.now()]];
+        this.heardEndMs = -1;
         for (const audio of this.early.splice(0)) this.send({ type: "session.input_audio.append", audio });
         if (this.greeted) {
           this.resumeVoice();
@@ -451,8 +490,16 @@ export class LiveCall {
         this.greetWhenQuiet(greeting);
         break;
       case "session.input_transcript.delta":
-        // The first words of a caller line: they may be talking over the voice.
-        if (this.buf?.role !== "user" && msg.delta && !isNoise(msg.delta)) this.bargeIn("words");
+        if (typeof msg.end_ms === "number" && msg.end_ms > this.heardEndMs) {
+          this.heardEndMs = msg.end_ms;
+          this.heardAt = Date.now();
+        }
+        // The first words of a caller line: they may be talking over the
+        // voice. Not when they were said before it began: the end of a
+        // question is transcribed half a second late, after the answer has
+        // started, and taking it for an interruption cut every answer short.
+        if (this.buf?.role !== "user" && msg.delta && !isNoise(msg.delta) && !this.saidBeforeVoice(msg.start_ms))
+          this.bargeIn("words");
         this.delta("user", msg.delta ?? "");
         break;
       case "session.output_transcript.delta":
@@ -776,15 +823,23 @@ export class LiveCall {
   private measureOut(pcm: Int16Array): void {
     const now = Date.now();
     const bytes = pcm.length * 2;
-    const voiced = meanAbs(pcm) > 200;
+    const level = meanAbs(pcm);
+    const voiced = level > 200;
+    if (voiced) this.voiceLevel = this.voiceLevel ? this.voiceLevel * 0.8 + level * 0.2 : level;
     if (voiced && now - this.voiceVoicedAt > TURN_GAP_MS) {
       this.endTurn();
       // The caller's last loud frame came after the voice's last speech: this
       // turn answers the caller. Otherwise the voice spoke up on its own.
       const answers = this.callerSpeechAt > this.voiceVoicedAt && now - this.callerSpeechAt < 15_000;
+      // Where the reply time goes, by the voice's own clock: when the speech
+      // it transcribed ended (sent from here at `endAt`), when that
+      // transcript arrived, and now, its first audio back.
+      const endAt = answers ? this.wallFor(this.heardEndMs) : 0;
       this.turn = {
         startAt: now,
         replyMs: answers ? now - this.callerSpeechAt : null,
+        fromHeardEndMs: endAt ? now - endAt : null,
+        transcriptMs: endAt ? this.heardAt - endAt : null,
         chunks: 0,
         bytes: 0,
         minBytes: Infinity,
@@ -804,11 +859,18 @@ export class LiveCall {
       t.bytes += bytes;
       t.minBytes = Math.min(t.minBytes, bytes);
       t.maxBytes = Math.max(t.maxBytes, bytes);
-      // 20 ms of 16-bit audio at 24 kHz.
-      if (bytes % 960) t.offFrame++;
+      // Whole 20 ms frames of 16-bit audio at the call's rate.
+      if (bytes % ((this.rate / 50) * 2)) t.offFrame++;
       t.lastAt = now;
     }
     this.outAt = now;
+  }
+
+  /** When the voice's audio time `ms` was sent from here, or 0. */
+  private wallFor(ms: number): number {
+    if (ms < 0) return 0;
+    const hit = this.sent.find(([a]) => a >= ms);
+    return hit && Date.now() - hit[1] < 15_000 ? hit[1] : 0;
   }
 
   /** Logs the turn measured so far. Ids, counts and times only. */
@@ -817,13 +879,19 @@ export class LiveCall {
     this.turn = null;
     if (!t || !t.chunks) return;
     const wallMs = t.lastAt - t.startAt;
-    // 16-bit at 24 kHz: 48 bytes a millisecond.
-    const audioMs = Math.round(t.bytes / 48);
+    // 16-bit samples at the call's rate.
+    const audioMs = Math.round(t.bytes / ((this.rate * 2) / 1000));
     log({
       ev: "live turn",
       call: this.ourCallId,
       gen: this.voiceGen,
+      rate: this.rate,
       replyMs: t.replyMs,
+      // From the end of the speech the voice heard to its first audio here:
+      // the way up, the voice's turn-taking and reply, the way down.
+      fromHeardEndMs: t.fromHeardEndMs,
+      // How long its transcript of that speech took to arrive.
+      transcriptMs: t.transcriptMs,
       chunks: t.chunks,
       minBytes: t.minBytes,
       maxBytes: t.maxBytes,
@@ -862,7 +930,7 @@ export class LiveCall {
    * WebSocket sends no interruption event, and OpenAI's docs leave dropping
    * queued audio to the client.
    */
-  private bargeIn(by: "loud" | "words"): void {
+  private bargeIn(by: "loud" | "words", level?: number): void {
     const queuedMs = Math.round(this.playsUntil - Date.now());
     if (queuedMs <= 0 || !this.phone) return;
     try {
@@ -872,7 +940,26 @@ export class LiveCall {
     }
     this.playsUntil = 0;
     this.outRest = new Int16Array(0);
-    log({ ev: "live barge-in", call: this.ourCallId, gen: this.voiceGen, by, queuedMs });
+    log({
+      ev: "live barge-in",
+      call: this.ourCallId,
+      gen: this.voiceGen,
+      by,
+      queuedMs,
+      // The caller's loudness against their noise floor and the voice's own
+      // output level: what separates an interruption from the voice's echo.
+      level: level === undefined ? null : Math.round(level),
+      floor: Math.round(this.noiseFloor),
+      voiceLevel: Math.round(this.voiceLevel),
+    });
+  }
+
+  /** Whether caller speech starting at `startMs` (the voice's audio time)
+   *  was sent before the voice's current turn began. */
+  private saidBeforeVoice(startMs?: number): boolean {
+    if (typeof startMs !== "number" || !this.turn) return false;
+    const at = this.wallFor(startMs);
+    return at > 0 && at < this.turn.startAt;
   }
 
   /** The call is over, from either end. When the voice ended first, the
@@ -934,6 +1021,8 @@ export class LiveCall {
 interface Turn {
   startAt: number;
   replyMs: number | null;
+  fromHeardEndMs: number | null;
+  transcriptMs: number | null;
   chunks: number;
   bytes: number;
   minBytes: number;
@@ -941,6 +1030,18 @@ interface Turn {
   offFrame: number;
   maxGapMs: number;
   lastAt: number;
+}
+
+/** One warm request's round trip to `url`, in ms; null if it failed. */
+async function rtt(url: string): Promise<number | null> {
+  try {
+    await (await fetch(url, { method: "HEAD" })).arrayBuffer();
+    const t = Date.now();
+    await (await fetch(url, { method: "HEAD" })).arrayBuffer();
+    return Date.now() - t;
+  } catch {
+    return null;
+  }
 }
 
 /** Output without speech for this long ends a voice turn. */

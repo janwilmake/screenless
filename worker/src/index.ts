@@ -85,6 +85,9 @@ export interface Env {
   // telephony and streams the audio to the LiveCall Durable Object.
   /** The GPT-Live model for calls and meetings, e.g. "gpt-live-1.1". */
   OPENAI_LIVE_MODEL: string;
+  /** "16000" runs phone calls' voice at the phone's own rate, unresampled;
+   *  anything else at GPT-Live's native 24 kHz. */
+  LIVE_AUDIO_RATE: string;
   /** The voice, e.g. "cedar". */
   OPENAI_VOICE: string;
   /** The id Meta gave the line's number for WhatsApp (Telnyx shows it as the
@@ -875,7 +878,9 @@ async function ringInXml(
     userId: user.id,
     mode: o.mode,
     unwatched: true,
-    instructions: INBOUND_QUIET_INSTRUCTIONS,
+    instructions: test
+      ? ((await db.stashGet(env, `testinstr:${env.TEST_CALLER_NUMBER}`)) || INBOUND_QUIET_INSTRUCTIONS) + (await testPadding(env))
+      : INBOUND_QUIET_INSTRUCTIONS,
     greeting: "",
     voice: env.OPENAI_VOICE,
     accountSid: o.params.AccountSid ?? "",
@@ -1534,7 +1539,7 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
   const secret = req.headers.get("X-Test-Secret") ?? "";
   if (!env.TEST_RING_SECRET || !env.TEST_CALLER_NUMBER || !safeEqual(secret, env.TEST_RING_SECRET))
     return fail(403, "forbidden");
-  const { script, as, repo } = (await req.json().catch(() => ({}))) as {
+  const { script, as, repo, pad, instructions, record } = (await req.json().catch(() => ({}))) as {
     script?: Array<{ pause?: number; say?: string }>;
     /** Ring in as this verified number, so the call reaches that user's
      *  watcher. Only numbers listed in TEST_RING_AS. */
@@ -1542,6 +1547,15 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
     /** Only the watcher running in this repo may serve the call. Required
      *  with `as`, so a test never reaches the real person's own session. */
     repo?: string;
+    /** Characters of brief-like filler added to an unwatched test ring's
+     *  instructions: to measure whether a long brief slows the voice. */
+    pad?: number;
+    /** Replaces an unwatched test ring's instructions outright, to measure
+     *  how the voice's own instructions change its reply time. */
+    instructions?: string;
+    /** Record the test caller's leg, both channels, to measure what a caller
+     *  actually hears. The file's address is logged as "test recording". */
+    record?: boolean;
   };
   if (!Array.isArray(script) || !script.length) return fail(400, "script required");
   const allowed = (env.TEST_RING_AS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -1551,6 +1565,8 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
     await db.stashPut(env, `testas:${env.TEST_CALLER_NUMBER}`, as, 3600);
     await db.stashPut(env, `testrepo:${env.TEST_CALLER_NUMBER}`, repo!, 3600);
   }
+  await db.stashPut(env, `testpad:${env.TEST_CALLER_NUMBER}`, String(Math.min(40_000, Math.max(0, Number(pad) || 0))), 3600);
+  await db.stashPut(env, `testinstr:${env.TEST_CALLER_NUMBER}`, typeof instructions === "string" ? instructions.slice(0, 20_000) : "", 3600);
   const id = crypto.randomUUID();
   await db.stashPut(env, `testring:${id}`, JSON.stringify(script), 3600);
   const t = await webhookToken(`testring:${id}`, env.SESSION_SECRET);
@@ -1559,8 +1575,19 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
     to: env.TELNYX_FROM_NUMBER,
     url: `${origin}/texml/test-script/${id}?t=${t}`,
     statusCallback: `${origin}/texml/test-status?t=${t}`,
+    ...(record ? { recordingCallback: `${origin}/texml/test-status?t=${t}&rec=1` } : {}),
   });
   return json({ ok: true, id, telnyx: res });
+}
+
+/** A test ring's filler: background notes of the length a brief runs to. */
+async function testPadding(env: Env): Promise<string> {
+  const n = Number((await db.stashGet(env, `testpad:${env.TEST_CALLER_NUMBER}`)) ?? 0);
+  if (!n) return "";
+  let out = "\n\n# Background notes (not for this call)\n";
+  for (let i = 1; out.length < n; i++)
+    out += `\n## Item ${i}: pull request #${400 + i}\nA change to the billing module that adjusts how overage minutes are rounded. Tests pass; one reviewer asked whether the rounding should happen per call or per month. The author prefers per call because it matches the invoice lines. Open question: merge now or wait for the reviewer.\n`;
+  return out.slice(0, n);
 }
 
 /** The number a scripted test ring stands in for, or the caller id as is. */
@@ -1666,7 +1693,14 @@ export default {
       if (method === "POST" && path === "/admin/test-ring") return await testRing(req, env, origin);
       const scriptMatch = path.match(/^\/texml\/test-script\/([\w-]+)$/);
       if (scriptMatch) return await testScript(req, env, scriptMatch[1]);
-      if (path === "/texml/test-status") return json({ ok: true });
+      if (path === "/texml/test-status") {
+        if (url.searchParams.get("rec")) {
+          const p = await inboundBody(req);
+          const rec = String(p.RecordingUrl ?? p.recording_url ?? "");
+          if (rec) console.log(JSON.stringify({ ev: "test recording", url: rec, secs: p.RecordingDuration ?? null }));
+        }
+        return json({ ok: true });
+      }
 
       /* --------------------------------------------------------- watchers */
 
