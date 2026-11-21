@@ -123,6 +123,17 @@ thing the user has to know.
    stand; nothing they ask runs during the call, and it reaches this session
    afterwards as a `TEAMMATE REQUEST`. The default is the owner only.
 
+   **The chief** — only when the user asks for it: `--chief` makes this
+   watcher answer for every Claude Code session on the machine. The voice is
+   briefed on them all from Roost (each session's notes, most urgent first,
+   rebuilt every 20 s with no model), the owner's own calls come here
+   whichever session polled last, and each request is routed: one message to
+   the session whose work it is, by its Roost `agentName`, never a message
+   to ask for status. Add `--team-repos <owner/name,…>` for the team's
+   repositories: a teammate's call hears only the sessions working in those,
+   and never learns the others exist. When a tick re-arms the watcher, it
+   keeps the flags it was armed with.
+
    It polls every few seconds in this process, no model, registering a
    heartbeat so the Worker knows this terminal is live. While one of your own
    calls is live it stays up and answers it (see above). It **blocks until one

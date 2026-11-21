@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import * as config from "./config.js";
 import { fetchRetry, gateHook, PREP_RULES, runFork, serveLiveCall, type Asker, type ForkResult } from "./live.js";
 import { Brief, contextTokens } from "./brief.js";
+import { ChiefBrief } from "./chief.js";
 import { answerChat, threadKey, type ChatMessage } from "./chat.js";
 import { inRoom, levelsOf, loadPolicies, permissionsFor, permissionsText, type Caller, type Gate, type Loaded, type Resolved } from "./permissions.js";
 
@@ -859,9 +860,15 @@ async function watch(args: string[]): Promise<void> {
   const briefFor = (argFlag(args, "--brief-for") || "owner").toLowerCase();
   if (!/^(owner|team|[^,\s]+@[^,\s]+(,[^,\s]+@[^,\s]+)*)$/.test(briefFor))
     die("--brief-for takes owner, team, or a comma-separated list of teammates' emails");
-  const brief = live && !args.includes("--no-brief")
-    ? new Brief({ sessionId, cwd: process.cwd(), name, model: !args.includes("--no-brief-model") })
-    : null;
+  // `--chief`: this watcher answers for every session on the machine, with
+  // a brief of them all from Roost (chief.ts), and routes requests to them.
+  const chief = live && args.includes("--chief");
+  const teamRepos = (argFlag(args, "--team-repos") ?? "").split(",").map((r) => r.trim()).filter(Boolean);
+  const chiefBrief = chief ? new ChiefBrief({ teamRepos, selfSession: sessionId }) : null;
+  const brief: { refresh(): void; current(): string; forTeammate(): string } | null = chiefBrief
+    ?? (live && !args.includes("--no-brief")
+      ? new Brief({ sessionId, cwd: process.cwd(), name, model: !args.includes("--no-brief-model") })
+      : null);
   brief?.refresh();
   const liveCalls = new Map<string, Promise<ForkResult[]>>();
   const serving = new Set<string>();
@@ -962,6 +969,8 @@ async function watch(args: string[]): Promise<void> {
     `${cfg.apiUrl}/watch/next?watcher=${watcherId}&started=${startedAt}` +
     // `meet=1`: this watcher gates a meeting's requests by who asked them.
     `&repo=${encodeURIComponent(repo)}${live ? "&live=1&meet=1" : ""}${liveOnly ? "&queue=0" : ""}` +
+    // The owner's own calls come to the chief, whichever session polled last.
+    (chief ? "&chief=1" : "") +
     (sessionHash() ? `&session=${sessionHash()}` : "") +
     (name ? `&name=${encodeURIComponent(name)}` : "") +
     // The face a meeting this session sends the bot to shows (`--photo`).
@@ -1052,13 +1061,15 @@ async function watch(args: string[]): Promise<void> {
           // A meeting may hold people outside the team: the voice gets the
           // brief a teammate would hear, never the owner's own.
           brief: before ? undefined : teammate || meeting ? brief?.forTeammate() : brief?.current(),
-          // A prepared meeting's voice already has its brief.
-          forkBrief: !before && !!brief && !(meeting && next.livePrepared),
+          // A prepared meeting's voice already has its brief. The chief's
+          // brief is of every session; this one's own adds nothing.
+          forkBrief: !before && !!brief && !chief && !(meeting && next.livePrepared),
           forkRequests,
           teammate,
           mode: next.liveMode,
           gate: perms.gate,
-          permissions: permsNote,
+          // On the owner's own call the chief routes each request (chief.ts).
+          permissions: [permsNote, chiefBrief && !teammate && !meeting ? chiefBrief.routing() : ""].filter(Boolean).join("\n\n") || undefined,
           ...(meeting ? { askerRules: (a: Asker) => askerRules(a, room.trust), meeting: room } : {}),
         })
           .catch(() => [] as ForkResult[])
@@ -1844,6 +1855,13 @@ ${c.bold("Watch options")}
                        team, or teammates' emails, comma-separated. They
                        hear where things stand; their requests are not run
                        during the call
+  --chief              answer for every Claude Code session on this machine:
+                       the voice is briefed on them all from Roost, your own
+                       calls come here, and requests are routed to the
+                       session whose work they are
+  --team-repos <repos> with --chief: owner/name of the team's repositories,
+                       comma-separated. Teammates hear only the sessions
+                       working in these; without it, none
   --no-fork            run live requests in a fresh claude -p, not a fork of
                        the Claude Code session this was started from
   --name <name>        what the voice calls itself, e.g. the name this session

@@ -864,9 +864,18 @@ async function ringInXml(
   // a conversation in which their Claude Code session answers during the
   // call. Everyone else keeps the quiet ring-in, so an old CLI changes
   // nothing.
+  // The chief (`watch --chief`) answers the owner's own calls, whichever of
+  // their watchers polled last; it routes to the others (session 21).
+  const chief = env.OPENAI_LIVE_API_KEY && !test ? await db.stashGet(env, `livechief:${user.id}`) : null;
   const watcher = env.OPENAI_LIVE_API_KEY
-    ? await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`)
+    ? chief ?? (await db.stashGet(env, testRepo ? `livewatch:${user.id}:${testRepo}` : `livewatch:${user.id}`))
     : null;
+  // Claimed for the chief's session now, so no other watcher of theirs
+  // takes the call's requests.
+  if (chief) {
+    const home = (JSON.parse(chief) as { session?: string }).session;
+    if (home) await db.claimHome(env, callId, home);
+  }
   // No watcher of their own: a teammate's session may share its brief.
   const shared = env.OPENAI_LIVE_API_KEY && !watcher && !test ? await levels.sharedWatcher(env, org.id, { id: user.id, email: user.email, phone: user.phone ?? undefined, level: db.levelOf(user, org) }) : null;
   const owner = shared ? await db.userById(env, shared.userId) : null;
@@ -1148,6 +1157,8 @@ async function watchNext(req: Request, env: Env): Promise<Response> {
     const photo = (url.searchParams.get("photo") ?? "").trim();
     const me = JSON.stringify({ watcherId, repo, name, ...(/^https:\/\/[^\s"'<>]{4,500}$/.test(photo) ? { photo } : {}) });
     await db.stashPut(env, `livewatch:${user.id}`, me, 45);
+    if (url.searchParams.get("chief") === "1")
+      await db.stashPut(env, `livechief:${user.id}`, JSON.stringify({ ...JSON.parse(me), session }), 45);
     // Who else may hear this session's brief when they ring in: nobody
     // unless the owner says so (`--brief-for team`, or a list of emails).
     const share = (url.searchParams.get("share") ?? "").trim().toLowerCase();
