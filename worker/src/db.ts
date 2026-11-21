@@ -664,6 +664,13 @@ export async function putCall(env: Env, id: string, r: CallRecord): Promise<void
   ).run();
 }
 
+/** Only the transcript, for the Realtime recorder writing as lines land. A
+ *  whole-row put from there could undo a status the end-of-call webhook wrote
+ *  between its read and its write. */
+export async function setCallTranscript(env: Env, id: string, lines: TranscriptLine[]): Promise<void> {
+  await env.DB.prepare("UPDATE calls SET transcript = ? WHERE id = ?").bind(JSON.stringify(lines), id).run();
+}
+
 export async function getCall(env: Env, id: string): Promise<CallRecord | null> {
   const row = await env.DB.prepare("SELECT * FROM calls WHERE id = ? AND expires_at > ?")
     .bind(id, Date.now()).first<Record<string, unknown>>();

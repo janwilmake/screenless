@@ -17,8 +17,9 @@
  *     question. We turn off auto-responses and trigger one ourselves only when a
  *     caller turn reads as a direct question.
  *
- * Transcript is persisted incrementally, on every finished line, so a Durable
- * Object that is evicted mid-call still leaves a complete record behind.
+ * Transcript is persisted incrementally, on every finished line, and an alarm
+ * reattaches the socket whenever it drops while the call is live, so neither
+ * a closed socket nor an evicted object ends the record before the call does.
  */
 
 import type { Env } from "./index";
@@ -35,6 +36,12 @@ interface StartBody {
 }
 
 type Line = { role: "user" | "assistant"; text: string; at: string };
+
+/** How often the watchdog checks the socket is still attached. */
+const WATCH_EVERY_MS = 30_000;
+/** No call runs this long; past it the watchdog stops rather than ticking on
+ *  a record whose end never reached us. */
+const GIVE_UP_AFTER_MS = 3 * 60 * 60 * 1000;
 
 export class RealtimeCall {
   private ws: WebSocket | null = null;
@@ -65,33 +72,94 @@ export class RealtimeCall {
 
   async fetch(req: Request): Promise<Response> {
     const body = (await req.json()) as StartBody;
-    this.ourCallId = body.ourCallId;
-    this.mode = body.mode;
-    this.openaiCallId = body.openaiCallId;
-
-    // Outbound WebSocket from a Worker/DO: fetch with the Upgrade header, then
-    // take the socket off the response.
-    const res = await fetch(callSocketUrl(body.openaiCallId).replace(/^https?/, "https"), {
-      headers: {
-        Upgrade: "websocket",
-        Authorization: `Bearer ${this.env.OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
-    });
-    const ws = res.webSocket;
-    if (!ws) return new Response("no socket", { status: 502 });
-    ws.accept();
-    this.ws = ws;
-
-    ws.addEventListener("message", (ev) => this.onMessage(ev, body.greeting));
-    ws.addEventListener("close", () => this.finalize());
-    ws.addEventListener("error", () => this.finalize());
+    // Kept in storage so the alarm can reattach after an eviction, when every
+    // field on this instance is gone.
+    await this.state.storage.put("start", { ...body, startedAt: Date.now() });
+    this.adopt(body);
 
     // Quiet mode's "never auto-respond" is set in the accept call itself (so
     // there is no window where the model talks over a caller). Here the DO only
     // watches the transcript and, in quiet mode, triggers a reply when the
     // caller actually asks a question.
-    return new Response("ok");
+    const ok = await this.connect(body.greeting);
+    await this.state.storage.setAlarm(Date.now() + WATCH_EVERY_MS);
+    return ok ? new Response("ok") : new Response("no socket", { status: 502 });
+  }
+
+  /**
+   * The watchdog. The control socket is only our window onto the call, not
+   * the call: when it closes (or the object is evicted) the audio between
+   * Telnyx and OpenAI carries on, and a 26-minute call kept only its first 12
+   * minutes of transcript. So while the call record says the call is live, a
+   * missing socket is reattached; the call ending is what stops this.
+   */
+  async alarm(): Promise<void> {
+    const start = await this.state.storage.get<StartBody & { startedAt: number }>("start");
+    if (!start) return;
+    this.adopt(start);
+
+    const rec = await db.getCall(this.env, start.ourCallId);
+    const over = !rec || rec.status === "completed" || rec.status === "failed";
+    if (over || Date.now() - start.startedAt > GIVE_UP_AFTER_MS) {
+      await this.state.storage.deleteAll();
+      this.ws?.close(1000, "call over");
+      this.ws = null;
+      return;
+    }
+
+    if (!this.ws) {
+      // After an eviction the lines live only in D1; pick them up so the
+      // record continues rather than restarts.
+      if (!this.lines.length && rec.transcript?.length) this.lines = rec.transcript as Line[];
+      console.log("realtime socket reattaching", this.ourCallId, `${this.lines.length} lines so far`);
+      // No greeting: the call opened long ago.
+      await this.connect();
+    }
+    await this.state.storage.setAlarm(Date.now() + WATCH_EVERY_MS);
+  }
+
+  private adopt(body: StartBody): void {
+    this.ourCallId = body.ourCallId;
+    this.mode = body.mode;
+    this.openaiCallId = body.openaiCallId;
+  }
+
+  /** Attaches to the call's control socket. False when OpenAI would not open
+   *  it; the alarm tries again. */
+  private async connect(greeting?: string): Promise<boolean> {
+    // Outbound WebSocket from a Worker/DO: fetch with the Upgrade header, then
+    // take the socket off the response.
+    const res = await fetch(callSocketUrl(this.openaiCallId).replace(/^https?/, "https"), {
+      headers: {
+        Upgrade: "websocket",
+        Authorization: `Bearer ${this.env.OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    }).catch((err: Error) => {
+      console.error("realtime socket fetch failed", this.ourCallId, err.message);
+      return null;
+    });
+    const ws = res?.webSocket;
+    if (!ws) {
+      if (res) console.error("realtime socket refused", this.ourCallId, res.status, await res.text().catch(() => ""));
+      return false;
+    }
+    ws.accept();
+    this.ws = ws;
+
+    ws.addEventListener("message", (ev) => this.onMessage(ev, greeting));
+    // Why the socket went is the only clue to why a transcript stops, so it is
+    // always said. The alarm decides whether to reattach.
+    ws.addEventListener("close", (ev) => {
+      console.error("realtime socket closed", this.ourCallId, ev.code, ev.reason || "(no reason)");
+      if (this.ws === ws) this.ws = null;
+      void this.state.storage.setAlarm(Date.now() + 1000);
+    });
+    ws.addEventListener("error", () => {
+      console.error("realtime socket error", this.ourCallId);
+      if (this.ws === ws) this.ws = null;
+    });
+    return true;
   }
 
   private scheduleHangup(ms: number): void {
@@ -276,19 +344,7 @@ export class RealtimeCall {
   private async record(role: "user" | "assistant", text: string): Promise<void> {
     this.lines.push({ role, text, at: new Date().toISOString() });
     // Persist on every line: an evicted DO still leaves a full transcript.
-    const rec = await db.getCall(this.env, this.ourCallId);
-    if (!rec) return;
-    rec.transcript = this.lines.slice();
-    await db.putCall(this.env, this.ourCallId, rec);
-  }
-
-  private async finalize(): Promise<void> {
-    const rec = await db.getCall(this.env, this.ourCallId);
-    if (rec && this.lines.length) {
-      rec.transcript = this.lines.slice();
-      await db.putCall(this.env, this.ourCallId, rec);
-    }
-    this.ws = null;
+    await db.setCallTranscript(this.env, this.ourCallId, this.lines.slice());
   }
 }
 
