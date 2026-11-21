@@ -13,6 +13,14 @@ author: Jan, via Claude Code in the screenless session
 > make `screenless call` wait as long as the call actually lasts; optionally
 > record the audio or flag a gap.
 
+> btw also a new version of gpt live came out, can this be used? and can we
+> leverage the cheaper cost if we arent talking
+
+> i mean for calls, but also when in meetings. we need all of screenless to
+> use this new model and leverage the price reductino
+
+> btw do we still use openai realtime for anything? why? is this still needed?
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -45,6 +53,20 @@ so every "yes" or "skip" was followed by a dead gap.
   (cap 3 hours). It had exited mid-call at 15 minutes.
 - Not done: recording the audio, or flagging a gap in the transcript.
   Recording is a privacy and cost decision for the owner.
+
+- GPT-Live-1.1 (same $0.05/min as 1) for live ring-ins and meetings, set
+  once as `OPENAI_LIVE_MODEL`. Both paths fall back to `gpt-live-1` if the
+  new model is refused, so a refusal costs the upgrade, not the call.
+- Standby in meetings: `idle_timeout_s: 60`, `wake_policy: speech`. After a
+  minute with no transcript either way it bills $0.02/min, and speech wakes
+  it, so the bot still hears everything said (the session 20 decision). The
+  docs give that rate to WebRTC sessions only: meetings are WebRTC, phone
+  ring-ins are a WebSocket, so ring-ins have no standby. Undocumented: whether
+  a delegation's answer wakes a paused session; logged as
+  `meeting voice sent to while in standby`. If the config is refused, the
+  meeting retries without standby.
+- Realtime is still used for every outbound call and for ring-ins with no
+  watching terminal. Moving those to GPT-Live was asked about, not yet done.
 
 Open: whether OpenAI accepts a second attach to a SIP call's control socket
 after the first closed; unproven until a real call drops. Whether "medium" brings back the echo self-cancel on speakerphone
