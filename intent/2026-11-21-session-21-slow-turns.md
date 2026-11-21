@@ -233,7 +233,30 @@ there, its `prep-meeting` plugs into screenless prep when present.
 - Two ring-backs two seconds apart (1891f412, a7de6b69); the second voice
   spoke to nobody. Not investigated.
 
-Open: OpenAI's answer on EU residency and inbound SIP; the agenda default; whether SIP
+> look at my agenda. to test this first, what do you suggest? lets make it work
+
+> yes create it, 5 minutes from now
+
+> remove the meeting, ill fix recall first
+
+- Agenda joining built (`screenless agenda`, `~/.screenless/meetings.md`:
+  join invited, bot cody@hyre.io, team hyre.io, name Cody). A dry run on
+  the real week picked exactly the two Dev standups Cody is invited to.
+  The live test failed on Recall: the Worker's RECALL_API_KEY is inactive.
+  The test event was deleted at Jan's request; he renews the key. The
+  hourly tick also found the Google Calendar connector's session expired.
+- A second chief call (131a273d, walking): it named what is most urgent,
+  sent the merge go for 3346 to the ATS PR session, asked the Search X
+  session about Cody and the new tickets, and the Farrow session to look up
+  the model and limit and draft the reply to Tom. Jan, when it investigated
+  instead of asking: "No, dude, what the fuck. Just ask the Search X
+  session". Rules changed: when the notes cannot answer, ask that session;
+  sessions answer through their Roost notes, not by message (the sender is
+  a one-off run that has ended); what was settled in the call wins over
+  notes that lag.
+
+Open: OpenAI's answer on EU residency and inbound SIP; a new Recall key and
+the agenda test in a real meeting; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
