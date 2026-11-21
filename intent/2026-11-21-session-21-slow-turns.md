@@ -39,6 +39,10 @@ author: Jan, via Claude Code in the screenless session
 
 > it can be max 600 chars so i couldnt send it. pls rewrite the note
 
+> i guess #2 has to wait for this?
+
+> ok build the outbound prototype and test it; if its better, keep it
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -141,7 +145,19 @@ so every "yes" or "skip" was followed by a dead gap.
   accepts it with the key and keeps a sideband for transcript and handoffs,
   and the audio skips the relay. The chief idea waits until both are done.
 
-Open: OpenAI's answer on EU residency and SIP; whether SIP
+- Outbound calls over SIP, kept: GPT-Live dials the user itself through a
+  new Telnyx credentials connection (`screenless-openai-sip`, SRTP,
+  Amsterdam, the Default outbound profile), created through the API by
+  `/admin/sip-trunk`; its SIP password is derived from SESSION_SECRET and
+  never typed or shown. The Worker keeps only the sideband. Measured on the
+  answering phone, same script: relay 1.46 to 1.69 s from question to
+  answer (median 1.65), SIP 0.69 to 1.02 s (median 0.87). `LIVE_OUTBOUND`
+  is "sip"; a failed SIP dial falls back to the relay, and briefs that need
+  voicemail detection stay on the relay. Inbound still waits for OpenAI.
+- Jan sent a login verification code in chat for the Telnyx portal; not
+  entered (one-time codes are his), and the portal was not needed.
+
+Open: OpenAI's answer on EU residency and inbound SIP; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
