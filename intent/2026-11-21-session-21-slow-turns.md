@@ -219,6 +219,20 @@ who attends), read hourly through the Calendar connector by the chief's
 heartbeat. remo is the identity and the mind; remo-template's `sweep` stays
 there, its `prep-meeting` plugs into screenless prep when present.
 
+> [screenshot] check this, it didnt automatically start work in the searchx
+> session unfortunately :(
+
+- The chief's two messages to "Watch: Search X" were held, not delivered:
+  Claude Code holds a message between sessions of different permission
+  modes, and Roost starts sessions in bypass while the request run was in
+  the default mode. The owner's own (full) calls now run their requests in
+  bypassPermissions; the screenless gate still decides every tool (a deny
+  hook was tested to hold in bypass). A bypass run's message to this
+  session arrived unheld. Not chosen: crossSessionInbound "accept", which
+  would loosen the check for every session.
+- Two ring-backs two seconds apart (1891f412, a7de6b69); the second voice
+  spoke to nobody. Not investigated.
+
 Open: OpenAI's answer on EU residency and inbound SIP; the agenda default; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
