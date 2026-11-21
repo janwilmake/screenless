@@ -26,6 +26,14 @@ author: Jan, via Claude Code in the screenless session
 > explain the full screenless repo and archietecture as of right now in 1
 > artifact
 
+> how can we make the reply speed faster?
+
+> try it all and measure. goal is to just make the full exp better . tell me
+> if you need me for any of the steps
+
+> btw are we able to leverage the new pricing discount for inactive
+> live-voice-sessions of 1.1? in meetings as well as calls?
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -96,5 +104,33 @@ so every "yes" or "skip" was followed by a dead gap.
   Interruption felt good. Many short `live barge-in` (by loud) while the
   voice spoke: likely its own echo clearing ~20–200 ms of queued audio.
 
-Open: the remaining reply latency; the echo barge-ins. Whether GPT-Live keeps quiet on an unwatched ring-in the way
+- Measured with the scripted test caller (`worker/scripts/bench-ring.sh`,
+  new `TEST_RING_SECRET`), five questions per call, unwatched path:
+  - What the caller hears (dual-channel recording of the test leg): 1.5 to
+    2.3 s from the end of a question to the answer, median ~1.9 s.
+  - At the relay: ~1.35 s from the caller's last sound to the voice's first
+    audio. Round trip from the relay (AMS) to api.openai.com 140 to 190 ms,
+    to eu.api.openai.com 30 to 50 ms. So roughly: GPT-Live ~1.2 s, US network
+    ~0.15 s, the Telnyx phone path ~0.55 s.
+  - No change from: 16 kHz audio straight through instead of resampling to
+    24 kHz (kept 24 kHz, `LIVE_AUDIO_RATE`); 12,000 characters of brief in the
+    instructions (only the session start, +0.3 s); minimal "answer at once"
+    instructions.
+- Fixed: the end of the caller's question is transcribed ~0.5 s after the
+  voice starts answering, and was taken for an interruption, clearing the
+  start of the answer on every turn. A word barge-in now counts only for
+  speech that began after the voice did. The loud barge-ins were the
+  caller's own question clearing queued silence, not echo, as first thought.
+- Per-turn timing is now logged on every call (`live turn`: replyMs,
+  fromHeardEndMs, transcriptMs) with the US/EU round trip (`live rtt`).
+- Standby on a phone call: OpenAI refuses it over a WebSocket,
+  "idle_timeout_s requires a standard WebRTC session with wake policy
+  support". Meetings (WebRTC) keep it; not yet seen in a real meeting.
+- Asked of the Roost session, from Wijnand: screenless as the chief across
+  all sessions on this Mac, with a brief ready before a call. To plan with
+  him before building.
+
+Open: the EU region (OpenAI sales, a new project) for ~0.15 s; whether SIP
+straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
+working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
