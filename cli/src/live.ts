@@ -390,6 +390,13 @@ export function runFork(
     [o.rules ?? phoneRules(o.mode), o.permissions].filter(Boolean).join("\n\n"),
     "--settings",
     JSON.stringify(settings),
+    // The owner's own call runs in bypass mode, like the sessions Roost
+    // starts. Claude Code holds a message between sessions of different
+    // permission modes, so the chief's ask to "Watch: Search X" on 21 Nov
+    // sat unread until Jan approved it by hand. Nothing more is allowed by
+    // it: the gate in `settings` still decides every tool, in this mode too
+    // (tested: a PreToolUse deny holds under bypassPermissions).
+    ...(o.mode === "full" ? ["--permission-mode", "bypassPermissions"] : []),
     ...(o.continueSession
       ? ["--resume", o.continueSession]
       : o.sessionId
