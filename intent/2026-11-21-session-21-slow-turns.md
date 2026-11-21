@@ -197,8 +197,29 @@ so every "yes" or "skip" was followed by a dead gap.
   - Teammates' requests are not routed during a call in this first version:
     they hear the team brief, and their asks reach the chief after the call.
 
-Open: OpenAI's answer on EU residency and inbound SIP; the chief on a real
-call; whether SIP
+- The chief on its first real call (1891f412, Dutch): it named the most
+  urgent of 42 sessions, answered from the notes, and on Jan's yes sent the
+  Search X session two messages (check HubSpot after the key rotation; test
+  with the MCP CLI from a Search X production account, test records only).
+  Each request ran fresh (this session holds 510k tokens): 12 to 17 s and
+  $0.34 to $0.40 each.
+
+> how do we make sure screenless also tries to join meetings it sees in my
+> agenda as a chief? that should be configurable too. what would it take?
+> chimein is already part of this repo, correct? it should join meetings,
+> prepared/briefed to the context of the meeting. i think we made smth for
+> this, possibly in work/remo. pls figure out how we could make this part of
+> screenless, maybe, or yeah what the boundary should be between remo and
+> screenless, also...
+
+Proposed, not built: screenless is the line (calls, WhatsApp, meetings, the
+chief); joining from the agenda becomes the chief's, configured in
+`~/.screenless/meetings.md` (join off|invited|accepted|all, skips, trust by
+who attends), read hourly through the Calendar connector by the chief's
+heartbeat. remo is the identity and the mind; remo-template's `sweep` stays
+there, its `prep-meeting` plugs into screenless prep when present.
+
+Open: OpenAI's answer on EU residency and inbound SIP; the agenda default; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
