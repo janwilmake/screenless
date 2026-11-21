@@ -1367,6 +1367,18 @@ interface CallStatus {
   transcript?: Array<{ role: string; text: string; at?: string }>;
 }
 
+/**
+ * How long to keep waiting on a call. A call nobody answers is given up on
+ * after 15 minutes; one that is answered is waited out, because a planning
+ * interview can run past half an hour and giving up mid-call loses the
+ * transcript the caller was waiting for. The cap only stops a call whose end
+ * never reached the Worker.
+ */
+function stillWaiting(status: string, since: number, unansweredMs = 15 * 60 * 1000): boolean {
+  const limit = status === "answered" ? 3 * 60 * 60 * 1000 : unansweredMs;
+  return Date.now() - since < limit;
+}
+
 async function call(args: string[]): Promise<void> {
   const cfg = await config.load();
   if (!cfg) die("not set up yet — run `screenless setup`");
@@ -1406,15 +1418,20 @@ async function call(args: string[]): Promise<void> {
     // Block until every dispatched call ends — the whole point of `call` is
     // that it returns the transcript. Each is polled to completion; a slow
     // pickup just means a longer wait, capped so the command always returns.
-    const deadline = Date.now() + 20 * 60 * 1000;
+    const since = Date.now();
     const pending = new Map(res.placed.map((p) => [p.callId, p.name]));
     const done: Array<{ name: string; result: CallStatus }> = [];
+    let anyLive = true;
 
-    while (pending.size && Date.now() < deadline) {
+    while (pending.size && anyLive) {
       await sleep(3000);
+      anyLive = false;
       for (const [callId, name] of [...pending]) {
         const status = await api<CallStatus>(cfg.apiUrl, `/calls/${callId}`, { token: cfg.token });
-        if (!status.done) continue;
+        if (!status.done) {
+          if (stillWaiting(status.status, since)) anyLive = true;
+          continue;
+        }
         pending.delete(callId);
         done.push({ name, result: status });
         if (!asJson) {
@@ -1428,7 +1445,7 @@ async function call(args: string[]): Promise<void> {
       console.log(JSON.stringify({ ...res, transcripts: done }, null, 2));
       return;
     }
-    if (pending.size) console.log(c.dim(`\n  ${pending.size} still ringing after 20 min — read later with screenless transcript`));
+    if (pending.size) console.log(c.dim(`\n  ${pending.size} still unanswered after 15 min — read later with screenless transcript`));
     return;
   }
 
@@ -1486,11 +1503,12 @@ async function call(args: string[]): Promise<void> {
 
   // Poll rather than hold a socket open: the Worker learns the call ended from
   // Telnyx's status webhook, so all we do here is wait for it to say so.
-  const deadline = Date.now() + 15 * 60 * 1000;
+  const since = Date.now();
   let last = "";
+  let lastStatus = "";
   let result: CallStatus | undefined;
 
-  while (Date.now() < deadline) {
+  for (;;) {
     const status = await api<CallStatus>(cfg.apiUrl, `/calls/${callId}`, { token: cfg.token });
     if (!asJson && status.status !== last) {
       last = status.status;
@@ -1500,10 +1518,12 @@ async function call(args: string[]): Promise<void> {
       result = status;
       break;
     }
+    lastStatus = status.status;
+    if (!stillWaiting(status.status, since)) break;
     await sleep(2000);
   }
 
-  if (!result) die("timed out after 15 minutes waiting for the call to finish");
+  if (!result) die(lastStatus === "answered" ? "gave up after 3 hours on a call that never ended" : "not answered after 15 minutes");
 
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
@@ -1556,7 +1576,7 @@ async function transcript(args: string[]): Promise<void> {
   // The loop typically wakes while the call is still in progress, so waiting
   // is the common case rather than the exception.
   const wait = args.includes("--wait");
-  const deadline = Date.now() + 30 * 60 * 1000;
+  const since = Date.now();
 
   for (;;) {
     const result = await api<CallStatus>(cfg.apiUrl, "/calls/latest", { token: cfg.token });
@@ -1577,7 +1597,7 @@ async function transcript(args: string[]): Promise<void> {
       printTranscript(result.transcript ?? []);
       return;
     }
-    if (Date.now() > deadline) die("gave up waiting for the call to finish");
+    if (!stillWaiting(result.status, since, 30 * 60 * 1000)) die("gave up waiting for the call to finish");
     await sleep(5000);
   }
 }
