@@ -21,6 +21,11 @@ author: Jan, via Claude Code in the screenless session
 
 > btw do we still use openai realtime for anything? why? is this still needed?
 
+> yes, lets get rid of realtime and move it all to gpt live 1.1
+
+> explain the full screenless repo and archietecture as of right now in 1
+> artifact
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -65,9 +70,23 @@ so every "yes" or "skip" was followed by a dead gap.
   a delegation's answer wakes a paused session; logged as
   `meeting voice sent to while in standby`. If the config is refused, the
   meeting retries without standby.
-- Realtime is still used for every outbound call and for ring-ins with no
-  watching terminal. Moving those to GPT-Live was asked about, not yet done.
+- Realtime is gone. Outbound calls (`screenless call`, parked briefs, `--to`)
+  and ring-ins with no watching terminal now run on GPT-Live through the same
+  Telnyx media stream and LiveCall object as live ring-ins, marked
+  `unwatched`: nothing is handed off, and a handoff the voice makes anyway
+  is answered at once with "noted for after the call". A brief opens with an
+  instruction (open the way the brief says), not fixed words; an unwatched
+  ring-in waits silently for the caller. The leg's sids reach the config when
+  it answers (`/texml/brief/:id`), which also marks the call answered.
+- Deleted: the SIP bridge, the `realtime.call.incoming` webhook, RealtimeCall
+  (migration v4) and its watchdog from earlier today, the eagerness setting,
+  and `OPENAI_PROJECT_ID`, `OPENAI_SIP_HOST`, `OPENAI_REALTIME_MODEL`,
+  `OPENAI_WEBHOOK_SECRET`. `OPENAI_API_KEY` now only transcribes WhatsApp
+  voice notes. Every call needs `OPENAI_LIVE_API_KEY`.
+- LiveCall's transcript writes now touch only the transcript column, as the
+  Realtime recorder's did.
+- The architecture page: https://claude.ai/artifact/KuuikeAh2XuxuAsUbFRGAW
 
-Open: whether OpenAI accepts a second attach to a SIP call's control socket
-after the first closed; unproven until a real call drops. Whether "medium" brings back the echo self-cancel on speakerphone
-(`realtime response ended … turn_detected` in `wrangler tail`).
+Open: no outbound call has run on GPT-Live yet; `screenless test` is the
+first check. Whether GPT-Live keeps quiet on an unwatched ring-in the way
+Realtime's no-auto-response mode forced it to.
