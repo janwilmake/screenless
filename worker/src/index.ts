@@ -1,5 +1,4 @@
 import * as telnyx from "./telnyx";
-import * as openai from "./openai";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
 import * as db from "./db";
@@ -24,11 +23,8 @@ export interface Env {
   /** The landing page, served from site/public by the assets binding. */
   ASSETS: Fetcher;
 
-  /** Per-call OpenAI Realtime session, keyed `realtime:<callId>`, so the
-   *  incoming-call webhook can find the brief for a leg Telnyx bridged. */
-  REALTIME: DurableObjectNamespace;
-  /** Per-call GPT-Live session for a ring-in a watcher can answer live,
-   *  keyed by our call id: the sideband plus the handoffs to the terminal. */
+  /** Per-call GPT-Live session for every phone call, keyed by our call id:
+   *  the audio relay, plus the handoffs to the terminal when one watches. */
   LIVE: DurableObjectNamespace;
   /** Per-meeting GPT-Live voice in a Recall.ai bot, keyed by our call id
    *  (meeting.ts): the meeting's sockets plus the handoffs to the terminal. */
@@ -39,15 +35,13 @@ export interface Env {
   TELNYX_VERIFY_PROFILE_ID: string;
   SESSION_SECRET: string;
   ADMIN_SECRET: string;
-  /** Runs the conversation and the voice on outbound briefs and ring-ins. */
+  /** Transcribes WhatsApp voice notes. */
   OPENAI_API_KEY: string;
-  /** Verifies the `realtime.call.incoming` webhook (Standard Webhooks). */
-  OPENAI_WEBHOOK_SECRET: string;
   /** Optional. Guards /admin/test-ring, the scripted caller used to test the
    *  line end to end without a person on the phone. Unset disables it. */
   TEST_RING_SECRET: string;
-  /** Runs GPT-Live for live ring-ins. A key of a project with gpt-live-1
-   *  access; while unset, every ring-in is the quiet recording. */
+  /** Runs GPT-Live: every phone call and every meeting. A key of a project
+   *  with GPT-Live access; while unset the line places and takes no calls. */
   OPENAI_LIVE_API_KEY: string;
   /** Runs the meeting bot (recall.ts). While unset, `screenless meet` is off. */
   RECALL_API_KEY: string;
@@ -87,18 +81,11 @@ export interface Env {
   /** What a fresh org starts with, in cents. The free plan. */
   FREE_CREDIT_CENTS: string;
 
-  // vars — OpenAI Realtime: the conversation and the voice. Telnyx still does
-  // the telephony and bridges the answered leg here over SIP.
-  /** Project id in the SIP address `sip:<id>@<host>`. Non-secret. */
-  OPENAI_PROJECT_ID: string;
-  /** SIP host. Must match the project's region (US unless the project has EU
-   *  data residency, which is gated). */
-  OPENAI_SIP_HOST: string;
-  /** The Realtime model, e.g. "gpt-realtime-2.1". */
-  OPENAI_REALTIME_MODEL: string;
-  /** The GPT-Live model for live ring-ins and meetings, e.g. "gpt-live-1.1". */
+  // vars — GPT-Live: the conversation and the voice. Telnyx does the
+  // telephony and streams the audio to the LiveCall Durable Object.
+  /** The GPT-Live model for calls and meetings, e.g. "gpt-live-1.1". */
   OPENAI_LIVE_MODEL: string;
-  /** The Realtime voice, e.g. "marin". */
+  /** The voice, e.g. "cedar". */
   OPENAI_VOICE: string;
   /** The id Meta gave the line's number for WhatsApp (Telnyx shows it as the
    *  Phone Number ID). Unset, no call is taken as WhatsApp. */
@@ -110,7 +97,6 @@ export interface Env {
   TEST_RING_AS: string;
 }
 
-export { RealtimeCall } from "./realtime";
 export { LiveCall } from "./live";
 export { MeetingCall } from "./meeting";
 import { noticeText, type MeetingConfig } from "./meeting";
@@ -372,7 +358,7 @@ and that agent carries out every decision. If asked whether something is done,
 say plainly that their agent will apply it after the call.`;
 
 /**
- * What an inbound ring-in is told when OpenAI Realtime answers it.
+ * What a ring-in is told when no terminal is watching to take it live.
  *
  * The caller is almost always dropping a request for their team's agent, not
  * looking for a chat — so the assistant stays silent and only speaks if it is
@@ -390,6 +376,8 @@ If the caller says goodbye, or asks you to hang up, say a short goodbye: the lin
 Go back to silent listening only when the caller signals they are finished with you — "that's all", "we're done", "just listen from here" — and then simply stop talking and let them keep recording their note.
 
 The caller may be on speakerphone, so you will sometimes hear your own voice echoed back. Never treat your own words as something the caller said, and never answer them. If the caller genuinely interrupts you, stop immediately and listen — that is always welcome.
+
+Nobody's terminal is connected to this call, so nothing can be looked up or done while it lasts. If the caller asks for that, say in one short line that it is noted for their session after the call.
 
 Speak the caller's language. You have no tools and take no action of any kind — you cannot merge, comment, deploy, or change anything. Everything said on this call is transcribed and handed to the caller's own machine afterwards, which does the work. Never say or imply that you have done, or will do, anything.`;
 
@@ -448,26 +436,13 @@ ${o.run
 - The caller may be outside or on speakerphone. Ignore your own voice echoed back. If they interrupt, stop and listen.
 - When the caller says goodbye, or asks you to hang up, say a short goodbye: the line hangs up by itself right after it. Never say goodbye otherwise. Everything said is handed to ${o.owner}'s session after the call.`;
 
-/** The `<Dial><Sip>` TeXML that bridges a leg to OpenAI Realtime, stamped with
- *  the correlation header the webhook reads to find this call's brief. Shared by
- *  the outbound bridge route and the inbound answer. */
-const openaiBridgeXml = (env: Env, callId: string): string =>
-  // The single ring a caller hears right after picking up is the SIP leg's
-  // ringback reaching them before OpenAI answers. Two attempts to suppress it
-  // failed and are recorded so they are not retried: answerOnBridge="false"
-  // killed the media path outright, and a leading <Pause> changed nothing.
-  // Left as is — it is cosmetic, and the fixes cost working audio.
-  `<?xml version="1.0" encoding="UTF-8"?><Response><Dial answerOnBridge="true"><Sip>${openai.sipUri(
-    env.OPENAI_PROJECT_ID,
-    env.OPENAI_SIP_HOST || "sip-eu.api.openai.com",
-  )}?X-Screenless-Call=${callId}</Sip></Dial></Response>`;
-
 /**
- * The OpenAI-Realtime twin of startCall: Telnyx still dials the user, but the
- * answered leg is bridged over SIP to OpenAI Realtime, which runs the
- * conversation and the voice. The brief is parked in the stash for the
- * incoming-call webhook to read, and the transcript is captured live by the
- * per-call Durable Object.
+ * Places an outbound call: Telnyx dials the user, and the answered leg
+ * streams its audio to the call's LiveCall Durable Object, which runs it on
+ * GPT-Live like every other call (live.ts). Nobody's terminal serves it, so
+ * the voice only collects; the loop applies the transcript afterwards. The
+ * config is parked in the stash and completed with the leg's sids when it
+ * answers (`/texml/brief`), which the voice needs to hang up after goodbye.
  *
  * Shared by the CLI's blocking `screenless call` and by the cron that places
  * parked briefs, so a scheduled call and an on-demand one are the same call.
@@ -488,22 +463,26 @@ async function startCall(
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   if (!env.TELNYX_TEXML_APP_ID)
     return { ok: false, status: 503, error: "TELNYX_TEXML_APP_ID not set" };
+  if (!env.OPENAI_LIVE_API_KEY)
+    return { ok: false, status: 503, error: "OPENAI_LIVE_API_KEY not set" };
 
   const callId = crypto.randomUUID();
   const wToken = await webhookToken(callId, env.SESSION_SECRET);
 
-  await db.stashPut(
-    env,
-    `realtime:${callId}`,
-    JSON.stringify({
-      instructions: instructionsFor(prompt),
-      mode: "lead",
-      greeting:
-        "Open the call: greet them warmly, say you are their screenless assistant with a couple of things to run past them, then begin with the first item.",
-      voice: env.OPENAI_VOICE,
-    }),
-    3600,
-  );
+  const cfg: LiveConfig = {
+    engine: "live",
+    userId: opts.userId ?? "",
+    mode: "restricted",
+    unwatched: true,
+    instructions: instructionsFor(prompt),
+    greeting: "",
+    opening:
+      "If the brief above says how to open, open that way. Otherwise greet them warmly, say you are their screenless assistant with a couple of things to run past them, and begin with the first item.",
+    voice: env.OPENAI_VOICE,
+    accountSid: "",
+    callSid: "",
+  };
+  await db.stashPut(env, `voice:${callId}`, JSON.stringify(cfg), 7200);
 
   const record: CallRecord = {
     phone,
@@ -522,7 +501,7 @@ async function startCall(
     await telnyx.initiateTexmlCall(env.TELNYX_API_KEY, env.TELNYX_TEXML_APP_ID, {
       from: env.TELNYX_FROM_NUMBER,
       to: phone,
-      url: `${origin}/texml/openai-bridge/${callId}?t=${wToken}`,
+      url: `${origin}/texml/brief/${callId}?t=${wToken}`,
       statusCallback: `${origin}/webhooks/${callId}/status?t=${wToken}`,
       // Answering-machine detection only where nobody is holding the phone:
       // a parked brief placed by cron, which must not be read into a voicemail
@@ -535,7 +514,7 @@ async function startCall(
         : undefined,
     });
   } catch (err) {
-    await db.stashDelete(env, `realtime:${callId}`).catch(() => {});
+    await db.stashDelete(env, `voice:${callId}`).catch(() => {});
     await db.deleteCall(env, callId);
     return { ok: false, status: 502, error: `failed to place call: ${(err as Error).message}` };
   }
@@ -563,7 +542,7 @@ async function placeCall(req: Request, env: Env, origin: string): Promise<Respon
   // pasted diff, not against a real brief.
   if (prompt.length > 12000) return fail(400, "prompt too long (max 12000 chars)");
 
-  // The voice follows whatever language the caller speaks — the Realtime model
+  // The voice follows whatever language the caller speaks — the model
   // switches on its own, so there is nothing to configure or pass down.
 
   /* ---- calling teammates: any, some, or all ---- */
@@ -816,8 +795,8 @@ async function answerRingBack(req: Request, env: Env, callId: string): Promise<R
 /**
  * What a member hears once the line has them: GPT-Live, when their own
  * terminal watches with live handoffs (or a teammate's session shares its
- * brief with them), else the quiet OpenAI Realtime ear that takes their
- * request for the queue. Shared by the ring-back, WhatsApp and the test ring.
+ * brief with them), else the same voice with no terminal behind it, quietly
+ * taking their request for the queue. Shared by the ring-back, WhatsApp and the test ring.
  */
 async function ringInXml(
   env: Env,
@@ -884,20 +863,26 @@ async function ringInXml(
           }
         : {}),
     };
-    await db.stashPut(env, `realtime:${callId}`, JSON.stringify(cfg), 7200);
+    await db.stashPut(env, `voice:${callId}`, JSON.stringify(cfg), 7200);
     return xml(await liveStreamXml(env, callId));
   }
-  // OpenAI Realtime answers and bridges over SIP. It stays quiet — the caller
-  // is most likely leaving a request, not looking for a chat — and speaks
-  // only if asked, becoming a normal conversation once they do. The
-  // transcript is captured live by the per-call Durable Object.
-  await db.stashPut(
-    env,
-    `realtime:${callId}`,
-    JSON.stringify({ instructions: INBOUND_QUIET_INSTRUCTIONS, mode: "quiet", voice: env.OPENAI_VOICE }),
-    3600,
-  );
-  return new Response(openaiBridgeXml(env, callId), { headers: { "Content-Type": "application/xml" } });
+  if (!env.OPENAI_LIVE_API_KEY) return sayHangup("This line is not taking calls right now. Goodbye.");
+  // No terminal watching: the same GPT-Live relay, serving nobody. It stays
+  // quiet (the caller is most likely leaving a request, not looking for a
+  // chat) and talks only once asked; the transcript goes to the queue.
+  const quiet: LiveConfig = {
+    engine: "live",
+    userId: user.id,
+    mode: o.mode,
+    unwatched: true,
+    instructions: INBOUND_QUIET_INSTRUCTIONS,
+    greeting: "",
+    voice: env.OPENAI_VOICE,
+    accountSid: o.params.AccountSid ?? "",
+    callSid: o.params.CallSid ?? "",
+  };
+  await db.stashPut(env, `voice:${callId}`, JSON.stringify(quiet), 7200);
+  return xml(await liveStreamXml(env, callId));
 }
 
 /** The TeXML that streams a live call's audio both ways to the LiveCall
@@ -961,90 +946,27 @@ async function inboundStatus(req: Request, env: Env): Promise<Response> {
 }
 
 /**
- * The OpenAI Realtime call-lifecycle webhook.
- *
- * Fires when a leg Telnyx bridged over SIP reaches OpenAI. We verify it,
- * correlate it to our own call via the X-Screenless-Call SIP header, accept it
- * with the session config we parked when the call was placed, and hand a
- * Durable Object the control socket so the transcript is captured live.
- * Rejecting is the safe default: no correlation, or no parked config, means we
- * do not know whose call this is and must not run it.
+ * An outbound call's leg answered. Its parked config gets the leg's sids,
+ * which the voice needs to hang up after goodbye, and the record is marked
+ * answered before the status callback says so, so nothing waiting on the
+ * call gives up on it as unanswered.
  */
-async function openaiWebhook(req: Request, env: Env): Promise<Response> {
-  const raw = await req.text();
-  if (!env.OPENAI_WEBHOOK_SECRET) return fail(503, "openai webhook not configured");
-  if (!(await openai.verifyWebhook(env.OPENAI_WEBHOOK_SECRET, raw, req.headers)))
-    return fail(403, "bad webhook signature");
-
-  let payload: { type?: string };
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return json({ ok: true });
-  }
-  // Only the incoming-call event drives anything; acknowledge the rest.
-  if (payload.type !== "realtime.call.incoming") return json({ ok: true });
-
-  const incoming = openai.parseIncoming(payload);
-  if (!incoming) return json({ ok: true });
-
-  const ourCallId = openai.correlationId(incoming.sipHeaders);
-  const stashed = ourCallId ? await db.stashGet(env, `realtime:${ourCallId}`) : null;
-  if (!ourCallId || !stashed) {
-    await openai.rejectCall(env.OPENAI_API_KEY, incoming.callId);
-    console.error("openai webhook: no correlation for call", incoming.callId, ourCallId ?? "(no header)");
-    return json({ ok: true });
-  }
-  const cfg = JSON.parse(stashed) as {
-    engine?: "live";
-    instructions: string;
-    mode: "lead" | "quiet";
-    greeting?: string;
-    voice?: string;
-  };
-  // Parked for GPT-Live, which has its own project and webhook.
-  if (cfg.engine === "live") return json({ ok: true });
-
-  try {
-    await openai.acceptCall(env.OPENAI_API_KEY, incoming.callId, {
-      model: env.OPENAI_REALTIME_MODEL,
-      instructions: cfg.instructions,
-      voice: cfg.voice || env.OPENAI_VOICE,
-      quiet: cfg.mode === "quiet",
-    });
-  } catch (err) {
-    console.error("openai accept failed", ourCallId, (err as Error).message);
-    return json({ ok: true });
-  }
-
-  const rec = await loadCall(env, ourCallId);
-  if (rec) {
+async function answerBrief(req: Request, env: Env, callId: string): Promise<Response> {
+  const provided = new URL(req.url).searchParams.get("t") ?? "";
+  if (!safeEqual(provided, await webhookToken(callId, env.SESSION_SECRET))) return fail(403, "bad webhook token");
+  const raw = await db.stashGet(env, `voice:${callId}`);
+  if (!raw) return sayHangup("Sorry, this call has expired. Goodbye.");
+  const params = await inboundBody(req);
+  const cfg = JSON.parse(raw) as LiveConfig;
+  cfg.accountSid = String(params.AccountSid ?? "");
+  cfg.callSid = String(params.CallSid ?? "");
+  await db.stashPut(env, `voice:${callId}`, JSON.stringify(cfg), 7200);
+  const rec = await loadCall(env, callId);
+  if (rec && rec.status !== "completed" && rec.status !== "failed") {
     rec.status = "answered";
-    // Reuse conversationId to hold the OpenAI call id. captureTranscript is
-    // gated on assistantId (empty for an OpenAI call), so the Telnyx transcript
-    // path is never taken here — the Durable Object owns this call's transcript.
-    rec.conversationId = incoming.callId;
-    await saveCall(env, ourCallId, rec);
+    await saveCall(env, callId, rec);
   }
-
-  // Hand the live control socket to a per-call Durable Object for the
-  // transcript. Its fetch returns as soon as the socket is up; it keeps running
-  // for the call and persists each line as it lands.
-  const stub = env.REALTIME.get(env.REALTIME.idFromName(ourCallId));
-  await stub
-    .fetch("https://realtime/start", {
-      method: "POST",
-      body: JSON.stringify({
-        ourCallId,
-        openaiCallId: incoming.callId,
-        mode: cfg.mode,
-        greeting: cfg.greeting,
-      }),
-    })
-    .catch((err) => console.error("realtime DO start failed", ourCallId, (err as Error).message));
-
-  await db.stashDelete(env, `realtime:${ourCallId}`).catch(() => {});
-  return json({ ok: true });
+  return xml(await liveStreamXml(env, callId));
 }
 
 /**
@@ -1289,7 +1211,7 @@ async function liveRoute(req: Request, env: Env, callId: string, action: "next" 
   }
   const record = await loadCall(env, callId);
   // The caller's own terminal, or the teammate's whose session briefs them.
-  const cfg = record ? (JSON.parse((await db.stashGet(env, `realtime:${callId}`)) ?? "{}") as Partial<LiveConfig>) : {};
+  const cfg = record ? (JSON.parse((await db.stashGet(env, `voice:${callId}`)) ?? "{}") as Partial<LiveConfig>) : {};
   if (!record || (record.userId !== user.id && cfg.servedBy !== user.id)) return fail(404, "unknown call id");
   const ns = record.kind === "meeting" ? env.MEETING : env.LIVE;
   const stub = ns.get(ns.idFromName(callId));
@@ -1704,18 +1626,9 @@ export default {
       const ringBackMatch = path.match(/^\/texml\/ring-back\/([\w-]+)$/);
       if (ringBackMatch && (method === "POST" || method === "GET"))
         return await answerRingBack(req, env, ringBackMatch[1]);
-      // Outbound OpenAI calls fetch this when the leg answers: the SIP bridge
-      // to OpenAI, stamped with this call's correlation header.
-      const bridge = path.match(/^\/texml\/openai-bridge\/([\w-]+)$/);
-      if (bridge && (method === "POST" || method === "GET")) {
-        const bid = bridge[1];
-        const provided = url.searchParams.get("t") ?? "";
-        if (!safeEqual(provided, await webhookToken(bid, env.SESSION_SECRET)))
-          return fail(403, "bad webhook token");
-        return new Response(openaiBridgeXml(env, bid), {
-          headers: { "Content-Type": "application/xml" },
-        });
-      }
+      // An outbound call's leg answered: stream it to its LiveCall.
+      const brief = path.match(/^\/texml\/brief\/([\w-]+)$/);
+      if (brief && (method === "POST" || method === "GET")) return await answerBrief(req, env, brief[1]);
 
       // Diagnostic: plain TeXML with no AI assistant involved. Lets us test the
       // telephony + TTS path in isolation when an assistant call goes silent.
@@ -2078,10 +1991,6 @@ export default {
         }
         return fail(404, "not found");
       }
-
-      // OpenAI Realtime call lifecycle (a leg Telnyx bridged over SIP).
-      if (method === "POST" && path === "/webhooks/openai/realtime")
-        return await openaiWebhook(req, env);
 
       // Ops: close a ring-in by hand when its end never arrived.
       const fin = path.match(/^\/admin\/inbound\/(\+\d+)\/finish$/);

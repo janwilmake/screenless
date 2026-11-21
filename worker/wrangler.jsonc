@@ -95,32 +95,20 @@
     // free $10 (session 16); kept so a self-hosted Worker can grant one.
     "FREE_CREDIT_CENTS": "0",
 
-    // --- OpenAI Realtime runs the conversation and the voice, for both
-    // outbound briefs and ring-ins. Telnyx still owns the telephony and bridges
-    // the answered leg here over SIP.
-    // Project id in the SIP address sip:<id>@<host>. From the OpenAI
-    // dashboard; non-secret.
-    "OPENAI_PROJECT_ID": "proj_5gS42My5zyUg993fkLpZK2kM",
-    // SIP host. Must match the project's region: the accept/WS API base is
-    // api.openai.com (US), so the SIP host is the US one too. EU
-    // (sip-eu.api.openai.com + eu.api.openai.com) only works for a project
-    // created with Europe data residency — a later optimisation.
-    "OPENAI_SIP_HOST": "sip.api.openai.com",
-    // The Realtime model and voice. Cedar and Marin are the two newest voices
-    // and the only ones worth using; the older eight are a generation behind.
-    // Cedar reads crisper than Marin, which carries better down a phone line.
-    // Voice does not affect latency — that is the model, not the rendering.
-    "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
-    // GPT-Live for live ring-ins and meetings. 1.1 (November) transcribes
+    // --- GPT-Live runs the conversation and the voice on every call and in
+    // every meeting. Telnyx owns the telephony and streams a call's audio to
+    // its LiveCall Durable Object (live.ts). 1.1 (November) transcribes
     // better and holds its accent across languages, at the same price; it has
-    // its own concurrent-session limit, so falling back is this one line.
+    // its own concurrent-session limit, and both paths fall back to
+    // gpt-live-1 if it is refused, so going back is this one line.
     "OPENAI_LIVE_MODEL": "gpt-live-1.1",
+    // Cedar and Marin are the two newest voices and the only ones worth
+    // using. Cedar reads crisper than Marin, which carries better down a line.
     "OPENAI_VOICE": "cedar",
 
     // The standing Telnyx TeXML application every call runs through — the
     // screenless-inbound app the number is assigned to. It must have an
-    // Outbound Voice Profile assigned, or the outbound SIP leg to OpenAI is
-    // refused with 480 and the caller hears nothing.
+    // Outbound Voice Profile assigned, or outbound calls are refused.
     "TELNYX_TEXML_APP_ID": "3027023992306271718",
 
     // Caller id of /admin/test-ring, the scripted test caller: the old US
@@ -137,14 +125,11 @@
     "RECALL_REGION": "us-west-2"
   },
 
-  // One per live OpenAI Realtime call: it holds the control WebSocket for the
-  // duration and writes the transcript into the call's D1 row. SQLite-backed
-  // because new DO classes require it; we keep no DO storage of our own.
+  // SQLite-backed because new DO classes require it.
   "durable_objects": {
     "bindings": [
-      { "name": "REALTIME", "class_name": "RealtimeCall" },
-      // A ring-in answered by GPT-Live: the sideband plus the requests handed
-      // to the caller's watching terminal during the call.
+      // Every phone call: the audio relay to GPT-Live, the transcript, and the
+      // requests handed to the caller's watching terminal when one watches.
       { "name": "LIVE", "class_name": "LiveCall" },
       // A meeting the line's bot sits in: its sockets, its voice's sideband,
       // and the requests handed to the owner's terminal. Its DO storage holds
@@ -155,7 +140,9 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RealtimeCall"] },
     { "tag": "v2", "new_sqlite_classes": ["LiveCall"] },
-    { "tag": "v3", "new_sqlite_classes": ["MeetingCall"] }
+    { "tag": "v3", "new_sqlite_classes": ["MeetingCall"] },
+    // OpenAI Realtime is gone (session 21): every call is a LiveCall.
+    { "tag": "v4", "deleted_classes": ["RealtimeCall"] }
   ],
 
   // All state: users, orgs, invites, ledger, calls, briefs, watchers, outbox,
@@ -192,9 +179,8 @@
   //   STRIPE_SECRET_KEY     — while unset, billing is inert and every org is entitled
   //   STRIPE_WEBHOOK_SECRET — from `stripe webhook_endpoints create`
   //   RESEND_API_KEY        — sends every mail this Worker writes
-  //   OPENAI_API_KEY        — runs the Realtime conversation + voice
-  //   OPENAI_WEBHOOK_SECRET — whsec_… from registering the webhook endpoint in OpenAI
+  //   OPENAI_API_KEY        — transcribes WhatsApp voice notes
   //   TEST_RING_SECRET      — optional; enables /admin/test-ring
-  //   OPENAI_LIVE_API_KEY   — a key with gpt-live-1 access; unset turns live ring-ins off
+  //   OPENAI_LIVE_API_KEY   — a key with GPT-Live access; runs every call and meeting
   //   RECALL_API_KEY        — Recall.ai, the meeting bot; unset turns `screenless meet` off
 }

@@ -576,7 +576,7 @@ export interface CallRecord {
    *  ring-ins; the dispatcher for a teammate call, who may read it back. */
   initiatedBy?: string;
   /** Legacy: the per-call Telnyx assistant, back when Telnyx ran the
-   *  conversation. Nothing sets it since the move to OpenAI Realtime; kept so
+   *  conversation. Nothing sets it since Telnyx stopped running calls; kept so
    *  call records written before the cutover still load. */
   assistantId?: string;
   transcript?: TranscriptLine[];
@@ -664,7 +664,7 @@ export async function putCall(env: Env, id: string, r: CallRecord): Promise<void
   ).run();
 }
 
-/** Only the transcript, for the Realtime recorder writing as lines land. A
+/** Only the transcript, for a call's recorder writing as lines land. A
  *  whole-row put from there could undo a status the end-of-call webhook wrote
  *  between its read and its write. */
 export async function setCallTranscript(env: Env, id: string, lines: TranscriptLine[]): Promise<void> {

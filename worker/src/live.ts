@@ -1,6 +1,9 @@
 /**
- * One Durable Object per live GPT-Live call: the line to the caller's own
- * Claude Code session.
+ * One Durable Object per phone call: every call on the line is GPT-Live,
+ * relayed here. Most are the line to the caller's own Claude Code session;
+ * some have no terminal behind them at all (`unwatched`): an outbound brief,
+ * and a ring-in nobody's terminal is watching. Those collect and hang up, as
+ * every call did before live handoffs.
  *
  * Telnyx streams the call's audio here over a WebSocket (L16 at 16 kHz, both
  * ways), and this object relays it to a GPT-Live session over OpenAI's own
@@ -21,8 +24,8 @@
  * caller's machine, with the access they already gave it; the call only
  * stopped having to end first.
  *
- * The transcript is persisted on every finished line, like RealtimeCall, so
- * the finished call still reaches the watcher queue with everything said.
+ * The transcript is persisted on every finished line, so the finished call
+ * still reaches the watcher queue with everything said.
  *
  * Either socket can drop while the phone call goes on: Telnyx reconnects its
  * stream, and GPT-Live's session can close under us. Neither ends the call.
@@ -59,6 +62,13 @@ export interface LiveConfig {
   callSid: string;
   /** Test rings only: the one watcher repo allowed to serve this call. */
   onlyRepo?: string;
+  /** No terminal serves this call: an outbound brief, or a ring-in with no
+   *  watcher. Nothing is handed off; the transcript goes to the queue. */
+  unwatched?: boolean;
+  /** How to open, as an instruction rather than exact words: a brief opens
+   *  the way its prompt says. Used instead of `greeting`; with neither, the
+   *  voice waits for the caller (a ring-in leaving a request). */
+  opening?: string;
   /** The member whose session serves the call: the caller, or a teammate
    *  who shares their session's brief with the caller. */
   servedBy?: string;
@@ -209,7 +219,7 @@ export class LiveCall {
    *  stream replaces the old one and the conversation carries on. */
   private async stream(req: Request, callId: string): Promise<Response> {
     if (req.headers.get("Upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
-    const raw = await db.stashGet(this.env, `realtime:${callId}`);
+    const raw = await db.stashGet(this.env, `voice:${callId}`);
     if (!raw) return new Response("unknown call", { status: 404 });
     const cfg = JSON.parse(raw) as LiveConfig;
     this.ourCallId = callId;
@@ -258,7 +268,8 @@ export class LiveCall {
       phone.close(1011, "voice unavailable");
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
-    await this.announce();
+    // A call no terminal serves is not offered to one.
+    if (!cfg.unwatched) await this.announce();
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
@@ -295,7 +306,7 @@ export class LiveCall {
       type: "session.start",
       session: {
         model: (this.liveModel ??= this.env.OPENAI_LIVE_MODEL || "gpt-live-1"),
-        instructions: [cfg.instructions, cfg.mode === "full" || (cfg.teammate && !cfg.teammate.run) ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
+        instructions: [cfg.instructions, cfg.mode === "full" || cfg.unwatched || (cfg.teammate && !cfg.teammate.run) ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
         audio: { format: { type: "audio/pcm", rate: VOICE_RATE }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
       },
@@ -471,13 +482,17 @@ export class LiveCall {
    * already answered him by itself.
    */
   private greetWhenQuiet(greeting: string): void {
+    const opening = this.cfg?.opening;
+    if (!greeting && !opening) return;
     const gen = this.voiceGen;
     this.afterCallerPause(GREET_WAIT_MAX_MS, () => {
       if (gen !== this.voiceGen || this.voiceSpoke) return;
       this.send({
         type: "session.instructions.append",
         delegation_id: null,
-        content: `Now say the following, exactly, then wait for the caller: "${greeting}" If the caller starts speaking, stop at once and listen.`,
+        content: opening
+          ? `Open the call now. ${opening} If the caller starts speaking, stop at once and listen.`
+          : `Now say the following, exactly, then wait for the caller: "${greeting}" If the caller starts speaking, stop at once and listen.`,
       });
     });
   }
@@ -575,11 +590,10 @@ export class LiveCall {
     this.hangupTimer = null;
   }
 
+  /** Only the transcript: a whole-row write from here could undo the
+   *  `completed` the end-of-call webhook wrote a moment before. */
   private async persist(): Promise<void> {
-    const rec = await db.getCall(this.env, this.ourCallId);
-    if (!rec) return;
-    rec.transcript = this.lines.slice();
-    await db.putCall(this.env, this.ourCallId, rec);
+    await db.setCallTranscript(this.env, this.ourCallId, this.lines.slice());
   }
 
   /* ------------------------------------------------------------ delegation */
@@ -592,6 +606,17 @@ export class LiveCall {
   private async delegate(id: string): Promise<void> {
     // The caller's words may still be in the buffer when the voice decides.
     if (this.buf?.role === "user") await this.flush();
+    // Nobody to hand it to: say so at once rather than after the claim wait.
+    if (this.cfg?.unwatched) {
+      this.handedOffUpTo = this.lines.length;
+      this.send({
+        type: "session.commentary.append",
+        delegation_id: id,
+        content:
+          "Nothing can be looked up or done during this call. Tell the caller in one short line that it is noted: their own agent gets it from this call's transcript afterwards. Never say it was done.",
+      });
+      return;
+    }
     // A teammate hears the brief; their requests are not run on the owner's
     // machine during the call. They reach the session afterwards, marked as
     // a teammate's, like any ring-in.
