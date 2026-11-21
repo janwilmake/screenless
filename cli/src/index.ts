@@ -1276,10 +1276,12 @@ async function agendaCmd(args: string[]): Promise<void> {
       continue;
     }
     try {
-      const r = await api<{ callId: string; joinAt: string; already?: boolean }>(cfg.apiUrl, "/meet", {
+      // Not `api()`, which exits: one meeting that cannot be sent must not
+      // stop the rest of the agenda.
+      const res = await fetch(`${cfg.apiUrl}/meet`, {
         method: "POST",
-        token: cfg.token,
-        body: {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.token}` },
+        body: JSON.stringify({
           url: d.link,
           at: new Date(d.start).toISOString(),
           name: rules.name || process.env.SCREENLESS_NAME || undefined,
@@ -1287,8 +1289,10 @@ async function agendaCmd(args: string[]): Promise<void> {
           trust: d.trust,
           photo: process.env.SCREENLESS_PHOTO || undefined,
           session: sessionHash() || undefined,
-        },
+        }),
       });
+      const r = (await res.json().catch(() => ({}))) as { callId?: string; already?: boolean; error?: string };
+      if (!res.ok || !r.callId) throw new Error(r.error ?? `HTTP ${res.status}`);
       out.push({ title: d.title, start: new Date(d.start).toISOString(), join: true, why: d.why, trust: d.trust, callId: r.callId, scheduled: r.already ? "already" : "now" });
     } catch (err) {
       out.push({ title: d.title, start: new Date(d.start).toISOString(), join: true, why: d.why, error: (err as Error).message });

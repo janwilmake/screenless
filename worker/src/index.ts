@@ -1365,6 +1365,9 @@ async function startMeeting(req: Request, env: Env): Promise<Response> {
     await db.stashDelete(env, `meeting:${callId}`);
     const record = await loadCall(env, callId);
     if (record) await saveCall(env, callId, { ...record, status: "failed", queued: false });
+    // A dead key is not a moment's trouble: say so, for an admin to fix.
+    if (/-> 401/.test((err as Error).message))
+      return fail(503, "the line's Recall.ai key is not active: an admin sets a new one (wrangler secret put RECALL_API_KEY)");
     return fail(502, "the meeting bot could not be sent; try again in a minute");
   }
   await db.stashPut(env, `meeting:${callId}`, JSON.stringify(cfg), ttl);
