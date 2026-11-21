@@ -87,6 +87,14 @@ so every "yes" or "skip" was followed by a dead gap.
   Realtime recorder's did.
 - The architecture page: https://claude.ai/artifact/KuuikeAh2XuxuAsUbFRGAW
 
-Open: no outbound call has run on GPT-Live yet; `screenless test` is the
-first check. Whether GPT-Live keeps quiet on an unwatched ring-in the way
+- First outbound call on GPT-Live (c9e9bd02, 151 s): worked end to end,
+  transcript complete. Asked on it: record outbound calls? Jan: no, not
+  while the transcript fixes hold ("don't you think we already solved the
+  problem"). Feedback: "this response just now, it took two seconds or so.
+  So I think that's a bit too slow". Measured reply 1.5–1.7 s from his last
+  loud frame to the voice's first audio, DO in FRA; plus the phone network.
+  Interruption felt good. Many short `live barge-in` (by loud) while the
+  voice spoke: likely its own echo clearing ~20–200 ms of queued audio.
+
+Open: the remaining reply latency; the echo barge-ins. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
