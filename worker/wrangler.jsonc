@@ -111,6 +111,10 @@
     // Cedar reads crisper than Marin, which carries better down a phone line.
     // Voice does not affect latency — that is the model, not the rendering.
     "OPENAI_REALTIME_MODEL": "gpt-realtime-2.1",
+    // GPT-Live for live ring-ins and meetings. 1.1 (November) transcribes
+    // better and holds its accent across languages, at the same price; it has
+    // its own concurrent-session limit, so falling back is this one line.
+    "OPENAI_LIVE_MODEL": "gpt-live-1.1",
     "OPENAI_VOICE": "cedar",
 
     // The standing Telnyx TeXML application every call runs through — the

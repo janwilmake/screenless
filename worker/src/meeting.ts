@@ -118,6 +118,8 @@ export class MeetingCall {
   private sb: WebSocket | null = null;
   private voiceGen = 0;
   private seq = 0;
+  /** The voice is in standby (see the session config). */
+  private paused = false;
   private greeted = false;
   /** Background from the watcher (the session's brief), replayed into a new voice. */
   private notes: string[] = [];
@@ -370,24 +372,45 @@ export class MeetingCall {
   /** The page's SDP offer, exchanged for a GPT-Live session's answer. */
   private async session(offer: string): Promise<Response> {
     if (!this.joined || this.ended) return new Response("not in the meeting", { status: 409 });
-    const res = await fetch(LIVE_API, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.env.OPENAI_LIVE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session: {
-          model: "gpt-live-1",
-          instructions: meetingInstructions(this.cfg!.botName, this.cfg!.purpose, this.cfg!.brief, this.speaking),
-          audio: { output: { voice: this.env.OPENAI_VOICE || "cedar" } },
-          delegation: { type: "client" },
-          // The page is in a stranger's browser: it may send no event, and needs none.
-          client: { data_channel: { allowed_client_events: [], allowed_server_events: [] } },
-        },
-        transport: { type: "webrtc", sdp: offer },
-      }),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      console.error("meeting voice create failed", this.callId, res.status, text.slice(0, 300));
+    const model = this.env.OPENAI_LIVE_MODEL || "gpt-live-1";
+    // Standby: after a minute with nothing said either way, inference pauses
+    // and bills at 2¢ a minute instead of 5¢, and the next speech wakes it.
+    // Only WebRTC sessions get that rate, which is why meetings have it and
+    // phone ring-ins do not. The minute is the maximum, so a request the
+    // watcher is still working on has the longest wait before the voice could
+    // be paused under its answer.
+    const standby = { idle_timeout_s: 60, wake_policy: { type: "speech" } };
+    // Each step back is one a meeting can live without: standby first, then
+    // the newer model. A config OpenAI rejects must cost money, not the voice.
+    const tries: Array<Record<string, unknown>> = [
+      { model, ...standby },
+      { model },
+      ...(model === "gpt-live-1" ? [] : [{ model: "gpt-live-1" }]),
+    ];
+    let res: Response | null = null;
+    let text = "";
+    for (const extra of tries) {
+      res = await fetch(LIVE_API, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.env.OPENAI_LIVE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session: {
+            ...extra,
+            instructions: meetingInstructions(this.cfg!.botName, this.cfg!.purpose, this.cfg!.brief, this.speaking),
+            audio: { output: { voice: this.env.OPENAI_VOICE || "cedar" } },
+            delegation: { type: "client" },
+            // The page is in a stranger's browser: it may send no event, and needs none.
+            client: { data_channel: { allowed_client_events: [], allowed_server_events: [] } },
+          },
+          transport: { type: "webrtc", sdp: offer },
+        }),
+      });
+      text = await res.text();
+      if (res.ok || (res.status !== 400 && res.status !== 404)) break;
+      console.error("meeting voice config refused", this.callId, JSON.stringify(extra), text.slice(0, 300));
+    }
+    if (!res!.ok) {
+      console.error("meeting voice create failed", this.callId, res!.status, text.slice(0, 300));
       return new Response("voice unavailable", { status: 502 });
     }
     const body = JSON.parse(text) as { session: { id: string }; transport: { sdp: string } };
@@ -444,6 +467,8 @@ export class MeetingCall {
   }
 
   private send(ev: Record<string, unknown>): void {
+    // The open question about standby: does this wake it, or wait for speech?
+    if (this.paused) log({ ev: "meeting voice sent to while in standby", call: this.callId, type: ev.type });
     try {
       this.sb?.send(JSON.stringify({ event_id: `sl_${++this.seq}`, ...ev }));
     } catch {
@@ -508,6 +533,17 @@ export class MeetingCall {
         break;
       case "session.closed":
         log({ ev: "meeting voice closed", call: this.callId, reason: msg.reason ?? "" });
+        break;
+      // Standby. Logged both ways, beside anything sent while paused, because
+      // the docs say speech wakes a paused session and are silent on whether
+      // a delegation's answer does.
+      case "session.paused":
+        this.paused = true;
+        log({ ev: "meeting voice standby", call: this.callId });
+        break;
+      case "session.resumed":
+        this.paused = false;
+        log({ ev: "meeting voice resumed", call: this.callId });
         break;
     }
   }

@@ -128,6 +128,9 @@ export class LiveCall {
   /** Which voice session is current; events of an older one are ignored. */
   private voiceGen = 0;
   private voiceRestarts = 0;
+  /** The GPT-Live model this call runs on; falls back once if it never starts. */
+  private liveModel?: string;
+  private everStarted = false;
   /** The greeting is said once per call, never again after a reconnect. */
   private greeted = false;
   /** Every background note so far, replayed into a restarted voice. */
@@ -291,7 +294,7 @@ export class LiveCall {
     this.send({
       type: "session.start",
       session: {
-        model: "gpt-live-1",
+        model: (this.liveModel ??= this.env.OPENAI_LIVE_MODEL || "gpt-live-1"),
         instructions: [cfg.instructions, cfg.mode === "full" || (cfg.teammate && !cfg.teammate.run) ? "" : RESTRICTED_NOTE].filter(Boolean).join("\n\n"),
         audio: { format: { type: "audio/pcm", rate: VOICE_RATE }, output: { voice: cfg.voice } },
         delegation: { type: "client" },
@@ -306,6 +309,12 @@ export class LiveCall {
     this.ws = null;
     this.live = false;
     if (this.ended) return;
+    // A session that never started on the newer model is most likely the
+    // model refused; the caller is on the line, so the restart takes the old.
+    if (!this.everStarted && this.liveModel !== "gpt-live-1") {
+      console.error("live model never started, falling back", this.ourCallId, this.liveModel);
+      this.liveModel = "gpt-live-1";
+    }
     if (this.phone && this.voiceRestarts < MAX_VOICE_RESTARTS) {
       this.voiceRestarts++;
       console.log("live voice restarted", this.ourCallId, this.voiceRestarts);
@@ -411,6 +420,7 @@ export class LiveCall {
         break;
       case "session.started":
         this.live = true;
+        this.everStarted = true;
         log({
           ev: "live voice ready",
           call: this.ourCallId,

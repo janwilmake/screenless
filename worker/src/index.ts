@@ -96,6 +96,8 @@ export interface Env {
   OPENAI_SIP_HOST: string;
   /** The Realtime model, e.g. "gpt-realtime-2.1". */
   OPENAI_REALTIME_MODEL: string;
+  /** The GPT-Live model for live ring-ins and meetings, e.g. "gpt-live-1.1". */
+  OPENAI_LIVE_MODEL: string;
   /** The Realtime voice, e.g. "marin". */
   OPENAI_VOICE: string;
   /** The id Meta gave the line's number for WhatsApp (Telnyx shows it as the
