@@ -43,6 +43,20 @@ author: Jan, via Claude Code in the screenless session
 
 > ok build the outbound prototype and test it; if its better, keep it
 
+> ok lets test it
+
+On the SIP test call, asked what "super easy" means: "I want like to have a
+chief that is able to also understand what's happening in all the other
+sessions [...] the screenless session could actually be a skill that
+maintains this context of all the other cloud sessions, such that if the
+phone call comes in it can brief the GPT Live immediately with all the
+context of everything available that should be available to the caller,
+right? Because there's also permissions".
+
+Chosen in the terminal: the chief lives in this screenless session, always
+answers the owner's own calls, may message sessions during the call, and is
+a product feature (`watch --chief`), not a private setup.
+
 ## What was found
 
 Asked during a live outbound `screenless call` (a 13-goal interview of short
@@ -157,7 +171,34 @@ so every "yes" or "skip" was followed by a dead gap.
 - Jan sent a login verification code in chat for the Telnyx portal; not
   entered (one-time codes are his), and the portal was not needed.
 
-Open: OpenAI's answer on EU residency and inbound SIP; whether SIP
+- The first real SIP call (to Jan's Dutch mobile, 167 s) went through and
+  hung up after goodbye; "feels pretty good". On it the no-terminal reply
+  made the voice announce "nothing can be done during this call" while Jan
+  was describing an idea ("you seem a bit hesitant"); it now says that only
+  when something was asked for.
+- The chief (`screenless watch --chief --team-repos <owner/name,…>`), as
+  proposed by the Roost session from Wijnand and chosen above:
+  - Its brief comes from Roost (`/api/sessions`): per session the title,
+    About line, late and waiting counts, the first thing waiting on the
+    owner and the next deadline, most urgent first; rebuilt every 20 s with
+    no model. Emails and phone numbers are taken out of what the voice hears.
+  - Two briefs: the owner's of every session, and the team's of only the
+    sessions whose folder's git origin is one of `--team-repos` (for Hyre,
+    `hyre-ai-recruiting/hyre`: every checkout, worktree and agent clone).
+    The rest (knowledge, roost, screenless, ~/Desktop/work) never reach a
+    teammate's call. Same boundary as the `.tracesrc` rule, by origin.
+  - On the owner's call each request runs with the chief's rules and a table
+    of sessions by Roost `agentName`: one SendMessage to the session whose
+    work it is, never to ask for status, ask when unsure. A fresh `claude -p`
+    lists the 43 local sessions, so routing works from a request run.
+  - The Worker records a `chief=1` watcher as `livechief`, sends the owner's
+    ring-ins to it whichever watcher polled last, and claims the call for
+    its session so no other watcher takes its requests.
+  - Teammates' requests are not routed during a call in this first version:
+    they hear the team brief, and their asks reach the chief after the call.
+
+Open: OpenAI's answer on EU residency and inbound SIP; the chief on a real
+call; whether SIP
 straight from Telnyx to OpenAI cuts the ~0.55 s phone path; standby seen
 working in a meeting. Whether GPT-Live keeps quiet on an unwatched ring-in the way
 Realtime's no-auto-response mode forced it to.
