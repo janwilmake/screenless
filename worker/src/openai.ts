@@ -179,8 +179,12 @@ export async function acceptCall(
           // interruption does.
           turn_detection: {
             type: "semantic_vad",
-            // "low": only a clear, deliberate interruption takes the floor.
-            eagerness: "low",
+            // Eagerness is also how long a pause must last before the turn
+            // ends. "low" waits up to ~8s, which on an outbound interview of
+            // one-word answers ("yes", "skip") left a dead gap before every
+            // question. Lead mode takes "medium" (~4s); a ring-in leaving a
+            // request keeps "low" so a thinking pause doesn't cut it off.
+            eagerness: o.quiet ? "low" : "medium",
             // Lead mode auto-responds; in quiet mode the Durable Object is the
             // only thing that ever asks for a reply.
             create_response: !o.quiet,
