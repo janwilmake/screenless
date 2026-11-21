@@ -40,6 +40,9 @@ async function call<T>(
   return parsed as T;
 }
 
+/** The raw API, for one-off admin work (the SIP trunk in sip.ts). */
+export const api = call;
+
 /* ------------------------------------------------------------------ verify */
 
 export interface VerifyProfile {
@@ -202,6 +205,16 @@ export function initiateTexmlCall(
         : {}),
     },
   );
+}
+
+/** Records an answered TeXML call, both sides on their own channel. */
+export async function startTexmlRecording(apiKey: string, accountSid: string, callSid: string, callback: string) {
+  const res = await fetch(`${BASE}/texml/Accounts/${accountSid}/Calls/${callSid}/Recordings.json`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ RecordingChannels: "dual", PlayBeep: "false", RecordingStatusCallback: callback, RecordingStatusCallbackMethod: "POST" }),
+  });
+  if (!res.ok) throw new TelnyxError(res.status, "recordings", await res.text());
 }
 
 /**

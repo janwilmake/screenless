@@ -1,4 +1,5 @@
 import * as telnyx from "./telnyx";
+import * as sip from "./sip";
 import * as billing from "./billing";
 import * as schedule from "./schedule";
 import * as db from "./db";
@@ -88,6 +89,9 @@ export interface Env {
   /** "16000" runs phone calls' voice at the phone's own rate, unresampled;
    *  anything else at GPT-Live's native 24 kHz. */
   LIVE_AUDIO_RATE: string;
+  /** "sip": outbound calls are dialled by GPT-Live itself over the Telnyx
+   *  trunk in sip.ts, skipping the relay. Anything else: the relay. */
+  LIVE_OUTBOUND: string;
   /** The voice, e.g. "cedar". */
   OPENAI_VOICE: string;
   /** The id Meta gave the line's number for WhatsApp (Telnyx shows it as the
@@ -462,6 +466,8 @@ async function startCall(
     initiatedBy?: string;
     /** Hang up if a machine answers. Only for calls nobody is waiting on. */
     detectVoicemail?: boolean;
+    /** Overrides LIVE_OUTBOUND, for the bench. */
+    transport?: "sip" | "relay";
   } = {},
 ): Promise<{ ok: true; callId: string } | { ok: false; status: number; error: string }> {
   if (!env.TELNYX_TEXML_APP_ID)
@@ -499,6 +505,27 @@ async function startCall(
     createdAt: Date.now(),
   };
   await saveCall(env, callId, record);
+
+  // Over SIP GPT-Live dials the user itself. Not when voicemail must be
+  // caught: answering-machine detection is Telnyx's, on the relayed call.
+  const overSip = (opts.transport ?? (env.LIVE_OUTBOUND === "sip" ? "sip" : "relay")) === "sip" && !opts.detectVoicemail;
+  if (overSip) {
+    try {
+      const sessionId = await sip.dial(env, {
+        phone,
+        instructions: cfg.instructions,
+        voice: cfg.voice,
+        model: env.OPENAI_LIVE_MODEL || "gpt-live-1",
+      });
+      const stub = env.LIVE.get(env.LIVE.idFromName(callId));
+      const r = await stub.fetch("https://live/sip", { method: "POST", body: JSON.stringify({ callId, sessionId }) });
+      if (!r.ok) throw new Error(`sideband ${r.status}`);
+      return { ok: true, callId };
+    } catch (err) {
+      // The relay still works; a SIP failure must not cost the call.
+      console.error("sip dial failed, using the relay", callId, (err as Error).message);
+    }
+  }
 
   try {
     await telnyx.initiateTexmlCall(env.TELNYX_API_KEY, env.TELNYX_TEXML_APP_ID, {
@@ -659,6 +686,23 @@ async function answerInbound(req: Request, env: Env, origin: string, ctx: Execut
 
   const params = await inboundBody(req);
   const callerId = normalizeCallerId(params.From ?? params.from ?? "");
+  // The bench's outbound call reaching the test number: it answers with the
+  // script and records both sides, so a reply can be timed as heard.
+  if (env.TEST_RING_SECRET && env.TEST_CALLER_NUMBER && normalizeCallerId(params.To ?? "") === env.TEST_CALLER_NUMBER) {
+    const raw = await db.stashGet(env, `benchanswer:${env.TEST_CALLER_NUMBER}`);
+    if (!raw) return sayHangup("Nothing to test.");
+    await db.stashDelete(env, `benchanswer:${env.TEST_CALLER_NUMBER}`);
+    const accountSid = params.AccountSid ?? "";
+    const callSid = params.CallSid ?? "";
+    ctx.waitUntil(
+      new Promise((r) => setTimeout(r, 1500)).then(() =>
+        telnyx
+          .startTexmlRecording(env.TELNYX_API_KEY, accountSid, callSid, `${origin}/texml/test-status?rec=1`)
+          .catch((err) => console.error("bench recording failed", (err as Error).message)),
+      ),
+    );
+    return scriptXml(JSON.parse(raw) as Array<{ pause?: number; say?: string }>);
+  }
   // A service verifying the number by voice (Meta, for WhatsApp) reads its
   // code to whoever answers. While an admin has opened the window, a call
   // from anyone who is not a member is put through to them instead.
@@ -1539,7 +1583,7 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
   const secret = req.headers.get("X-Test-Secret") ?? "";
   if (!env.TEST_RING_SECRET || !env.TEST_CALLER_NUMBER || !safeEqual(secret, env.TEST_RING_SECRET))
     return fail(403, "forbidden");
-  const { script, as, repo, pad, instructions, record } = (await req.json().catch(() => ({}))) as {
+  const { script, as, repo, pad, instructions, record, outbound } = (await req.json().catch(() => ({}))) as {
     script?: Array<{ pause?: number; say?: string }>;
     /** Ring in as this verified number, so the call reaches that user's
      *  watcher. Only numbers listed in TEST_RING_AS. */
@@ -1556,6 +1600,9 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
     /** Record the test caller's leg, both channels, to measure what a caller
      *  actually hears. The file's address is logged as "test recording". */
     record?: boolean;
+    /** Call the test number instead, over this path; it answers with the
+     *  script and is recorded. Measures an outbound call end to end. */
+    outbound?: "sip" | "relay";
   };
   if (!Array.isArray(script) || !script.length) return fail(400, "script required");
   const allowed = (env.TEST_RING_AS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
@@ -1567,6 +1614,17 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
   }
   await db.stashPut(env, `testpad:${env.TEST_CALLER_NUMBER}`, String(Math.min(40_000, Math.max(0, Number(pad) || 0))), 3600);
   await db.stashPut(env, `testinstr:${env.TEST_CALLER_NUMBER}`, typeof instructions === "string" ? instructions.slice(0, 20_000) : "", 3600);
+  if (outbound) {
+    await db.stashPut(env, `benchanswer:${env.TEST_CALLER_NUMBER}`, JSON.stringify(script), 600);
+    const r = await startCall(
+      env,
+      env.TEST_CALLER_NUMBER,
+      "You are on a short test call. The person who answers will ask you a few quick questions. Answer each one at once, in a few words. When they say goodbye, say goodbye.",
+      origin,
+      { transport: outbound },
+    );
+    return json(r);
+  }
   const id = crypto.randomUUID();
   await db.stashPut(env, `testring:${id}`, JSON.stringify(script), 3600);
   const t = await webhookToken(`testring:${id}`, env.SESSION_SECRET);
@@ -1578,6 +1636,25 @@ async function testRing(req: Request, env: Env, origin: string): Promise<Respons
     ...(record ? { recordingCallback: `${origin}/texml/test-status?t=${t}&rec=1` } : {}),
   });
   return json({ ok: true, id, telnyx: res });
+}
+
+/**
+ * The Telnyx trunk OpenAI dials outbound calls through (sip.ts). GET shows
+ * the outbound voice profiles, the trunk if it exists and where the line's
+ * numbers route; POST {profileId} creates or updates the trunk. Guarded by
+ * the test-ring secret: it is test tooling until SIP carries real calls.
+ */
+async function sipTrunk(req: Request, env: Env): Promise<Response> {
+  const secret = req.headers.get("X-Test-Secret") ?? "";
+  if (!env.TEST_RING_SECRET || !safeEqual(secret, env.TEST_RING_SECRET)) return fail(403, "forbidden");
+  try {
+    if (req.method === "GET") return json(await sip.inspect(env));
+    const { profileId } = (await req.json().catch(() => ({}))) as { profileId?: string };
+    if (!profileId) return fail(400, "profileId required");
+    return json(await sip.ensureTrunk(env, profileId));
+  } catch (err) {
+    return json({ error: (err as Error).message }, 502);
+  }
 }
 
 /** A test ring's filler: background notes of the length a brief runs to. */
@@ -1601,8 +1678,13 @@ async function testScript(req: Request, env: Env, id: string): Promise<Response>
   if (!safeEqual(t, await webhookToken(`testring:${id}`, env.SESSION_SECRET))) return fail(403, "bad token");
   const raw = await db.stashGet(env, `testring:${id}`);
   if (!raw) return sayHangup("No script.");
+  return scriptXml(JSON.parse(raw) as Array<{ pause?: number; say?: string }>);
+}
+
+/** A test script as TeXML: pauses and spoken lines, then hang up. */
+function scriptXml(script: Array<{ pause?: number; say?: string }>): Response {
   const esc = (x: string) => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const steps = (JSON.parse(raw) as Array<{ pause?: number; say?: string }>)
+  const steps = script
     .map((st) =>
       (st.pause ? `<Pause length="${Math.min(120, Math.max(1, Math.round(st.pause)))}"/>` : "") +
       (st.say ? `<Say voice="female" language="en-US">${esc(st.say)}</Say>` : ""),
@@ -1691,6 +1773,7 @@ export default {
       if (method === "GET" && path === "/admin/inbound-url")
         return await inboundUrl(req, env, origin);
       if (method === "POST" && path === "/admin/test-ring") return await testRing(req, env, origin);
+      if (path === "/admin/sip-trunk" && (method === "GET" || method === "POST")) return await sipTrunk(req, env);
       const scriptMatch = path.match(/^\/texml\/test-script\/([\w-]+)$/);
       if (scriptMatch) return await testScript(req, env, scriptMatch[1]);
       if (path === "/texml/test-status") {

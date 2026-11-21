@@ -105,6 +105,10 @@
     // The voice's audio rate on phone calls. GPT-Live takes the phone's own
     // 16 kHz as well as its native 24 kHz; "16000" skips the resampling.
     "LIVE_AUDIO_RATE": "24000",
+    // "sip": outbound calls are dialled by GPT-Live over the Telnyx trunk
+    // (sip.ts) instead of through the relay. Voicemail-checked briefs keep
+    // the relay either way.
+    "LIVE_OUTBOUND": "sip",
     // Cedar and Marin are the two newest voices and the only ones worth
     // using. Cedar reads crisper than Marin, which carries better down a line.
     "OPENAI_VOICE": "cedar",

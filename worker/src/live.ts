@@ -40,6 +40,8 @@
 import type { Env } from "./index";
 import * as db from "./db";
 import * as telnyx from "./telnyx";
+import * as sip from "./sip";
+import { afterCallEnded } from "./index";
 import { ByteOrder, Resampler, decodePcm, encodePcm, meanAbs, PHONE_RATE, VOICE_RATE } from "./audio";
 import { callerSaysBye, callerAsksHangup, voiceSaysBye, HANGUP_AFTER_MS, HANGUP_ON_REQUEST_MS } from "./farewell";
 
@@ -207,6 +209,12 @@ export class LiveCall {
   private heardAt = 0;
   /** The voice's recent output loudness. */
   private voiceLevel = 0;
+  /** An outbound call GPT-Live dialled over SIP (sip.ts): its session id.
+   *  The audio is not ours; only the sideband is. */
+  private sipSession = "";
+  private sipAnswered = false;
+  /** Event ids already handled: an attach replays the last 3 seconds. */
+  private seen = new Set<string>();
   /** Voice audio short of a whole 20 ms frame, sent with the next chunk. */
   private outRest = new Int16Array(0);
 
@@ -218,6 +226,7 @@ export class LiveCall {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/stream") return this.stream(req, url.searchParams.get("call") ?? "");
+    if (req.method === "POST" && url.pathname === "/sip") return this.startSip(await req.json());
     if (req.method === "GET" && url.pathname === "/next") return this.next();
     if (req.method === "POST" && url.pathname === "/result") return this.result(await req.json());
     if (req.method === "POST" && url.pathname === "/context") return this.context(await req.json());
@@ -226,6 +235,47 @@ export class LiveCall {
   }
 
   /* ------------------------------------------------------------ the audio */
+
+  /** An outbound call over SIP: attach to its sideband, which carries the
+   *  transcript, handoffs and call progress, while SIP carries the audio. */
+  private async startSip(body: unknown): Promise<Response> {
+    const { callId, sessionId } = (body ?? {}) as { callId?: string; sessionId?: string };
+    if (!callId || !sessionId) return new Response("bad sip start", { status: 400 });
+    const raw = await db.stashGet(this.env, `voice:${callId}`);
+    if (!raw) return new Response("unknown call", { status: 404 });
+    this.cfg = JSON.parse(raw) as LiveConfig;
+    this.ourCallId = callId;
+    this.userId = this.cfg.userId;
+    this.sipSession = sessionId;
+    this.liveModel = this.env.OPENAI_LIVE_MODEL || "gpt-live-1";
+    return (await this.attachSideband()) ? new Response("ok") : new Response("no sideband", { status: 502 });
+  }
+
+  private async attachSideband(): Promise<boolean> {
+    const gen = ++this.voiceGen;
+    const res = await fetch(sip.sidebandUrl(this.sipSession), {
+      headers: { Upgrade: "websocket", Authorization: `Bearer ${this.env.OPENAI_LIVE_API_KEY}` },
+    });
+    const ws = res.webSocket;
+    if (!ws) {
+      console.error("sip sideband failed", this.ourCallId, res.status, await res.text().catch(() => ""));
+      return false;
+    }
+    ws.accept();
+    this.ws = ws;
+    // Commands may go out at once: the session exists before the call is up.
+    this.live = true;
+    ws.addEventListener("message", (ev) => {
+      if (gen === this.voiceGen) void this.onMessage(ev, this.cfg?.greeting ?? "");
+    });
+    ws.addEventListener("close", (ev) => {
+      console.log("sip sideband closed", this.ourCallId, ev.code, ev.reason);
+      if (gen !== this.voiceGen || this.ended) return;
+      // The call may still be up: attach again once, else it is over.
+      void this.attachSideband().then((ok) => (ok ? undefined : this.finish("phone")));
+    });
+    return true;
+  }
 
   /** Telnyx connects its media stream; the GPT-Live session starts with it.
    *  A second connect for the same call is Telnyx reconnecting: the new
@@ -447,6 +497,7 @@ export class LiveCall {
       reason?: string;
       start_ms?: number;
       end_ms?: number;
+      event_id?: string;
     };
     try {
       msg = JSON.parse(typeof ev.data === "string" ? ev.data : "");
@@ -454,7 +505,30 @@ export class LiveCall {
       return;
     }
 
+    if (this.sipSession && msg.event_id) {
+      if (this.seen.has(msg.event_id)) return;
+      this.seen.add(msg.event_id);
+      if (this.seen.size > 2000) this.seen = new Set([...this.seen].slice(-500));
+    }
+
     switch (msg.type) {
+      case "transport.ringing":
+        await this.setStatus("ringing");
+        log({ ev: "sip ringing", call: this.ourCallId });
+        break;
+      case "transport.answered":
+        this.sipAnswered = true;
+        await this.setStatus("answered");
+        log({ ev: "sip answered", call: this.ourCallId });
+        if (!this.greeted) {
+          this.greeted = true;
+          this.greetWhenQuiet(greeting);
+        }
+        break;
+      case "transport.failed":
+        console.error("sip call failed", this.ourCallId, JSON.stringify(msg).slice(0, 300));
+        await this.finish("phone");
+        break;
       case "session.output_audio.delta":
         if (msg.delta) {
           this.voiceSpoke = true;
@@ -464,6 +538,9 @@ export class LiveCall {
         }
         break;
       case "session.started":
+        // Over SIP the session starts before anyone answers; the greeting
+        // waits for `transport.answered`.
+        if (this.sipSession) break;
         this.live = true;
         this.everStarted = true;
         log({
@@ -510,7 +587,9 @@ export class LiveCall {
         break;
       case "session.closed":
         console.log("live session closed", this.ourCallId, msg.reason ?? "");
-        await this.voiceLost();
+        // Over SIP the session is the call: it closing is the call ending.
+        if (this.sipSession) await this.finish("phone");
+        else await this.voiceLost();
         break;
       case "error":
         console.error("live error", this.ourCallId, JSON.stringify(msg.error));
@@ -635,6 +714,18 @@ export class LiveCall {
   private cancelHangup(): void {
     if (this.hangupTimer) clearTimeout(this.hangupTimer);
     this.hangupTimer = null;
+  }
+
+  /** A SIP call's status, which nothing else reports. Ending it bills it and
+   *  hands it on, as the status webhook does for a relayed call. */
+  private async setStatus(status: "ringing" | "answered" | "completed" | "failed"): Promise<void> {
+    const rec = await db.getCall(this.env, this.ourCallId);
+    if (!rec || rec.status === "completed" || rec.status === "failed") return;
+    rec.status = status;
+    if (status === "completed" || status === "failed") rec.endedAt = Date.now();
+    if (this.lines.length) rec.transcript = this.lines.slice();
+    await db.putCall(this.env, this.ourCallId, rec);
+    if (status === "completed" || status === "failed") await afterCallEnded(this.env, this.ourCallId, rec);
   }
 
   /** Only the transcript: a whole-row write from here could undo the
@@ -1000,6 +1091,7 @@ export class LiveCall {
     this.phoneGoneTimer = null;
     this.voiceGen++;
     this.send({ type: "session.close" });
+    if (by === "voice" && this.sipSession) await sip.hangup(this.env, this.sipSession);
     if (by === "voice" && this.cfg?.callSid && this.cfg.accountSid)
       await telnyx
         .hangupTexmlCall(this.env.TELNYX_API_KEY, this.cfg.accountSid, this.cfg.callSid)
@@ -1011,6 +1103,8 @@ export class LiveCall {
     }
     await this.flush();
     if (this.lines.length) await this.persist();
+    // No Telnyx status callback reports a SIP call's end: close it here.
+    if (this.sipSession) await this.setStatus(this.sipAnswered ? "completed" : "failed");
     await db.stashDelete(this.env, `livecall:${this.cfg?.servedBy ?? this.userId}`).catch(() => {});
     this.wake();
     this.ws = null;

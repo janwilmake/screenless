@@ -8,7 +8,9 @@
 #
 # The optional JSON is merged into the request: `pad` (chars of brief-like
 # filler in the instructions), `instructions` (replace them), `record`
-# (dual-channel recording of the caller's leg; its URL is logged).
+# (dual-channel recording of the caller's leg; its URL is logged),
+# `outbound` ("sip" or "relay": the line calls the test number instead, which
+# answers with the script and is recorded; time the gaps in the recording).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${TEST_RING_SECRET:?set TEST_RING_SECRET}"
